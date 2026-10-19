@@ -660,7 +660,6 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
                                         fetched_at=stamp, sha256=digest(response.body), size_bytes=len(response.body)))
         atomic_write(root / "sources/api/manifest.json", json_bytes(api_sources))
         discovered = {record_key(r): discover_record(r, featured.get(r.get("featured_media"))) for r in remote_records}
-        stats = host_statistics(remote_records, discovered)
         refresh = {record_key(r) for r in selected
                    if record_key(r) in fetched_keys or should_refresh(r, state["records"].get(record_key(r)), cutoff, full)}
         for record in selected:
