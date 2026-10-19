@@ -67,3 +67,10 @@ A jelenlegi letöltő tesztjei:
 ```
 
 A tesztek nem kapcsolódnak a bloghoz; egy részük helyi HTTP-kiszolgálót használ.
+
+## Nyelvhasználat
+
+- **Angol:** az `AGENTS.md`, a Githez kapcsolódó szövegek (például commitüzenetek, branch- és tagnevek), a forráskód és a kódkommentek.
+- **Magyar:** a szöveges dokumentumok (például a README-k), a cikkek és a többi szöveges tartalom.
+
+A bevett technikai kifejezéseket (például branch, commit, tag) magyar szövegben is megtartjuk; nem fordítjuk őket erőltetetten magyarra.
