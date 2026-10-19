@@ -459,11 +459,11 @@ class SyncTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
 
-    def test_default_roots_are_allowed_but_legacy_targets_are_rejected(self):
+    def test_default_roots_are_allowed_but_tool_targets_are_rejected(self):
         self.assertEqual(sync.validate_roots(sync.DEFAULT_SOURCE_OUTPUT, sync.DEFAULT_OUTPUT),
                          (sync.DEFAULT_SOURCE_OUTPUT.resolve(), sync.DEFAULT_OUTPUT.resolve()))
         with self.assertRaises(ValueError):
-            sync.validate_roots(self.root, sync.DEFAULT_OUTPUT/"old-txt-based")
+            sync.validate_roots(self.root, sync.ROOT/"automation"/"output")
 
     def test_migration_target_directory_aborts_before_any_move(self):
         self.run_sync()

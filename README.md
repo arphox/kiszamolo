@@ -22,12 +22,6 @@ A saját címkézés, a témák szerinti új katalógusok és a további tudást
 | `articles/assets/` | A letöltött képek és mellékletek. |
 | `raw_source/content-mirror/` | Az eredeti webes források és a frissítés folytatásához szükséges adatok. |
 | `automation/content-mirror/` | A jelenleg használt letöltő és feldolgozó, a tesztjeivel együtt. |
-| `raw_source/kiszamolo_cikkek-1.txt` | A blog szerzője által közzétett korábbi szöveges export. [A forrás leírása](raw_source/README.md). |
-| `articles/old-txt-based/` | A korábbi exportból külön fájlokba bontott cikkek. |
-| `automation/2026-10-08-article-archive-processing/` | A korábbi szöveges export feldolgozója. |
-| `automation/2026-10-08-article-inventory-check/` | A korábbi cikkgyűjteményhez készült leltárellenőrző. |
-
-A két dátumozott eszköz a korábbi feldolgozás része. A jelenlegi gyűjtemény frissítéséhez a `content-mirror` eszközt használd.
 
 ## Telepítés és frissítés
 

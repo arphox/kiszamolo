@@ -16,7 +16,7 @@ A normál szinkronizálás indítása:
 python -u -B .\automation\content-mirror\sync.py
 ```
 
-Alapértelmezett olvasható cél: `articles/`, a média az `articles/assets` alá kerül. A nyers API/HTML-források és a sync állapota a `raw_source/content-mirror/` mappában vannak. Az `articles` önállóan másolható olvasási/AI-csomag: minden generált helyi cikk- és médiahivatkozás a csomagon belülre mutat. A sync folytatásához és a teljes forrásbizonyítékhoz a nyers archívum is szükséges. A korábbi `raw_source/kiszamolo_cikkek-1.txt` exporthoz és az `articles/old-txt-based` archívumhoz nem nyúl. Ütemezést önmagában nem telepít.
+Alapértelmezett olvasható cél: `articles/`, a média az `articles/assets` alá kerül. A nyers API/HTML-források és a sync állapota a `raw_source/content-mirror/` mappában vannak. Az `articles` önállóan másolható olvasási/AI-csomag: minden generált helyi cikk- és médiahivatkozás a csomagon belülre mutat. A sync folytatásához és a teljes forrásbizonyítékhoz a nyers archívum is szükséges. Ütemezést önmagában nem telepít.
 
 Hálózatmentes újragenerálás és a régi médiaelrendezés átköltöztetése:
 
@@ -32,7 +32,7 @@ Részleges prototípus: `--sample ID ID ... --output KÜLÖN_CIKK_KÖNYVTÁR --s
 
 ## Tárolás
 
-- `articles/YYYY/MM/YYYY-MM-DD HH.MM Cím.md`: az olvasható cikkek és oldalak, a régi export fájlnévszabályaival. Csak Markdown-nézetet generál.
+- `articles/YYYY/MM/YYYY-MM-DD HH.MM Cím.md`: az olvasható cikkek és oldalak. Csak Markdown-nézetet generál.
 - `raw_source/content-mirror/records/posts/ID/`, `records/pages/ID/`: stabil forrásútvonalak WordPress-ID alapján.
 - `source.json`: a teljes API-rekord értékei; a `source.html` az API `content.rendered` mezőjének változatlan UTF-8 tartalma.
 - `source-page.html`: a nyilvános cikkoldal változatlan HTTP-választörzse. Ez a teljes oldalkeretet, így a lapban szereplő hozzászólásokat is megőrizheti; a hozzászólásokat külön nem gyűjtjük és a Markdown-nézetbe nem tesszük bele. A webhely teljes CSS/JS-környezetét nem tükrözzük.
@@ -45,7 +45,7 @@ Részleges prototípus: `--sample ID ID ... --output KÜLÖN_CIKK_KÖNYVTÁR --s
 - `articles/MEDIA-SOURCES.md`, `media-sources.json`: hostonként egyedi média-URL-ek és érintett tartalmak; képek és embedek külön. Az API-törzsek és elérhető kiemelt képek mellett a feldolgozott üres API-törzsű oldalak felismert nyilvános tartalma is beleszámít. A srcset-változatok külön URL-ek, a számok nem különálló ábrák darabszámai.
 - `raw_source/content-mirror/state.json`: a szinkronizálás állapota. `articles/last-report.json`: az utolsó futás számai és részletes hibái.
 
-A fájlnév-normalizálás a régi szétbontóéval azonos: a `?` és `"` törlődik, a `:` helyére ` - ` kerül, a többi Windowsban tiltott karakter szóközzé alakul, a whitespace összevonódik, a szélső szóköz/pont/kötőjel eltűnik. Az eredeti cím a metaadatokban megmarad. Cím- vagy publikálásidátum-változáskor új útvonal keletkezik ugyanahhoz a WordPress-ID-hoz; a belső hivatkozások és indexek frissülnek. Ütközéskor a fájlnév ` [ID]` utótagot kap. A régi generált Markdown csak ellenőrzött tartalmi lenyomat esetén kerül törlésre; a kézzel módosított korábbi fájlt megőrzi és jelzi. A forrás és a média ilyenkor nem költözik.
+A fájlnév-normalizálás során a `?` és `"` törlődik, a `:` helyére ` - ` kerül, a többi Windowsban tiltott karakter szóközzé alakul, a whitespace összevonódik, a szélső szóköz/pont/kötőjel eltűnik. Az eredeti cím a metaadatokban megmarad. Cím- vagy publikálásidátum-változáskor új útvonal keletkezik ugyanahhoz a WordPress-ID-hoz; a belső hivatkozások és indexek frissülnek. Ütközéskor a fájlnév ` [ID]` utótagot kap. A régi generált Markdown csak ellenőrzött tartalmi lenyomat esetén kerül törlésre; a kézzel módosított korábbi fájlt megőrzi és jelzi. A forrás és a média ilyenkor nem költözik.
 
 Ha egy átnevezés másik rekord korábbi fájlnevét veszi át (például két cím cseréjekor), a kézzel módosított korábbi tartalmat felülírás előtt a forrásgyökér `preserved-markdown/SHA256.md` fájljába menti. A riport `reassigned_locally_modified_files_preserved` mezője összeköti az eredeti útvonalat és a megőrzött másolatot.
 

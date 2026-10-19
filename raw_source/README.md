@@ -1,1 +1,3 @@
-- `.\kiszamolo_cikkek-1.txt`: Downloaded from https://kiszamolo.hu/kiszamolo-konyv-penzugyek-a-csaladban/ as published by kiszamolo as "A honlap összes cikke pedig innen (ezt meg tudod etetni bármelyik AI-val)". Original URL: https://kiszamolo.hu/wp-content/uploads/2026/10/kiszamolo_cikkek-1.txt – downloaded at 2026-10-08 19:13
+# Nyers források
+
+A `content-mirror/` mappában a blog nyilvános API-válaszai, HTML-forrásai és a szinkronizálás állapota található. A tárolás részleteit a [letöltő leírása](../automation/content-mirror/README.md) tartalmazza.

@@ -105,8 +105,6 @@ def safe_path(root, relative):
     path = (root / relative).resolve()
     if not path.is_relative_to(root.resolve()) or path == root.resolve():
         raise ValueError(f"Path escapes mirror: {relative!r}")
-    if path.is_relative_to((ROOT / "articles" / "old-txt-based").resolve()):
-        raise ValueError("Mirror paths must not enter the legacy archive")
     return path
 
 
@@ -115,13 +113,11 @@ def validate_roots(root, articles_root):
     root, articles_root = Path(root).resolve(), Path(articles_root).resolve()
     if articles_root == root or articles_root.is_relative_to(root) or root.is_relative_to(articles_root):
         raise ValueError("Source and Markdown directories must be separate, non-overlapping roots")
-    forbidden = [ROOT / "articles" / "old-txt-based", ROOT / "automation"]
+    forbidden = [ROOT / "automation"]
     for path in (root, articles_root):
         for item in forbidden:
-            if path == articles_root == DEFAULT_OUTPUT.resolve() and item == ROOT / "articles" / "old-txt-based":
-                continue
             if path.is_relative_to(item.resolve()) or item.resolve().is_relative_to(path):
-                raise ValueError("Output roots must not touch the tool or legacy archive directories")
+                raise ValueError("Output roots must not touch the tool directory")
     return root, articles_root
 
 
@@ -926,13 +922,12 @@ def main():
     args = parser.parse_args()
     output = args.output.resolve()
     source_output = args.source_output.resolve()
-    forbidden = [ROOT / "articles" / "old-txt-based", ROOT / "automation"]
+    forbidden = [ROOT / "automation"]
     if output in {ROOT.resolve(), (ROOT / "raw_source").resolve()} or source_output in {ROOT.resolve(), (ROOT / "raw_source").resolve(), DEFAULT_OUTPUT.resolve()}:
         parser.error("Use articles output and a dedicated raw_source subdirectory")
     if any(path.is_relative_to(p.resolve()) or p.resolve().is_relative_to(path)
-           for path in [output, source_output] for p in forbidden
-           if not (path == DEFAULT_OUTPUT.resolve() and p == ROOT / "articles" / "old-txt-based")):
-        parser.error("Output roots must not touch the tool or legacy archive directories")
+           for path in [output, source_output] for p in forbidden):
+        parser.error("Output roots must not touch the tool directory")
     if source_output.is_relative_to(output) or output.is_relative_to(source_output):
         parser.error("Source and Markdown output roots must not overlap")
     if args.workers < 1 or args.workers > 8:
