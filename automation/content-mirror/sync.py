@@ -24,7 +24,7 @@ from bs4 import BeautifulSoup
 from remote import HttpClient, Inventory, fetch_census, fetch_records, fetch_metadata
 from paths import plan_article_paths
 from render import (conversion_warnings, discover_assets, discover_embeds,
-                    extract_public_content, make_markdown, plain_title, rewrite_html)
+                    extract_public_content, make_markdown, plain_title, referenced_anchors, rewrite_html)
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = ROOT / "articles"
@@ -549,6 +549,7 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
                for other in existing_documents.values() for alias in internal_aliases(other["url"])}
     embed_targets = {alias.rstrip("/") + "/embed/": safe_path(articles_root, other["path"])
                      for other in existing_documents.values() for alias in internal_aliases(other["url"])}
+    retained_anchors = set().union(*(referenced_anchors(body) for body in view_bodies.values()))
     reassigned_preserved = []
     if prior_records is not None and previous_articles_root == str(articles_root):
         previous_owners = {item["path"].casefold(): (key, item)
@@ -604,7 +605,7 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
                 link = soup.new_tag("a", href=frame["src"])
                 link.string = "Beágyazott cikk"
                 frame.replace_with(link)
-        markdown = make_markdown(display_record, str(soup)).encode("utf-8")
+        markdown = make_markdown(display_record, str(soup), retained_anchors=retained_anchors).encode("utf-8")
         atomic_write(output_path, markdown)
         item["markdown_sha256"] = digest(markdown)
         if update_status:
@@ -876,6 +877,7 @@ def offline_rebuild(root, articles_root, progress=print):
         discovered = {}
         for key, item in state["records"].items():
             record, body = load_cached_view(root, key, item)
+            item["warnings"] = conversion_warnings(body, previous=item.get("warnings", []))
             view_bodies[key] = body
             media_id = record.get("featured_media")
             if media_id and item.get("featured_media_sha256"):

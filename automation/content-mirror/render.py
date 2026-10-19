@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import html
 import json
+import copy
+import re
 from typing import Any
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qs, quote, unquote, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, Comment, Tag
 from markdownify import MarkdownConverter
+
+from tables import table_markdown
 
 
 _ASSET_EXTENSIONS = frozenset(
@@ -267,46 +271,191 @@ class _MirrorMarkdownConverter(MarkdownConverter):
         return html.escape(super().escape(text, parent_tags), quote=False)
 
     def convert_table(self, el: Tag, text: str, parent_tags: set[str]) -> str:
-        if el.find("table") or el.find(attrs={"rowspan": True}) or el.find(attrs={"colspan": True}):
+        converted = table_markdown(el, lambda cell: self.convert_soup(
+            BeautifulSoup(cell.decode_contents(), "html.parser")).strip())
+        if converted is not None:
+            return f"\n\n{converted}\n\n"
+        if (el.find("table") or el.find(attrs={"rowspan": True}) or
+                el.find(attrs={"colspan": True}) or el.find(attrs={"bgcolor": True}) or
+                el.find(["pre", "ul", "ol"]) or el.find("a", id=True) or
+                any(not cell.get_text(strip=True) and re.search(
+                    r"(?:^|;)\s*background(?:-color)?\s*:", str(cell.get("style", "")), re.I)
+                    for cell in el.find_all(["td", "th"]))):
             return f"\n\n{str(el)}\n\n"
         return super().convert_table(el, text, parent_tags)
 
     def convert_iframe(self, el: Tag, text: str, parent_tags: set[str]) -> str:
-        return f"\n\n{str(el)}\n\n"
+        src = str(el.get("src", ""))
+        title = str(el.get("title", "")).strip()
+        try:
+            parts = urlsplit(src)
+            host = parts.hostname or ""
+        except ValueError:
+            return self._media_links(el, text, [src], title or "Beágyazott tartalom")
+        label = "Beágyazott tartalom"
+        if host in {"youtube.com", "www.youtube.com", "www.youtube-nocookie.com", "youtu.be"}:
+            label = "YouTube-videó"
+        elif host in {"vimeo.com", "player.vimeo.com"}:
+            label = "Vimeo-videó"
+        elif host in {"facebook.com", "www.facebook.com"}:
+            label = "Facebook-videó"
+            target = parse_qs(parts.query).get("href", [""])[0]
+            if (_absolute_http_reference(target, src) and
+                    urlsplit(target).hostname in {"facebook.com", "www.facebook.com", "fb.watch"}):
+                src = target
+        elif parts.path.lower().endswith(tuple(_ASSET_EXTENSIONS)):
+            label = "Beágyazott fájl"
+        if title and title.lower() not in {"youtube video player", "video player"}:
+            label = title
+        return self._media_links(el, text, [src], label)
 
     def convert_video(self, el: Tag, text: str, parent_tags: set[str]) -> str:
-        return f"\n\n{str(el)}\n\n"
+        urls = [el.get("src", "")] + [source.get("src", "") for source in el.find_all("source")]
+        result = self._media_links(el, text, urls, "Videó")
+        if el.get("poster"):
+            poster = _markdown_destination(str(el["poster"]))
+            result += f"\n\n![Videó előnézeti képe]({poster})\n\n"
+        return result
 
     def convert_audio(self, el: Tag, text: str, parent_tags: set[str]) -> str:
-        return f"\n\n{str(el)}\n\n"
+        urls = [el.get("src", "")] + [source.get("src", "") for source in el.find_all("source")]
+        return self._media_links(el, text, urls, "Hangfelvétel")
 
     def convert_object(self, el: Tag, text: str, parent_tags: set[str]) -> str:
-        return f"\n\n{str(el)}\n\n"
+        return self._media_links(el, text, [el.get("data", "")], "Beágyazott fájl")
 
     def convert_embed(self, el: Tag, text: str, parent_tags: set[str]) -> str:
-        return f"\n\n{str(el)}\n\n"
+        return self._media_links(el, text, [el.get("src", "")], "Beágyazott fájl")
 
     def convert_picture(self, el: Tag, text: str, parent_tags: set[str]) -> str:
-        return f"\n\n{str(el)}\n\n"
+        return f"\n\n{text.strip()}\n\n" if el.find("img") else f"\n\n{str(el)}\n\n"
+
+    def _media_links(self, el: Tag, text: str, urls: list[str], label: str) -> str:
+        links = [f"[{_markdown_label(label)}]({_markdown_destination(str(url))})"
+                 for url in dict.fromkeys(urls) if url]
+        fallback = text.strip()
+        if el.name == "iframe":
+            fallback = el.get_text()
+            for _ in range(5):
+                decoded = html.unescape(fallback)
+                if decoded == fallback:
+                    break
+                fallback = decoded
+            cleaned = re.sub(
+                r'<span\b(?=[^>]*(?:data-mce-type=["\']bookmark["\']|mce_SELRES))[^>]*>'
+                r'[\s\ufeff]*</span>', "", fallback, flags=re.I)
+            if cleaned != fallback or re.search(r'</?p\b|<br\b', cleaned, re.I):
+                fragment = BeautifulSoup(cleaned, "html.parser")
+                for tag in fragment.find_all(["script", "style"]):
+                    tag.decompose()
+                for comment in fragment.find_all(string=lambda node: isinstance(node, Comment)):
+                    comment.extract()
+                fallback = self.convert_soup(fragment).strip()
+            else:
+                fallback = text.strip()
+        if fallback:
+            links.append(fallback)
+        return "\n\n" + "\n\n".join(links) + "\n\n"
+
+    def convert_sup(self, el: Tag, text: str, parent_tags: set[str]) -> str:
+        if ("_noformat" in parent_tags or
+                re.fullmatch(r"(?:\*+|\[\d+\]|st|nd|rd|th)", el.get_text().strip())):
+            return text
+        return _positioned_text(text, "^")
+
+    def convert_sub(self, el: Tag, text: str, parent_tags: set[str]) -> str:
+        return text if "_noformat" in parent_tags else _positioned_text(text, r"\_")
+
+    def convert_dt(self, el: Tag, text: str, parent_tags: set[str]) -> str:
+        return f"\n\n{text.strip()}\n\n" if el.find("table") else super().convert_dt(el, text, parent_tags)
+
+    def convert_dd(self, el: Tag, text: str, parent_tags: set[str]) -> str:
+        return f"\n\n{text.strip()}\n\n"
+
+    def convert_img(self, el: Tag, text: str, parent_tags: set[str]) -> str:
+        image = copy.copy(el)
+        image.parent = el.parent
+        if image.has_attr("src"):
+            image["src"] = _markdown_destination(str(image["src"]))
+        return super().convert_img(image, text, parent_tags)
 
     def convert_a(self, el: Tag, text: str, parent_tags: set[str]) -> str:
         if el.has_attr("id") and not text.strip() and not el.has_attr("href"):
             return str(el)
-        return super().convert_a(el, text, parent_tags)
+        link = copy.copy(el)
+        if link.has_attr("href"):
+            link["href"] = _markdown_destination(str(link["href"]))
+        return super().convert_a(link, text, parent_tags)
 
 
-def _markdown_body(content_html: str) -> str:
+def _markdown_destination(value: str) -> str:
+    """Encode Markdown delimiters without decoding existing URL escapes."""
+    safe = ":/?#[]@!$&'*+,;=%"
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return quote(value, safe=safe)
+    if parts.netloc:
+        # Keep international hostnames for the Markdown reader's IDNA handling.
+        start = value.find("//") + 2
+        end = start + len(parts.netloc)
+        if value[start:end] == parts.netloc:
+            return quote(value[:start], safe=safe) + parts.netloc + quote(value[end:], safe=safe)
+    return quote(value, safe=safe)
+
+
+def _markdown_label(value: str) -> str:
+    value = html.escape(value, quote=False).replace("\\", "\\\\")
+    return re.sub(r"([\[\]*_`])", r"\\\1", value)
+
+
+def _positioned_text(text: str, marker: str) -> str:
+    content = text.strip()
+    return text.replace(content, f"{marker}({content})", 1) if content else text
+
+
+_TECHNICAL_ANCHOR = re.compile(
+    r"(?:(?:section|new_columns|inner_content|div_block|headline|text_block|_posts_grid|"
+    r"link_text|link|image|span|code_block|video)-\d+-\d+|more-\d+|zone\d+|bubble-\d+|"
+    r"attachment_\d+|caption-attachment-\d+|gtx-host|wrfi|pr\d+id)\Z")
+
+
+def referenced_anchors(content_html: str) -> set[str]:
+    """Conservatively retain fragment targets, including cross-article links."""
+    result = set()
+    for tag in BeautifulSoup(content_html or "", "html.parser").find_all("a", href=True):
+        try:
+            fragment = urlsplit(str(tag["href"])).fragment
+        except ValueError:
+            continue
+        if fragment:
+            result.add(unquote(fragment))
+    return result
+
+
+def _markdown_body(content_html: str, retained_anchors: set[str] | None = None) -> str:
     soup = BeautifulSoup(content_html or "", "html.parser")
     for comment in soup.find_all(string=lambda node: isinstance(node, Comment)):
         comment.extract()
     for tag in soup.find_all(["script", "style"]):
         tag.decompose()
+    for tag in soup.select('span[data-mce-type="bookmark"], span.mce_SELRES_start, span.mce_SELRES_end'):
+        if not tag.get_text().strip(" \t\r\n\ufeff"):
+            tag.decompose()
+    keep = referenced_anchors(content_html) | (retained_anchors or set())
     for tag in list(soup.find_all(True)):
+        if tag.has_attr("id") and _TECHNICAL_ANCHOR.fullmatch(str(tag["id"])) and tag["id"] not in keep:
+            del tag["id"]
+            if (tag.name == "a" and not tag.has_attr("href") and
+                    not tag.get_text(strip=True) and not tag.find(True)):
+                tag.decompose()
+                continue
         if tag.has_attr("id") and not (
             tag.name == "a" and not tag.has_attr("href") and not tag.get_text(strip=True)
         ):
             anchor = soup.new_tag("a", id=tag["id"])
             tag.insert_before(anchor)
+            del tag["id"]
     converter = _MirrorMarkdownConverter(
         heading_style="ATX",
         bullets="-",
@@ -315,7 +464,7 @@ def _markdown_body(content_html: str) -> str:
     return converter.convert_soup(soup).strip()
 
 
-def make_markdown(record: dict[str, Any], content_html: str) -> str:
+def make_markdown(record: dict[str, Any], content_html: str, *, retained_anchors: set[str] | None = None) -> str:
     """Create an AI-readable Markdown derivative with machine-readable metadata."""
     title = plain_title(record.get("title", ""))
     metadata = {
@@ -331,18 +480,27 @@ def make_markdown(record: dict[str, Any], content_html: str) -> str:
     }
     metadata = {key: value for key, value in metadata.items() if value is not None}
     front_matter = "\n".join(f"{key}: {json.dumps(value, ensure_ascii=False)}" for key, value in metadata.items())
-    body = _markdown_body(content_html)
+    body = _markdown_body(content_html, retained_anchors)
     return f"---\n{front_matter}\n---\n\n# {title}\n\n{body}\n"
 
 
-def conversion_warnings(content_html: str) -> list[str]:
+_CONVERSION_NOTES = {
+    "Complex tables are retained as HTML in Markdown.",
+    "Embedded media is retained as HTML in Markdown.",
+    "Merged table cells are repeated in Markdown; unsupported tables remain HTML.",
+    "Embedded media is represented by links or images in Markdown.",
+    "Script or style content is omitted from the Markdown derivative.",
+}
+
+
+def conversion_warnings(content_html: str, *, previous: list[str] | tuple[str, ...] = ()) -> list[str]:
     """Return deterministic notes for structures retained as HTML or omitted."""
     soup = BeautifulSoup(content_html or "", "html.parser")
-    warnings: list[str] = []
+    warnings = [note for note in previous if note not in _CONVERSION_NOTES]
     if soup.find("table") and any(table.find("table") or table.find(attrs={"rowspan": True}) or table.find(attrs={"colspan": True}) for table in soup.find_all("table")):
-        warnings.append("Complex tables are retained as HTML in Markdown.")
+        warnings.append("Merged table cells are repeated in Markdown; unsupported tables remain HTML.")
     if soup.find(["iframe", "video", "audio", "object", "embed", "picture"]):
-        warnings.append("Embedded media is retained as HTML in Markdown.")
+        warnings.append("Embedded media is represented by links or images in Markdown.")
     if soup.find(["script", "style"]):
         warnings.append("Script or style content is omitted from the Markdown derivative.")
     return warnings

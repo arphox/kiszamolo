@@ -227,11 +227,11 @@ class RenderTests(unittest.TestCase):
         self.assertRegex(markdown, r"4\. négy\s+5\. öt")
         self.assertIn("| Név | Érték |", markdown)
         self.assertIn("| Alma | 42 |", markdown)
-        self.assertIn('<th colspan="2">Összevont</th>', markdown)
+        self.assertIn("| Összevont | Összevont |", markdown)
         self.assertIn("&lt;p&gt;szó szerinti jelölés&lt;/p&gt;", markdown)
         self.assertNotIn("alert(", markdown)
         warnings = conversion_warnings(body)
-        self.assertTrue(any("Complex tables" in warning for warning in warnings))
+        self.assertTrue(any("Merged table cells" in warning for warning in warnings))
         self.assertTrue(any("omitted" in warning for warning in warnings))
 
     def test_plain_title_strips_markup_and_decodes_entities(self):
@@ -251,10 +251,7 @@ class RenderTests(unittest.TestCase):
     def test_markdown_preserves_text_and_attributes_in_retained_html(self):
         content = "a_b * c &lt;b&gt; &amp;copy;"
         cases = (
-            ("table", f'<table><tr><td colspan="2">{content}</td></tr></table>'),
             ("table", f"<table><tr><td><table><tr><td>{content}</td></tr></table></td></tr></table>"),
-            ("picture", f'<picture><img src="a_b.png" alt="a_b * c">{content}</picture>'),
-            ("video", f'<video src="a_b.mp4">{content}</video>'),
         )
         for tag, source in cases:
             with self.subTest(source=source):
@@ -262,6 +259,148 @@ class RenderTests(unittest.TestCase):
                 retained = BeautifulSoup(markdown, "html.parser").find(tag)
                 self.assertIsNotNone(retained)
                 self.assertEqual(str(retained), str(BeautifulSoup(source, "html.parser").find(tag)))
+
+    def test_simplified_tables_and_media_preserve_literal_text(self):
+        content = "a_b * c &lt;b&gt; &amp;copy;"
+        expected = r"a\_b \* c &lt;b&gt; &amp;copy;"
+        for source in (
+            f'<table><tr><td colspan="2">{content}</td></tr></table>',
+            f'<picture><img src="a_b.png" alt="Ábra">{content}</picture>',
+            f'<video src="a_b.mp4">{content}</video>',
+        ):
+            with self.subTest(source=source):
+                markdown = make_markdown({"title": "Test"}, source)
+                self.assertIn(expected, markdown)
+        self.assertIn("![Ábra](a_b.png)", make_markdown({"title": "Test"},
+            '<picture><source srcset="a-large.png 2x"><img src="a_b.png" alt="Ábra"></picture>'))
+
+    def test_superscripts_preserve_formulas_without_rewriting_footnotes(self):
+        source = ('<p>(1,06<sup>4</sup>), (1+g)<sup>n</sup>, m<sup>2</sup>, '
+                  'szöveg<sup>*</sup>, <a href="#note"><sup>[1]</sup></a>, '
+                  '3<sup>rd </sup>party</p><pre>a<sup>2</sup></pre>')
+        markdown = make_markdown({"title": "Test"}, source)
+        for expected in ("(1,06^(4))", "(1+g)^(n)", "m^(2)", r"szöveg\*", "[[1]](#note)",
+                         "3rd party", "```\na2\n```"):
+            self.assertIn(expected, markdown)
+
+    def test_subscripts_remain_distinct_from_baseline_text(self):
+        markdown = make_markdown({"title": "Test"}, '<p>CO<sub>2</sub> és x<sub>n+1</sub></p>')
+        self.assertIn(r"CO\_(2) és x\_(n+1)", markdown)
+
+    def test_markdown_encodes_destinations_without_double_encoding(self):
+        source = ('<a href="mailto:person@example.test?subject=Jelentkezés tanácsadásra">Levél</a>'
+                  '<a href="../../C%C3%ADm%20%28friss%29.md#resz">Helyi</a>'
+                  '<a href="https://example.test/a)b?value=%2F">Külső</a>'
+                  '<a href="https://münich.example/út (1)">Nemzetközi</a>'
+                  '<a href="https://[broken/path">Hibás</a>'
+                  '<a href="HTTPS://example.test/path?#">Üres URL-részek</a>'
+                  '<img src="képek/ábra (1).png" alt="Ábra">')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn('[Levél](mailto:person@example.test?subject=Jelentkez%C3%A9s%20tan%C3%A1csad%C3%A1sra)', markdown)
+        self.assertIn('[Helyi](../../C%C3%ADm%20%28friss%29.md#resz)', markdown)
+        self.assertIn('[Külső](https://example.test/a%29b?value=%2F)', markdown)
+        self.assertIn('[Nemzetközi](https://münich.example/%C3%BAt%20%281%29)', markdown)
+        self.assertIn('[Hibás](https://[broken/path)', markdown)
+        self.assertIn('[Üres URL-részek](HTTPS://example.test/path?#)', markdown)
+        self.assertIn('![Ábra](k%C3%A9pek/%C3%A1bra%20%281%29.png)', markdown)
+
+    def test_video_embeds_become_links_without_editor_bookmarks(self):
+        source = ('<iframe src="https://www.youtube.com/embed/abc?start=30" title="YouTube video player">'
+                  '&amp;lt;span data-mce-type="bookmark" class="mce_SELRES_start"&amp;gt;'
+                  '\ufeff&amp;lt;/span&amp;gt;</iframe><p>A szerző képaláírása.</p>'
+                  '<span data-mce-type="bookmark">\ufeff</span>'
+                  '<span data-mce-type="bookmark">Megőrzendő szöveg.</span>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn('[YouTube-videó](https://www.youtube.com/embed/abc?start=30)', markdown)
+        self.assertIn('A szerző képaláírása.', markdown)
+        self.assertIn('Megőrzendő szöveg.', markdown)
+        self.assertNotIn('\ufeff', markdown)
+        for noise in ('<iframe', 'mce_SELRES', 'bookmark', 'width='):
+            self.assertNotIn(noise, markdown)
+
+    def test_iframe_preserves_title_fallback_and_facebook_destination(self):
+        source = ('<iframe src="https://example.test/calculator" title="Hitel [2024]">'
+                  'Ha nem látszik, keresd fel az oldalt.</iframe>'
+                  '<iframe src="https://[broken/path">Hibás beágyazás.</iframe>'
+                  '<iframe src="https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Fpage%2Fvideos%2F123%2F&amp;width=560"></iframe>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn(r'[Hitel \[2024\]](https://example.test/calculator)', markdown)
+        self.assertIn('Ha nem látszik, keresd fel az oldalt.', markdown)
+        self.assertIn('[Beágyazott tartalom](https://[broken/path)', markdown)
+        self.assertIn('Hibás beágyazás.', markdown)
+        self.assertIn('[Facebook-videó](https://www.facebook.com/page/videos/123/)', markdown)
+
+    def test_iframe_fallback_removes_encoded_editor_paragraph_debris(self):
+        source = ('<iframe src="https://example.test/calculator">'
+                  'Nem sikerült megjeleníteni.&amp;amp;nbsp;&amp;lt;/p&amp;gt;'
+                  '\n&amp;lt;p&amp;gt;&amp;amp;nbsp;&amp;lt;/p&amp;gt;'
+                  '\n&amp;lt;p&amp;gt;</iframe>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn('Nem sikerült megjeleníteni.', markdown)
+        self.assertIn('[Beágyazott tartalom](https://example.test/calculator)', markdown)
+        for noise in ('nbsp;', '&amp;', '&lt;', '<p>'):
+            self.assertNotIn(noise, markdown)
+
+    def test_media_links_keep_all_sources_poster_and_fallback(self):
+        source = ('<video poster="poster.png"><source src="clip.mp4"><source src="clip.webm">'
+                  'Videó leírása.</video><audio src="sound.mp3">Hang leírása.</audio>'
+                  '<object data="report.pdf">Dokumentum leírása.</object>')
+        markdown = make_markdown({"title": "Test"}, source)
+        for expected in ('[Videó](clip.mp4)', '[Videó](clip.webm)', '![Videó előnézeti képe](poster.png)',
+                         '[Hangfelvétel](sound.mp3)', '[Beágyazott fájl](report.pdf)',
+                         'Videó leírása.', 'Hang leírása.', 'Dokumentum leírása.'):
+            self.assertIn(expected, markdown)
+
+    def test_technical_anchors_are_removed_unless_referenced(self):
+        source = ('<h2 id="headline-38-120338">Cím</h2><span id="span-39-120338">Szöveg</span>'
+                  '<a id="more-12"></a><a id="image-2-3"><img src="a.png"></a>'
+                  '<a id="custom-section"></a><h2 id="headline-40-120338">Másik cím</h2>'
+                  '<a href="#headline-40-120338">Ugrás</a>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertNotIn('headline-38-120338', markdown)
+        self.assertNotIn('span-39-120338', markdown)
+        self.assertNotIn('more-12', markdown)
+        self.assertIn('![](a.png)', markdown)
+        self.assertIn('<a id="custom-section"></a>', markdown)
+        self.assertEqual(markdown.count('<a id="headline-40-120338"></a>'), 1)
+        self.assertIn('[Ugrás](#headline-40-120338)', markdown)
+        referenced = make_markdown({"title": "Test"}, source, retained_anchors={'headline-38-120338'})
+        self.assertIn('<a id="headline-38-120338"></a>', referenced)
+
+    def test_complex_table_and_color_legend_keep_values_and_meaning(self):
+        source = ('<table><tr><th rowspan="2">Gyermek</th><th colspan="2">Támogatás</th></tr>'
+                  '<tr><th>Vásárlás</th><th>Bővítés</th></tr><tr><td>1</td><td>500.000 Ft</td>'
+                  '<td>500.000 Ft</td></tr></table><dl><dt><table><tr>'
+                  '<td bgcolor="#c45911"></td></tr></table></dt><dd>Kedvezőbb árazás</dd></dl>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertNotIn('<table', markdown)
+        self.assertIn('| Gyermek | Támogatás | Támogatás |', markdown)
+        self.assertIn('| Gyermek | Vásárlás | Bővítés |', markdown)
+        self.assertIn('| 1 | 500.000 Ft | 500.000 Ft |', markdown)
+        self.assertIn('[szín: #c45911]', markdown)
+        self.assertIn('Kedvezőbb árazás', markdown)
+
+    def test_unsupported_tables_preserve_referenced_anchors_and_code(self):
+        source = ('<table><tr><td colspan="2"><a href="#cell">Ugrás</a></td></tr>'
+                  '<tr><td id="cell">Célpont</td><td>X</td></tr></table>'
+                  '<table><tr><td colspan="2"><pre>foo\nbar</pre></td></tr></table>'
+                  '<table><tr><td style="background: rgb(255, 0, 0)"></td></tr></table>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn('<a id="cell"></a>', markdown)
+        self.assertIn('href="#cell"', markdown)
+        self.assertIn('<pre>foo\nbar</pre>', markdown)
+        self.assertIn('background: rgb(255, 0, 0)', markdown)
+
+    def test_rebuild_refreshes_conversion_notes_and_preserves_acquisition_notes(self):
+        notes = conversion_warnings('<iframe src="video"></iframe>', previous=[
+            'Embedded media is retained as HTML in Markdown.',
+            'Complex tables are retained as HTML in Markdown.',
+            'Protected content is not available through the public API.',
+        ])
+        self.assertEqual(notes, [
+            'Protected content is not available through the public API.',
+            'Embedded media is represented by links or images in Markdown.',
+        ])
 
     def test_markdown_escapes_literal_markup_and_entities_in_normal_text(self):
         content = "&lt;b&gt;literal&lt;/b&gt; *star* _underscore_ &amp;copy; &amp;lt; &amp;#60;"

@@ -90,6 +90,17 @@ class SyncTests(unittest.TestCase):
         self.assertIn("https://other.test/b.png", text)
         self.assertIn("other.test", report["media_hosts"])
 
+    def test_cross_article_links_preserve_referenced_technical_anchors(self):
+        self.records[0] = post(body='<a href="/p2/#headline-38-120338">Másik cikk</a>')
+        self.records[1] = post(2, body='<h2 id="headline-38-120338">Célpont</h2>')
+        self.run_sync()
+        self.assertIn('#headline-38-120338)', self.article_file(1).read_text(encoding="utf-8"))
+        self.assertIn('<a id="headline-38-120338"></a>',
+                      self.article_file(2).read_text(encoding="utf-8"))
+        self.records[0] = post(modified="2026-10-19T00:00:00", body='<p>Nincs hivatkozás.</p>')
+        self.run_sync()
+        self.assertNotIn('headline-38-120338', self.article_file(2).read_text(encoding="utf-8"))
+
     def test_unchanged_timestamp_reuses_cache_and_full_detects_content_change(self):
         self.run_sync()
         self.client.calls.clear()
