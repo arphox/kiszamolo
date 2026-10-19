@@ -338,67 +338,6 @@ def _validate_record(record, kind, previous_id):
     return item_id
 
 
-def fetch_inventory(client: HttpClient, kind: str, *, api_base=API_BASE,
-                    page_size=PAGE_SIZE, progress=lambda message: None) -> Inventory:
-    """Fetch and validate all published posts or pages, retaining raw API objects."""
-    if kind not in {"posts", "pages"}:
-        raise ValueError("kind must be 'posts' or 'pages'")
-    if page_size < 1:
-        raise ValueError("page_size must be positive")
-    endpoint = api_base.rstrip("/") + "/" + kind
-    _validate_url(endpoint)
-    records, responses = [], []
-    expected_total = expected_pages = None
-    previous_id = 0
-    page = 1
-    while True:
-        query = urlencode({"status": "publish", "per_page": page_size,
-                           "page": page, "orderby": "id", "order": "asc"})
-        url = f"{endpoint}?{query}"
-        response = client.request_bytes(url, max_bytes=DEFAULT_MAX_BYTES)
-        if response.status != 200:
-            raise ValueError(f"Unexpected HTTP {response.status} while fetching {kind}")
-        total = _response_header(response, "X-WP-Total")
-        total_pages = _response_header(response, "X-WP-TotalPages")
-        if total_pages != math.ceil(total / page_size):
-            raise ValueError("Invalid WordPress pagination headers")
-        if expected_total is None:
-            expected_total, expected_pages = total, total_pages
-        elif (total, total_pages) != (expected_total, expected_pages):
-            raise ValueError("WordPress count changed during pagination")
-        try:
-            batch = json.loads(response.body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise ValueError(f"Invalid JSON in WordPress {kind} inventory") from error
-        expected_length = min(page_size, max(0, total - (page - 1) * page_size))
-        if not isinstance(batch, list) or len(batch) != expected_length:
-            raise ValueError(f"Incomplete WordPress {kind} page {page}")
-        for record in batch:
-            previous_id = _validate_record(record, kind, previous_id)
-            records.append(record)
-        responses.append((url, response))
-        progress(f"{kind}: page {page}/{max(1, total_pages)}, {len(records)}/{total}")
-        if page >= total_pages:
-            break
-        page += 1
-
-    # A small second request catches inventory changes during this non-atomic read.
-    probe_query = urlencode({"status": "publish", "per_page": 1, "page": 1,
-                             "orderby": "id", "order": "asc"})
-    probe_url = f"{endpoint}?{probe_query}"
-    probe = client.request_bytes(probe_url, max_bytes=DEFAULT_MAX_BYTES)
-    if probe.status != 200:
-        raise ValueError(f"Unexpected HTTP {probe.status} while rechecking {kind} count")
-    final_total = _response_header(probe, "X-WP-Total")
-    final_pages = _response_header(probe, "X-WP-TotalPages")
-    if final_total != expected_total or final_pages != final_total:
-        raise ValueError("WordPress count changed before inventory completion")
-    if len(records) != expected_total:
-        raise ValueError(f"Incomplete WordPress {kind} inventory")
-    responses.append((probe_url, probe))
-    return Inventory(records, responses)
-
-
 _WP_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\Z")
 
 

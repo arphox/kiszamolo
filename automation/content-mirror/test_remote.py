@@ -10,7 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlsplit
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from remote import (HttpClient, MissingMediaError, Response, fetch_census, fetch_inventory,
+from remote import (HttpClient, MissingMediaError, Response, fetch_census,
                     fetch_metadata, fetch_records)
 
 
@@ -80,7 +80,7 @@ class RemoteTests(unittest.TestCase):
         self.assertEqual(client.calls[1]["_fields"], ["id,type,status,modified,modified_gmt,date_gmt"])
         self.assertEqual(client.calls[2]["_fields"], ["id"])
 
-    def test_census_rejects_bad_modified_timestamps_and_count_races(self):
+    def test_census_rejects_bad_timestamps_duplicate_ids_and_count_races(self):
         valid = {"id": 1, "type": "page", "status": "publish", "modified": "2025-01-01T00:00:00",
                  "modified_gmt": "2025-01-01T00:00:00", "date_gmt": None}
 
@@ -102,6 +102,10 @@ class RemoteTests(unittest.TestCase):
         malformed_date = dict(valid, date_gmt="")
         with self.assertRaisesRegex(ValueError, "date_gmt timestamp"):
             fetch_census(Client([([malformed_date], 1, 1)]), "pages",
+                         api_base="https://example.test/wp-json/wp/v2")
+
+        with self.assertRaisesRegex(ValueError, "duplicate or not in ascending order"):
+            fetch_census(Client([([valid, valid], 2, 1)]), "pages",
                          api_base="https://example.test/wp-json/wp/v2")
 
         changed = Client([([valid], 1, 1), ([{"id": 1}], 2, 2)])
@@ -331,7 +335,7 @@ class RemoteTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b"old")
             self.assertEqual(list(Path(directory).glob(".*.tmp")), [])
 
-    def test_inventory_keeps_full_records_and_rejects_duplicate_ids(self):
+    def test_targeted_records_keep_full_records_and_reject_duplicate_ids(self):
         record = {
             "id": 2, "date": "2025-01-01T12:00:00", "link": "https://example.test/post/",
             "title": {"rendered": "Title"}, "status": "publish", "type": "post",
@@ -339,54 +343,24 @@ class RemoteTests(unittest.TestCase):
         }
 
         class Client:
-            def __init__(self, batches):
-                self.batches = iter(batches)
+            def __init__(self, batch):
+                self.batch = batch
 
             def request_bytes(self, url, max_bytes):
-                query = parse_qs(urlsplit(url).query)
-                batch, total = next(self.batches)
-                per_page = int(query["per_page"][0])
-                pages = (total + per_page - 1) // per_page
-                return Response(json.dumps(batch).encode(), 200, {
-                    "X-WP-Total": str(total), "X-WP-TotalPages": str(pages),
-                }, url)
+                return Response(json.dumps(self.batch).encode(), 200, {}, url)
 
-        inventory = fetch_inventory(Client([([record], 1), ([record], 1)]), "posts",
-                                    api_base="https://example.test/wp-json/wp/v2", page_size=10)
+        inventory = fetch_records(Client([record]), "posts", [2],
+                                  api_base="https://example.test/wp-json/wp/v2")
         self.assertEqual(inventory.records, [record])
         self.assertEqual(inventory.records[0]["custom"], {"x": 1})
-        self.assertEqual(len(inventory.responses), 2)
+        self.assertEqual(len(inventory.responses), 1)
 
         duplicate = dict(record, id=2)
-        with self.assertRaises(ValueError):
-            fetch_inventory(Client([([record, duplicate], 2), ([record], 1)]), "posts",
-                            api_base="https://example.test/wp-json/wp/v2", page_size=10)
+        with self.assertRaisesRegex(ValueError, "duplicate record IDs"):
+            fetch_records(Client([record, duplicate]), "posts", [2],
+                          api_base="https://example.test/wp-json/wp/v2")
 
-    def test_inventory_rejects_count_change(self):
-        record = {
-            "id": 1, "date": "2025-01-01T12:00:00", "link": "https://example.test/page/",
-            "title": {"rendered": "Title"}, "status": "publish", "type": "page",
-            "content": {"rendered": "Body", "protected": False},
-        }
-
-        class Client:
-            def __init__(self):
-                self.calls = 0
-
-            def request_bytes(self, url, max_bytes):
-                self.calls += 1
-                total = 1 if self.calls == 1 else 2
-                query = parse_qs(urlsplit(url).query)
-                pages = total if query["per_page"][0] == "1" else 1
-                batch = [record] if self.calls == 1 else [record]
-                return Response(json.dumps(batch).encode(), 200, {
-                    "X-WP-Total": str(total), "X-WP-TotalPages": str(pages),
-                }, url)
-
-        with self.assertRaisesRegex(ValueError, "count changed"):
-            fetch_inventory(Client(), "pages", api_base="https://example.test/wp-json/wp/v2")
-
-    def test_successful_pages_inventory_uses_singular_api_type(self):
+    def test_targeted_pages_use_singular_api_type(self):
         record = {
             "id": 7, "date": "2025-01-01T12:00:00", "link": "https://example.test/about/",
             "title": {"rendered": "About"}, "status": "publish", "type": "page",
@@ -394,16 +368,10 @@ class RemoteTests(unittest.TestCase):
         }
 
         class Client:
-            def __init__(self):
-                self.calls = 0
-
             def request_bytes(self, url, max_bytes):
-                self.calls += 1
-                return Response(json.dumps([record]).encode(), 200, {
-                    "X-WP-Total": "1", "X-WP-TotalPages": "1",
-                }, url)
+                return Response(json.dumps([record]).encode(), 200, {}, url)
 
-        inventory = fetch_inventory(Client(), "pages", api_base="https://example.test/wp-json/wp/v2")
+        inventory = fetch_records(Client(), "pages", [7], api_base="https://example.test/wp-json/wp/v2")
         self.assertEqual(inventory.records, [record])
 
     def test_metadata_fetches_all_taxonomy_pages_and_rechecks_count(self):
