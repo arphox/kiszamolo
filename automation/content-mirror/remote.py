@@ -121,6 +121,9 @@ def _check_content_length(headers: dict[str, str], actual: int) -> None:
         expected = int(value)
     except ValueError as error:
         raise ValueError(f"Invalid Content-Length header: {value!r}") from error
+    if actual < expected:
+        # Sized urllib reads can return EOF without raising IncompleteRead.
+        raise _NetworkError(ValueError(f"Content-Length mismatch: expected {expected}, received {actual}"))
     if expected < 0 or expected != actual:
         raise ValueError(f"Content-Length mismatch: expected {expected}, received {actual}")
 

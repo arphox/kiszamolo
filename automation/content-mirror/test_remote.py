@@ -306,6 +306,89 @@ class RemoteTests(unittest.TestCase):
                 too_large.download("https://example.test/file", target, max_bytes=3)
             self.assertEqual(target.read_bytes(), body)
 
+    def test_truncated_http_response_retries(self):
+        for streaming in (False, True):
+            with self.subTest(streaming=streaming), tempfile.TemporaryDirectory() as directory:
+                target = Path(directory) / "file.bin"
+                target.write_bytes(b"old")
+                requests = []
+                existing_copies = []
+
+                class Handler(BaseHTTPRequestHandler):
+                    def do_GET(self):
+                        requests.append(self.path)
+                        existing_copies.append(target.read_bytes())
+                        self.send_response(200)
+                        self.send_header("Content-Length", "8")
+                        self.end_headers()
+                        self.wfile.write(b"short" if len(requests) == 1 else b"complete")
+
+                    def log_message(self, *_):
+                        pass
+
+                with HTTPServer(("127.0.0.1", 0), Handler) as server:
+                    worker = threading.Thread(target=server.serve_forever, daemon=True)
+                    worker.start()
+                    try:
+                        client = HttpClient(retries=3, retry_delay=0)
+                        url = f"http://127.0.0.1:{server.server_port}/file"
+                        if streaming:
+                            result = client.download(url, target)
+                            self.assertEqual(result.size, 8)
+                            self.assertEqual(target.read_bytes(), b"complete")
+                        else:
+                            self.assertEqual(client.request_bytes(url).body, b"complete")
+                    finally:
+                        server.shutdown()
+                        worker.join(timeout=2)
+                self.assertEqual(requests, ["/file", "/file"])
+                self.assertEqual(existing_copies, [b"old", b"old"])
+                self.assertEqual(list(Path(directory).glob(".*.tmp")), [])
+
+    def test_short_body_retry_exhaustion_preserves_existing_file(self):
+        for streaming in (False, True):
+            with self.subTest(streaming=streaming), tempfile.TemporaryDirectory() as directory:
+                calls = []
+
+                def opener(request, timeout):
+                    calls.append(request.full_url)
+                    return FakeResponse(b"short", headers={"Content-Length": "8"}, url=request.full_url)
+
+                client = HttpClient(opener=opener, retries=3, retry_delay=0)
+                target = Path(directory) / "file.bin"
+                target.write_bytes(b"old")
+                with self.assertRaisesRegex(ValueError, "Content-Length mismatch"):
+                    if streaming:
+                        client.download("https://example.test/file", target)
+                    else:
+                        client.request_bytes("https://example.test/file")
+                self.assertEqual(len(calls), 3)
+                self.assertEqual(target.read_bytes(), b"old")
+                self.assertEqual(list(Path(directory).glob(".*.tmp")), [])
+
+    def test_invalid_lengths_and_size_limits_are_not_retried(self):
+        for streaming in (False, True):
+            for length, max_bytes in (("invalid", 10), ("-1", 10), ("2", 10), ("3", 2)):
+                with self.subTest(streaming=streaming, length=length, max_bytes=max_bytes):
+                    calls = []
+
+                    def opener(request, timeout):
+                        calls.append(request.full_url)
+                        return FakeResponse(b"new", headers={"Content-Length": length}, url=request.full_url)
+
+                    client = HttpClient(opener=opener, retries=3, retry_delay=0)
+                    with tempfile.TemporaryDirectory() as directory:
+                        target = Path(directory) / "file.bin"
+                        target.write_bytes(b"old")
+                        with self.assertRaises(ValueError):
+                            if streaming:
+                                client.download("https://example.test/file", target, max_bytes=max_bytes)
+                            else:
+                                client.request_bytes("https://example.test/file", max_bytes=max_bytes)
+                        self.assertEqual(target.read_bytes(), b"old")
+                        self.assertEqual(list(Path(directory).glob(".*.tmp")), [])
+                    self.assertEqual(len(calls), 1)
+
     def test_length_mismatch_preserves_existing_file(self):
         client = HttpClient(opener=lambda request, timeout: FakeResponse(
             b"new", headers={"Content-Length": "4"}, url=request.full_url), retries=1)
