@@ -336,13 +336,14 @@ def recent_cutoff(state, started):
 
 
 def should_refresh(record, previous, cutoff, full=False):
+    """Refresh article sources independently of failed asset downloads."""
     if full or not previous or previous.get("status") != "active":
         return True
     if previous.get("source_sha256") != digest(json_bytes(record)):
         return True
     if previous.get("page", {}).get("status") != "downloaded":
         return True
-    if previous.get("acquisition_status") == "incomplete":
+    if previous.get("featured_media_error") or previous.get("derived_view_available") is False:
         return True
     if record.get("content", {}).get("protected"):
         return True

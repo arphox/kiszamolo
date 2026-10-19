@@ -113,15 +113,26 @@ class SyncTests(unittest.TestCase):
         self.assertTrue(sync.should_refresh(p, previous, cutoff))
 
     def test_failed_asset_is_explicit_and_retried(self):
+        self.records[0]["content"]["rendered"] += '<img src="/healthy.png">'
         self.client.fail.add("https://kiszamolo.hu/a.png")
         self.assertEqual(self.run_sync()["incomplete_records"], 2)
         self.assertEqual(self.state()["records"]["post:1"]["acquisition_status"], "incomplete")
-        self.client.fail.clear()
-        self.client.calls.clear()
-        self.assertEqual(self.run_sync()["incomplete_records"], 0)
-        self.assertIn("https://kiszamolo.hu/a.png", [u for u, _ in self.client.calls])
-        self.assertIn("https://kiszamolo.hu/p1/", [u for u, _ in self.client.calls])
-        self.assertIn("https://kiszamolo.hu/p2/", [u for u, _ in self.client.calls])
+        for failing in (True, False):
+            with self.subTest(failing=failing):
+                if not failing:
+                    self.client.fail.clear()
+                self.client.calls.clear()
+                self.detail_calls.clear()
+                report = self.run_sync()
+                self.assertEqual(report["incomplete_records"], 2 if failing else 0)
+                self.assertEqual(report["refreshed_pages"], 0)
+                self.assertEqual(report["refreshed_assets"], 1)
+                self.assertEqual(report["full_records_fetched"], 0)
+                self.assertEqual(report["cached_records_reused"], 2)
+                self.assertEqual(self.detail_calls, [])
+                self.assertEqual([u for u, _ in self.client.calls], ["https://kiszamolo.hu/a.png"])
+                self.assertEqual(self.state()["records"]["post:1"]["failed_assets"],
+                                 ["https://kiszamolo.hu/a.png"] if failing else [])
 
     def test_missing_remote_retained_and_reactivation(self):
         self.run_sync()
@@ -205,6 +216,11 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(self.article_file(1).read_bytes(), before)
         self.assertIn("https://kiszamolo.hu/hero.png", self.state()["records"]["post:1"]["asset_urls"])
         self.assertEqual(self.state()["records"]["post:1"]["acquisition_status"], "incomplete")
+        self.detail_calls.clear()
+        report = sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
+                               record_loader=self.details, metadata_loader=metadata, progress=lambda _: None)
+        self.assertEqual(self.detail_calls, [("posts", [1])])
+        self.assertEqual(report["incomplete_records"], 0)
 
     def test_featured_media_replacement_outage_allows_offline_rebuild_and_retry(self):
         self.records[0]["featured_media"] = 100
@@ -309,10 +325,16 @@ class SyncTests(unittest.TestCase):
         def inventory(client, kind, **kwargs):
             fields = ("id", "type", "status", "modified", "modified_gmt", "date_gmt")
             return Inventory([{k:page[k] for k in fields}] if kind == "pages" else [], [])
+        def run():
+            return sync.run_sync(self.root, client=self.client, inventory_loader=inventory,
+                                 record_loader=lambda *a, **k: Inventory([page], []),
+                                 metadata_loader=lambda *a, **k: Inventory([], []), progress=lambda _: None)
+        self.assertEqual(run()["incomplete_records"], 1)
+        self.assertFalse(self.state()["records"]["page:1"]["derived_view_available"])
         self.client.payloads[page["link"]] = b'<nav>Navigation</nav><div class="ct-inner-content"><h1>Title 1</h1><p>Actual page</p><img src="/builder.png"></div><footer>Footer</footer>'
-        report = sync.run_sync(self.root, client=self.client, inventory_loader=inventory,
-                              record_loader=lambda *a, **k: Inventory([page], []),
-                              metadata_loader=lambda *a, **k: Inventory([], []), progress=lambda _: None)
+        report = run()
+        self.assertEqual(report["refreshed_pages"], 1)
+        self.assertEqual(report["full_records_fetched"], 1)
         self.assertEqual(report["incomplete_records"], 0)
         text = self.article_file(1, "page").read_text(encoding="utf-8")
         self.assertIn("Actual page", text)
@@ -499,8 +521,8 @@ class SyncTests(unittest.TestCase):
         self.run_sync()
         self.assertEqual(self.detail_calls, [])
 
-    def test_incomplete_source_is_fetched_and_missing_details_abort(self):
-        self.client.fail.add("https://kiszamolo.hu/a.png")
+    def test_failed_page_refetches_source_and_missing_details_abort(self):
+        self.client.fail.update(record["link"] for record in self.records)
         self.run_sync()
         self.detail_calls.clear()
         self.run_sync()
