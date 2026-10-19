@@ -1,0 +1,10 @@
+# Downloaded sources and generated article archive.
+/articles/
+/raw_source/*
+!/raw_source/README.md
+
+# Python bytecode and local virtual environments.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
