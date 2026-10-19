@@ -1,3 +1,3 @@
-Read [README.md](README.md) before starting work.
-
-Keep the project simple.
+- Read [README.md](README.md) before starting work.
+- Keep the project simple.
+- Communicate with the user in simple, clear, everyday language.
