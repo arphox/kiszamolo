@@ -274,6 +274,29 @@ class _MirrorMarkdownConverter(MarkdownConverter):
         formats = {"b": "strong", "strong": "strong", "i": "em", "em": "em",
                    "s": "del", "del": "del"}
 
+        if "_noformat" not in (parent_tags or set()) and node.name in formats:
+            link = node
+            while isinstance(link, Tag) and link.name in formats:
+                children = [child for child in link.contents
+                            if isinstance(child, Tag) or str(child).strip()]
+                if len(children) != 1:
+                    break
+                link = children[0]
+            if isinstance(link, Tag) and link.name == "a" and link.has_attr("href"):
+                # ***[label](url)***suffix cannot close its emphasis after the
+                # punctuation of a link. [***label***](url)suffix can.
+                original = node
+                node = copy.deepcopy(node)
+                inner_link = node.find("a", href=True)
+                outer_link = copy.copy(inner_link)
+                outer_link.clear()
+                inner_link.unwrap()
+                outer_link.append(node)
+                node = outer_link
+                node.parent = original.parent
+                node.previous_sibling = original.previous_sibling
+                node.next_sibling = original.next_sibling
+
         def mergeable(tag, sibling):
             return (isinstance(tag, Tag) and tag.name in formats and
                     not tag.has_attr("id") and not tag.has_attr("name") and

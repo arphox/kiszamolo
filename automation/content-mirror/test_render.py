@@ -503,6 +503,51 @@ class RenderTests(unittest.TestCase):
         self.assertIn("4. *Ebben*\n5. **Második**", markdown)
         self.assertIn("\n   - *Belső*", markdown)
 
+    def test_link_only_emphasis_stays_inside_the_label_at_word_boundaries(self):
+        cases = (
+            ('<em><strong><a href="a">tanulmány</a></strong></em>ok', '[***tanulmány***](a)ok'),
+            ('elő<strong><em><a href="a">tag</a></em></strong>utó', 'elő[***tag***](a)utó'),
+            ('i<em><a href="a">tt</a></em>', 'i[*tt*](a)'),
+            ('<b><a href="a">kiemelt</a></b>en', '[**kiemelt**](a)en'),
+            ('<s><a href="a">törölt</a></s>szöveg', '[~~törölt~~](a)szöveg'),
+            ('<em> <b><a href="a">szó</a></b> </em>utó', ' [***szó***](a) utó'),
+            ('<em><a href="a">vegyes <strong>címke</strong></a></em>utó',
+             '[*vegyes **címke***](a)utó'),
+        )
+        for source, expected in cases:
+            with self.subTest(source=source):
+                markdown = make_markdown({"title": "Test"}, f'<p>X {source}.</p>')
+                self.assertIn(expected, markdown)
+
+    def test_link_only_emphasis_preserves_destinations_titles_and_list_context(self):
+        source = ('<ol start="4"><li>Első</li><li><em id="label"><b>'
+                  '<a href="képek/ábra (1).md#resz" title="Cím">Második</a>'
+                  '</b></em>szó</li></ol>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn('5. <a id="label"></a>[***Második***]('
+                      'k%C3%A9pek/%C3%A1bra%20%281%29.md#resz "Cím")szó', markdown)
+
+    def test_link_emphasis_does_not_capture_neighboring_unlinked_text(self):
+        source = ('<p><em>előtte <a href="a">link</a> utána</em>; '
+                  '<strong><a href="a">első</a> és <a href="b">második</a></strong></p>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn('*előtte [link](a) utána*', markdown)
+        self.assertIn('**[első](a) és [második](b)**', markdown)
+
+    def test_link_emphasis_normalization_keeps_code_and_retained_html(self):
+        source = ('<pre><em><b><a href="a">szó</a></b></em>utó</pre>'
+                  '<table><tr><td><table><tr><td><em><strong>'
+                  '<a href="a">szó</a></strong></em>utó'
+                  '</td></tr></table></td></tr></table>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn('```\nszóutó\n```', markdown)
+        retained = BeautifulSoup(markdown, "html.parser").find("table")
+        self.assertEqual(str(retained), str(BeautifulSoup(source, "html.parser").find("table")))
+        for span in ("", ' colspan="2"'):
+            table = make_markdown({"title": "Test"},
+                f'<table><tr><td{span}><em><a href="a">szó</a></em>utó</td></tr></table>')
+            self.assertIn('| [*szó*](a)utó |', table)
+
 
 if __name__ == "__main__":
     unittest.main()
