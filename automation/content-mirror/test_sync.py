@@ -206,6 +206,102 @@ class SyncTests(unittest.TestCase):
         self.assertIn("https://kiszamolo.hu/hero.png", self.state()["records"]["post:1"]["asset_urls"])
         self.assertEqual(self.state()["records"]["post:1"]["acquisition_status"], "incomplete")
 
+    def test_featured_media_replacement_outage_allows_offline_rebuild_and_retry(self):
+        self.records[0]["featured_media"] = 100
+        unavailable = False
+
+        def metadata(client, kind, **kwargs):
+            if kind == "media":
+                if unavailable:
+                    raise OSError("Temporary media API outage")
+                return Inventory([{"id": media_id, "media_type": "image",
+                                   "source_url": f"https://kiszamolo.hu/hero{media_id}.png",
+                                   "alt_text": f"Hero {media_id}"} for media_id in kwargs["ids"]], [])
+            return Inventory([], [])
+
+        def run():
+            return sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
+                                 record_loader=self.details, metadata_loader=metadata, progress=lambda _: None)
+
+        run()
+        cached_path = self.root / "records/posts/1/source-featured-media.json"
+        old_metadata = cached_path.read_bytes()
+        self.records[0]["featured_media"] = 101
+        self.records[0]["modified"] = self.records[0]["modified_gmt"] = "2011-01-02T00:00:00"
+        unavailable = True
+        for _ in range(2):
+            self.assertEqual(run()["incomplete_records"], 1)
+            before_state = self.state()
+            before_report = (self.articles / "last-report.json").read_bytes()
+            before_markdown = self.article_file(1).read_bytes()
+            self.assertIsNone(before_state["records"]["post:1"]["featured_media_sha256"])
+            self.assertNotIn(b"Hero 100", before_markdown)
+            with patch("sync.HttpClient", side_effect=AssertionError("Network forbidden")):
+                sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
+            self.assertEqual(self.state(), before_state)
+            self.assertEqual((self.articles / "last-report.json").read_bytes(), before_report)
+            self.assertEqual(self.article_file(1).read_bytes(), before_markdown)
+            self.assertEqual(cached_path.read_bytes(), old_metadata)
+        unavailable = False
+        self.assertEqual(run()["incomplete_records"], 0)
+        self.assertIn("Hero 101", self.article_file(1).read_text(encoding="utf-8"))
+        self.assertEqual(json.loads(cached_path.read_bytes())["id"], 101)
+        sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
+
+    def test_unverified_featured_cache_is_ignored_during_metadata_outage(self):
+        self.records[0]["featured_media"] = 100
+        unavailable = False
+
+        def metadata(client, kind, **kwargs):
+            if kind == "media":
+                if unavailable:
+                    raise OSError("Temporary media API outage")
+                return Inventory([{"id": 100, "media_type": "image",
+                                   "source_url": "https://kiszamolo.hu/hero.png", "alt_text": "Verified hero"}], [])
+            return Inventory([], [])
+
+        def run():
+            return sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
+                                 record_loader=self.details, metadata_loader=metadata, progress=lambda _: None)
+
+        run()
+        unavailable = True
+        cached_path = self.root / "records/posts/1/source-featured-media.json"
+        stale = {"id": 100, "media_type": "image", "source_url": "https://kiszamolo.hu/stale.png",
+                 "alt_text": "Unverified hero"}
+        for raw in (sync.json_bytes(stale), b"invalid JSON"):
+            with self.subTest(raw=raw):
+                cached_path.write_bytes(raw)
+                self.assertEqual(run()["incomplete_records"], 1)
+                before = self.article_file(1).read_bytes()
+                self.assertNotIn(b"Unverified hero", before)
+                sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
+                self.assertEqual(self.article_file(1).read_bytes(), before)
+                self.assertEqual(cached_path.read_bytes(), raw)
+
+    def test_offline_rebuild_still_rejects_damaged_tracked_featured_metadata(self):
+        self.records[0]["featured_media"] = 100
+
+        def metadata(client, kind, **kwargs):
+            return Inventory([{"id": 100, "media_type": "image",
+                               "source_url": "https://kiszamolo.hu/hero.png"}] if kind == "media" else [], [])
+
+        sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
+                      record_loader=self.details, metadata_loader=metadata, progress=lambda _: None)
+        cached_path = self.root / "records/posts/1/source-featured-media.json"
+        original = cached_path.read_bytes()
+        for raw in (None, b"invalid JSON", sync.json_bytes({"id": 999})):
+            with self.subTest(raw=raw):
+                if raw is None:
+                    cached_path.unlink()
+                else:
+                    cached_path.write_bytes(raw)
+                try:
+                    with self.assertRaises(ValueError):
+                        sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
+                finally:
+                    cached_path.write_bytes(original)
+
     def test_empty_page_api_uses_public_content_and_downloads_its_images(self):
         page = post()
         page["type"] = "page"

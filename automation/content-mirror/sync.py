@@ -582,8 +582,9 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
         body = view_bodies[key]
         featured_record = featured.get(record.get("featured_media"))
         if featured_record is None and record.get("featured_media"):
-            cached_featured = safe_path(root, item["directory"] + "/source-featured-media.json")
-            if cached_featured.is_file():
+            featured_path = item["directory"] + "/source-featured-media.json"
+            cached_featured = safe_path(root, featured_path)
+            if verified_file(root, dict(path=featured_path, sha256=item.get("featured_media_sha256"))):
                 candidate = json.loads(cached_featured.read_text(encoding="utf-8"))
                 if candidate.get("id") == record["featured_media"]:
                     featured_record = candidate
@@ -876,7 +877,7 @@ def offline_rebuild(root, articles_root, progress=print):
             record, body = load_cached_view(root, key, item)
             view_bodies[key] = body
             media_id = record.get("featured_media")
-            if media_id:
+            if media_id and item.get("featured_media_sha256"):
                 featured_path = safe_path(root, item["directory"] + "/source-featured-media.json")
                 if featured_path.is_file():
                     raw = featured_path.read_bytes()
@@ -884,7 +885,7 @@ def offline_rebuild(root, articles_root, progress=print):
                     if candidate.get("id") != media_id or digest(raw) != item.get("featured_media_sha256"):
                         raise ValueError(f"Cached featured-media metadata mismatch: {key}")
                     featured[media_id] = candidate
-                elif item.get("featured_media_sha256"):
+                else:
                     raise ValueError(f"Cached featured-media metadata is missing: {key}")
             records.append(record)
         for record in records:
