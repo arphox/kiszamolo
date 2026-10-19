@@ -1,0 +1,69 @@
+# Kiszámoló – helyi cikkgyűjtemény
+
+A [Kiszámoló blog](https://kiszamolo.hu/) tartalmának saját, helyi másolata és a letöltéséhez, feldolgozásához készült eszközök.
+
+A cél elsőként az, hogy a cikkek könnyebben olvasható és feldolgozható formában legyenek meg. Erre később címkézés és témák szerinti katalógusok épülhetnek, például egy gyűjtemény a nyugdíjról szóló cikkekből. Hosszabb távon a projekt a blog szerzőjével közös tudástár kialakítását is segítheti.
+
+## Mi működik már?
+
+- A nyilvános cikkek és önálló oldalak letöltése, az eredeti források megőrzésével.
+- Olvasható Markdown-fájlok készítése, év és hónap szerinti mappákban. A Markdown egyszerű szöveges formátum, amely a címeket, listákat és hivatkozásokat is megőrzi.
+- A blog saját tárhelyén elérhető képek és mellékletek letöltése, valamint a helyi cikkek közötti hivatkozások kialakítása.
+- Tartalomjegyzék és géppel feldolgozható cikklista készítése.
+- A helyi gyűjtemény kézi, igény szerinti frissítése.
+
+A saját címkézés, a témák szerinti új katalógusok és a további tudástárfunkciók még tervek. A blogon már meglévő kategóriákat és címkéket a letöltő megőrzi.
+
+## Mi hol található?
+
+| Mappa vagy fájl | Tartalma |
+| --- | --- |
+| `articles/` | Az olvasható cikkek és oldalak. A kiindulópont az `INDEX.md`. |
+| `articles/assets/` | A letöltött képek és mellékletek. |
+| `raw_source/content-mirror/` | Az eredeti webes források és a frissítés folytatásához szükséges adatok. |
+| `automation/content-mirror/` | A jelenleg használt letöltő és feldolgozó, a tesztjeivel együtt. |
+| `raw_source/kiszamolo_cikkek-1.txt` | A blog szerzője által közzétett korábbi szöveges export. [A forrás leírása](raw_source/README.md). |
+| `articles/old-txt-based/` | A korábbi exportból külön fájlokba bontott cikkek. |
+| `automation/2026-10-08-article-archive-processing/` | A korábbi szöveges export feldolgozója. |
+| `automation/2026-10-08-article-inventory-check/` | A korábbi cikkgyűjteményhez készült leltárellenőrző. |
+
+A két dátumozott eszköz a korábbi feldolgozás része. A jelenlegi gyűjtemény frissítéséhez a `content-mirror` eszközt használd.
+
+## Telepítés és frissítés
+
+Python 3.10 vagy újabb verzió szükséges. Az alábbi PowerShell-parancsokat a projekt gyökérmappájából futtasd.
+
+Első alkalommal hozz létre egy külön Python-környezetet, és telepítsd a szükséges csomagokat:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r automation\content-mirror\requirements.txt
+```
+
+A letöltés vagy egy későbbi frissítés indítása:
+
+```powershell
+.\.venv\Scripts\python.exe -u -B automation\content-mirror\sync.py
+```
+
+A program elkészíti vagy frissíti az `articles/` és a `raw_source/content-mirror/` mappát. A letöltési hibákat az `articles/last-report.json` fájlban jelzi. Jelenleg igény szerint, kézzel indítjuk; nincs beállított automatikus frissítés.
+
+A további kapcsolókat, a hibakódokat és a hálózat nélküli újragenerálás menetét a [letöltő részletes leírása](automation/content-mirror/README.md) tartalmazza.
+
+## Mit érdemes tudni a mentett tartalomról?
+
+- Az eredeti webes forrásokat külön őrizzük meg. Az olvasható Markdown-fájlok ezekből készülnek, és újra előállíthatók. Kézi módosításaik egy későbbi futás során felülíródhatnak.
+- A letöltő a jelenleg elérhető tartalmat követi; a cikkek korábbi változatairól nem készít történetet. Ha egy cikk eltűnik a blogról, a már mentett helyi példánya megmarad.
+- A hozzászólásokat külön nem gyűjti. A teljes weboldal mentett HTML-forrásában azonban szerepelhetnek hozzászólások.
+- Más webhelyek fájljai és a külső videólejátszók tartalmai hivatkozásként maradnak meg. A gyűjtemény ezért nem minden részében használható internet nélkül; a webes kalkulátorok működését sem másolja le.
+- A letöltött adatok és az előállított cikkfájlok nincsenek Gitben. A repó másolása csak a kódot és a dokumentációt viszi át. A meglévő gyűjtemény megőrzéséhez az `articles/` és a `raw_source/` mappát külön is menteni kell.
+
+## Tesztek
+
+A jelenlegi letöltő tesztjei:
+
+```powershell
+.\.venv\Scripts\python.exe -B -m unittest discover -s automation\content-mirror -p "test_*.py"
+```
+
+A tesztek nem kapcsolódnak a bloghoz; egy részük helyi HTTP-kiszolgálót használ.
