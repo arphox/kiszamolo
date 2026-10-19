@@ -4,6 +4,8 @@ A [Kiszámoló blog](https://kiszamolo.hu/) tartalmának saját, helyi másolata
 
 A cél elsőként az, hogy a cikkek könnyebben olvasható és feldolgozható formában legyenek meg. Erre később címkézés és témák szerinti katalógusok épülhetnek, például egy gyűjtemény a nyugdíjról szóló cikkekből. Hosszabb távon a projekt a blog szerzőjével közös tudástár kialakítását is segítheti.
 
+A cikkek Markdown-változatát elsősorban sima szövegként és AI-eszközökkel használjuk; a szöveghűség mellett az olvashatóság is fontos.
+
 ## Mi működik már?
 
 - A nyilvános cikkek és önálló oldalak letöltése, az eredeti források megőrzésével.
