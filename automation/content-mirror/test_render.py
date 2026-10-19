@@ -7,7 +7,6 @@ from render import (
     discover_assets,
     discover_embeds,
     extract_public_content,
-    make_html,
     make_markdown,
     plain_title,
     rewrite_html,
@@ -124,7 +123,7 @@ class RenderTests(unittest.TestCase):
         self.assertIn('data-src="../../media/lazy.jpg"', rendered)
         self.assertIn('data-srcset="../../media/small.jpg 1x, ../../media/large.jpg 2x"', rendered)
 
-    def test_lazy_only_image_is_promoted_for_markdown_and_html_views(self):
+    def test_lazy_only_image_is_promoted_for_markdown(self):
         source = '<img alt="Ábra" data-src="/images/figure.png" data-srcset="/images/figure.png 1x">'
         rewritten = rewrite_html(
             source,
@@ -137,8 +136,6 @@ class RenderTests(unittest.TestCase):
         self.assertIn('data-src="../../media/figure.png"', rewritten)
         markdown = make_markdown({"title": "Cikk"}, rewritten)
         self.assertIn("![Ábra](../../media/figure.png)", markdown)
-        page = make_html({"title": "Cikk"}, rewritten)
-        self.assertIn('<img alt="Ábra" data-src="../../media/figure.png" data-srcset="../../media/figure.png 1x" src="../../media/figure.png" srcset="../../media/figure.png 1x"/>', page)
 
     def test_markdown_omits_html_and_word_conditional_comments(self):
         content = """
@@ -201,15 +198,8 @@ class RenderTests(unittest.TestCase):
         self.assertTrue(any("Complex tables" in warning for warning in warnings))
         self.assertTrue(any("omitted" in warning for warning in warnings))
 
-    def test_plain_title_and_standalone_html_escape_metadata(self):
+    def test_plain_title_strips_markup_and_decodes_entities(self):
         self.assertEqual(plain_title("<span>A &amp; B</span>"), "A & B")
-        page = make_html(
-            {"title": "A < B", "link": 'https://example.test/?a="b"', "date": "2026-04-05"},
-            "<p>cikk</p>",
-        )
-        self.assertIn("<title>A &lt; B</title>", page)
-        self.assertIn('href="https://example.test/?a=&quot;b&quot;"', page)
-        self.assertIn("<main>\n<p>cikk</p>", page)
 
 
 if __name__ == "__main__":

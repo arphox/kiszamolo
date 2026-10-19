@@ -379,22 +379,6 @@ def make_markdown(record: dict[str, Any], content_html: str) -> str:
     return f"---\n{front_matter}\n---\n\n# {title}\n\n{body}\n"
 
 
-def make_html(record: dict[str, Any], rewritten_content: str) -> str:
-    """Create a standalone, readable HTML derivative with local references."""
-    title = plain_title(record.get("title", ""))
-    escaped_title = html.escape(title)
-    date = html.escape(str(record.get("date", "")))
-    source_url = html.escape(str(record.get("link", "")), quote=True)
-    return (
-        "<!doctype html>\n<html lang=\"hu\">\n<head>\n"
-        "<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-        f"<title>{escaped_title}</title>\n<style>body{{max-width:52rem;margin:2rem auto;padding:0 1rem;line-height:1.6;font-family:system-ui,sans-serif}}"
-        "img,video,iframe{max-width:100%}table{border-collapse:collapse}td,th{border:1px solid #888;padding:.35rem}</style>\n"
-        f"</head>\n<body>\n<header><h1>{escaped_title}</h1><p>{date} · <a href=\"{source_url}\">Eredeti cikk</a></p></header>\n"
-        f"<main>\n{rewritten_content}\n</main>\n</body>\n</html>\n"
-    )
-
-
 def conversion_warnings(content_html: str) -> list[str]:
     """Return deterministic notes for structures retained as HTML or omitted."""
     soup = BeautifulSoup(content_html or "", "html.parser")
