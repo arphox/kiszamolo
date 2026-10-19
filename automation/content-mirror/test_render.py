@@ -237,6 +237,52 @@ class RenderTests(unittest.TestCase):
     def test_plain_title_strips_markup_and_decodes_entities(self):
         self.assertEqual(plain_title("<span>A &amp; B</span>"), "A & B")
 
+    def test_markdown_preserves_literal_characters_in_code(self):
+        content = "x &lt; 3 &amp;&amp; a_b * c &amp;lt;"
+        expected = "x < 3 && a_b * c &lt;"
+        for source, snippet in (
+            (f"<p><code>{content}</code></p>", f"`{expected}`"),
+            (f"<pre><code>{content}</code></pre>", f"```\n{expected}\n```"),
+            (f"<pre>{content}</pre>", f"```\n{expected}\n```"),
+        ):
+            with self.subTest(source=source):
+                self.assertIn(snippet, make_markdown({"title": "Test"}, source))
+
+    def test_markdown_preserves_text_and_attributes_in_retained_html(self):
+        content = "a_b * c &lt;b&gt; &amp;copy;"
+        cases = (
+            ("table", f'<table><tr><td colspan="2">{content}</td></tr></table>'),
+            ("table", f"<table><tr><td><table><tr><td>{content}</td></tr></table></td></tr></table>"),
+            ("picture", f'<picture><img src="a_b.png" alt="a_b * c">{content}</picture>'),
+            ("video", f'<video src="a_b.mp4">{content}</video>'),
+        )
+        for tag, source in cases:
+            with self.subTest(source=source):
+                markdown = make_markdown({"title": "Test"}, source)
+                retained = BeautifulSoup(markdown, "html.parser").find(tag)
+                self.assertIsNotNone(retained)
+                self.assertEqual(str(retained), str(BeautifulSoup(source, "html.parser").find(tag)))
+
+    def test_markdown_escapes_literal_markup_and_entities_in_normal_text(self):
+        content = "&lt;b&gt;literal&lt;/b&gt; *star* _underscore_ &amp;copy; &amp;lt; &amp;#60;"
+        expected = r"&lt;b&gt;literal&lt;/b&gt; \*star\* \_underscore\_ &amp;copy; &amp;lt; &amp;#60;"
+        for source in (
+            f"<p>{content}</p>",
+            f"<table><tr><th>Text</th></tr><tr><td>{content}</td></tr></table>",
+            f'<a href="https://example.test/?a=1&amp;b=2">{content}</a>',
+        ):
+            with self.subTest(source=source):
+                markdown = make_markdown({"title": "Test"}, source)
+                self.assertIn(expected, markdown)
+                if source.startswith("<table"):
+                    self.assertIn(f"| {expected} |", markdown)
+                elif source.startswith("<a"):
+                    self.assertIn(f"[{expected}](https://example.test/?a=1&b=2)", markdown)
+
+    def test_markdown_preserves_private_use_characters_in_source(self):
+        text = "\ue000A\ue001 \ue000B\ue001 \ue000C\ue001 \ue000D\ue001"
+        self.assertIn(text, make_markdown({"title": "Test"}, f"<p>{text}</p>"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,7 @@ import json
 from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
-from bs4 import BeautifulSoup, Comment, NavigableString, Tag
+from bs4 import BeautifulSoup, Comment, Tag
 from markdownify import MarkdownConverter
 
 
@@ -262,6 +262,10 @@ def extract_public_content(page_html: bytes | str, record: dict[str, Any]) -> st
 class _MirrorMarkdownConverter(MarkdownConverter):
     """Markdown converter that keeps structures Markdown cannot represent."""
 
+    def escape(self, text: str, parent_tags: set[str]) -> str:
+        # Markdownify skips this hook for code; retained HTML uses the original DOM.
+        return html.escape(super().escape(text, parent_tags), quote=False)
+
     def convert_table(self, el: Tag, text: str, parent_tags: set[str]) -> str:
         if el.find("table") or el.find(attrs={"rowspan": True}) or el.find(attrs={"colspan": True}):
             return f"\n\n{str(el)}\n\n"
@@ -297,38 +301,18 @@ def _markdown_body(content_html: str) -> str:
         comment.extract()
     for tag in soup.find_all(["script", "style"]):
         tag.decompose()
-    # Keep text such as an escaped ``<p>`` visibly literal in the Markdown file.
-    # Markdownify otherwise emits it as an actual HTML tag.
-    lt_token = "\ue000A\ue001"
-    gt_token = "\ue000B\ue001"
-    star_token = "\ue000C\ue001"
-    underscore_token = "\ue000D\ue001"
     for tag in list(soup.find_all(True)):
         if tag.has_attr("id") and not (
             tag.name == "a" and not tag.has_attr("href") and not tag.get_text(strip=True)
         ):
             anchor = soup.new_tag("a", id=tag["id"])
             tag.insert_before(anchor)
-    for node in list(soup.find_all(string=True)):
-        if node.parent and node.parent.name not in {"script", "style"}:
-            value = str(node).replace("<", lt_token).replace(">", gt_token)
-            if node.find_parent(["code", "pre"]) is None:
-                value = value.replace("*", star_token).replace("_", underscore_token)
-            node.replace_with(NavigableString(value))
     converter = _MirrorMarkdownConverter(
         heading_style="ATX",
         bullets="-",
-        escape_underscores=False,
-        escape_asterisks=False,
         strip=["script", "style"],
     )
-    converted = converter.convert(str(soup)).strip()
-    return (
-        converted.replace(lt_token, "&lt;")
-        .replace(gt_token, "&gt;")
-        .replace(star_token, r"\*")
-        .replace(underscore_token, r"\_")
-    )
+    return converter.convert_soup(soup).strip()
 
 
 def make_markdown(record: dict[str, Any], content_html: str) -> str:
