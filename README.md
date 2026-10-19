@@ -59,6 +59,7 @@ A további kapcsolókat, a hibakódokat és a hálózat nélküli újragenerál�
 A jelenlegi letöltő tesztjei:
 
 ```powershell
+.\.venv\Scripts\python.exe -m pip install -r automation\content-mirror\requirements-test.txt
 .\.venv\Scripts\python.exe -B -m unittest discover -s automation\content-mirror -p "test_*.py"
 ```
 

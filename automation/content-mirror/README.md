@@ -39,6 +39,7 @@ Részleges prototípus: `--sample ID ID ... --output KÜLÖN_CIKK_KÖNYVTÁR --s
 - `source-featured-media.json`: kiemelt kép API-metaadata, ha van.
 - `view-source.html`: a származtatott nézetek pontos HTML-bemenete. Üres API-törzsű oldalnál a mentett nyilvános oldal felismert tartalomkonténere; az index `derived_source` mezője jelzi az eredetet. Ismeretlen elrendezésnél az AI-nézet hiányát explicit jelzi.
 - A Markdown helyi média- és belső tartalomhivatkozásokat, valamint az elején metaadatokat tartalmaz. A videók, hangok és egyéb beágyazások címkézett linkekké alakulnak, a hozzájuk tartozó szöveg és kép megmarad. Az ismert helyi cikkembedek helyi Markdown-hivatkozást kapnak.
+- A kiemelések általában Markdown-jelölést kapnak; ahol az írásjelhatárok miatt ez hibásan jelenne meg, rövid HTML-jelölés őrzi meg a formázást.
 - `articles/assets/`: az URL SHA-256 lenyomata alapján elnevezett média és mellékletek. Egyetlen példányuk van; a cikkek innen hivatkozzák őket, például `../../assets/HASH.docx`. A forrás-URL és a fájl tartalmi lenyomata a nyers archívum `state.json` fájljában található. Az állapot `assets_location: articles` mezője jelöli az elrendezést; az eszköz által kezelt médiaútvonalak az `articles` gyökérhez relatívak.
 - `raw_source/content-mirror/sources/api/`: a legutóbbi futás eredeti API-válaszai, kérés-URL-lel, fejlécekkel, bájtmérettel és lenyomattal a manifestben. Az `inventory-posts`/`inventory-pages` a könnyű teljes leltár; a `details-posts`/`details-pages` csak a célzottan lekért teljes rekordok. A változatlan tartalmak korábban mentett teljes `source.json` rekordja megmarad. Normál futásban a taxonómiai válaszok csak az ID-t és nevet tartalmazzák, `--full` esetén minden mezőt.
 - `articles/index.jsonl`: minden helyileg nyilvántartott tartalom, státusszal és a csomagon belüli Markdown-útvonallal (`path`). A `source_record`, például `records/posts/123`, a társított nyers archívum logikai rekordazonosítója, nem az `articles` alatt keresendő fájlútvonal. A korábbi, csomagból kilépő `source_directory` mező megszűnt. `articles/INDEX.md`: év és kategória szerinti navigáció.
@@ -76,6 +77,7 @@ A párhuzamos írás ellen a forrás- és a Markdown-gyökeret külön operáci�
 ## Ellenőrzés
 
 ```powershell
+python -m pip install -r .\automation\content-mirror\requirements-test.txt
 python -B -m unittest discover -s .\automation\content-mirror -p "test_*.py" -v
 ```
 

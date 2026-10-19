@@ -1,6 +1,7 @@
 import unittest
 
 from bs4 import BeautifulSoup
+from markdown_it import MarkdownIt
 
 from render import (
     conversion_warnings,
@@ -14,6 +15,13 @@ from render import (
 
 
 BASE = "https://kiszamolo.hu/cikk/pelda/"
+
+
+def rendered_body(source):
+    markdown = make_markdown({"title": "Test"}, source)
+    body = markdown.split("\n# Test\n\n", 1)[1]
+    parser = MarkdownIt("commonmark", {"html": True}).enable(["table", "strikethrough"])
+    return BeautifulSoup(parser.render(body), "html.parser")
 
 
 class RenderTests(unittest.TestCase):
@@ -547,6 +555,82 @@ class RenderTests(unittest.TestCase):
             table = make_markdown({"title": "Test"},
                 f'<table><tr><td{span}><em><a href="a">szó</a></em>utó</td></tr></table>')
             self.assertIn('| [*szó*](a)utó |', table)
+
+
+    def test_div_numbers_remain_literal_without_escaping_generated_lists(self):
+        source = ('<div>2001. Első<br>2008. Második</div>'
+                  '<div><span>2011. Harmadik</span></div>'
+                  '<div><ol start="4"><li>Valódi lista</li><li>Folytatás</li></ol></div>'
+                  '<pre>2001. Kód</pre>')
+        rendered = rendered_body(source)
+        self.assertEqual(len(rendered.find_all("ol")), 1)
+        self.assertEqual(rendered.ol["start"], "4")
+        for year in ("2001. Első", "2008. Második", "2011. Harmadik"):
+            self.assertIn(year, rendered.get_text())
+        self.assertEqual(rendered.code.get_text(), "2001. Kód\n")
+
+    def test_emphasis_at_punctuation_boundaries_renders_without_literal_markers(self):
+        cases = (
+            ('szó<strong>: 8,99%-tól 12,76%-ig</strong>', "strong", ": 8,99%-tól 12,76%-ig"),
+            ('szó<strong>.</strong>', "strong", "."),
+            ('<strong>Kezdet: „</strong>idézet', "strong", "Kezdet: „"),
+            ('<em>(</em>Mondjuk', "em", "("),
+            ('szó<span><strong>: érték</strong></span>', "strong", ": érték"),
+            ('<em>Megjegyzés 🙂 )</em>utána', "em", "Megjegyzés 🙂 )"),
+            ('Amire vigyázz<em><strong>, <a href="a" title="Cím">ilyen történetek </a>'
+             '</strong></em>még', "em", ", ilyen történetek"),
+        )
+        for fragment, tag, styled in cases:
+            with self.subTest(fragment=fragment):
+                rendered = rendered_body(f"<p>{fragment}</p>")
+                self.assertEqual(rendered.get_text().strip(), BeautifulSoup(fragment, "html.parser").get_text())
+                self.assertEqual(rendered.find(tag).get_text(), styled)
+                if 'href="a"' in fragment:
+                    self.assertEqual(rendered.a["href"], "a")
+                    self.assertEqual(rendered.a["title"], "Cím")
+                    self.assertIsNotNone(rendered.a.find_parent("strong"))
+
+    def test_equivalent_emphasis_ignores_presentation_wrappers_and_attributes(self):
+        cases = (
+            '<b>Szabadulj meg az </b><span style="font-size: 19px;"><b>adósságaidtól</b></span><b>.</b>',
+            '<i style="font-family: Arial;">(Idézet.</i><i>)</i>',
+            '<em><b>E</b></em><em class="style"><b>bben</b></em>',
+            '<em>A</em><span><span><em>B</em></span></span>',
+        )
+        for fragment in cases:
+            with self.subTest(fragment=fragment):
+                rendered = rendered_body(f"<p>{fragment}</p>")
+                self.assertEqual(rendered.get_text().strip(), BeautifulSoup(fragment, "html.parser").get_text())
+                self.assertIsNotNone(rendered.find(["strong", "em"]))
+
+    def test_emphasis_is_wrapped_separately_for_each_paragraph(self):
+        for tag in ("strong", "em", "del"):
+            for separator in ("<br><br>", "<p>Középső</p>"):
+                with self.subTest(tag=tag, separator=separator):
+                    fragment = (f'<{tag}>Első <a href="a">link</a>{separator}'
+                                f'Második <code>*kód*</code></{tag}>')
+                    rendered = rendered_body(fragment)
+                    self.assertGreaterEqual(len(rendered.find_all("p")), 2)
+                    for paragraph in rendered.find_all("p"):
+                        self.assertIsNotNone(paragraph.find(["s", "del"] if tag == "del" else tag))
+                    self.assertEqual(rendered.a["href"], "a")
+                    self.assertEqual(rendered.code.get_text(), "*kód*")
+                    self.assertEqual(rendered.get_text().count("*"), 2)
+
+    def test_emphasis_fallback_preserves_code_anchors_tables_and_link_context(self):
+        source = ('<p>szó<strong id="range">: <a href="a" title="Cím">link</a> '
+                  '<code>kód</code></strong></p>'
+                  '<ol start="4"><li>szó<strong>: érték</strong></li><li>Második</li></ol>'
+                  '<pre>szó<strong>: *kód*</strong></pre>'
+                  '<table><tr><td><table><tr><td><span><b>E</b></span><b>bben</b>'
+                  '</td></tr></table></td></tr></table>')
+        rendered = rendered_body(source)
+        self.assertEqual(rendered.find("a", id="range")["id"], "range")
+        self.assertEqual(rendered.find("a", href="a")["title"], "Cím")
+        self.assertEqual(rendered.ol["start"], "4")
+        self.assertEqual(rendered.ol.li.get_text(), "szó: érték")
+        self.assertEqual(rendered.pre.get_text(), "szó: *kód*\n")
+        self.assertEqual(str(rendered.table), str(BeautifulSoup(source, "html.parser").table))
 
 
 if __name__ == "__main__":

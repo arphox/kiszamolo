@@ -10,11 +10,12 @@ import html
 import json
 import copy
 import re
+import unicodedata
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, Comment, Tag
-from markdownify import MarkdownConverter
+from markdownify import MarkdownConverter, should_remove_whitespace_outside
 
 from tables import table_markdown
 
@@ -264,6 +265,33 @@ def extract_public_content(page_html: bytes | str, record: dict[str, Any]) -> st
     return str(candidate)
 
 
+def _punctuation(character: str) -> bool:
+    return unicodedata.category(character).startswith(("P", "S"))
+
+
+def _neighbor_character(node, before: bool) -> str:
+    """Find visible inline context through wrappers, stopping at block edges."""
+    while node is not None:
+        sibling = node.previous_sibling if before else node.next_sibling
+        if sibling is not None:
+            if isinstance(sibling, Tag):
+                if sibling.name == "br" or should_remove_whitespace_outside(sibling):
+                    return "\n"
+                text = sibling.get_text()
+            else:
+                text = "" if isinstance(sibling, Comment) else str(sibling)
+            if text:
+                return text[-1] if before else text[0]
+            node = sibling
+        else:
+            node = node.parent
+            if isinstance(node, Tag) and node.name == "a" and node.has_attr("href"):
+                return "[" if before else "]"
+            if node is None or should_remove_whitespace_outside(node):
+                return "\n"
+    return "\n"
+
+
 class _MirrorMarkdownConverter(MarkdownConverter):
     """Markdown converter that keeps structures Markdown cannot represent."""
 
@@ -301,16 +329,24 @@ class _MirrorMarkdownConverter(MarkdownConverter):
             return (isinstance(tag, Tag) and tag.name in formats and
                     not tag.has_attr("id") and not tag.has_attr("name") and
                     isinstance(sibling, Tag) and formats.get(sibling.name) == formats[tag.name] and
-                    sibling.attrs == tag.attrs)
+                    not sibling.has_attr("id") and not sibling.has_attr("name"))
 
         if ("_noformat" not in (parent_tags or set()) and node.name not in {"pre", "code", "kbd", "samp"}
-                and any(mergeable(tag, tag.next_sibling) for tag in node.children)):
+                and (any(mergeable(tag, tag.next_sibling) for tag in node.children) or
+                     any(isinstance(tag, Tag) and tag.name == "span" and
+                         not tag.has_attr("id") and not tag.has_attr("name") for tag in node.children))):
             original = node
             node = copy.deepcopy(node)
             # List numbering and inline/block decisions also consult DOM context.
             node.parent = original.parent
             node.previous_sibling = original.previous_sibling
             node.next_sibling = original.next_sibling
+            # Spans and presentation attributes do not survive Markdown conversion.
+            # Remove only immediate transparent wrappers on this converter copy.
+            while spans := [tag for tag in node.children if isinstance(tag, Tag) and
+                            tag.name == "span" and not tag.has_attr("id") and not tag.has_attr("name")]:
+                for tag in spans:
+                    tag.unwrap()
             for tag in list(node.children):
                 sibling = tag.next_sibling
                 while mergeable(tag, sibling):
@@ -330,19 +366,56 @@ class _MirrorMarkdownConverter(MarkdownConverter):
         return text[:start] + convert(el, text[start:end], parent_tags) + text[end:]
 
     def convert_b(self, el: Tag, text: str, parent_tags: set[str]) -> str:
-        return self._spaced_inline(super().convert_b, el, text, parent_tags)
+        return self._emphasis(el, text, parent_tags, "**", "strong")
 
     convert_strong = convert_b
 
     def convert_i(self, el: Tag, text: str, parent_tags: set[str]) -> str:
-        return self._spaced_inline(super().convert_i, el, text, parent_tags)
+        return self._emphasis(el, text, parent_tags, "*", "em")
 
     convert_em = convert_i
 
     def convert_del(self, el: Tag, text: str, parent_tags: set[str]) -> str:
-        return self._spaced_inline(super().convert_del, el, text, parent_tags)
+        return self._emphasis(el, text, parent_tags, "~~", "del")
 
     convert_s = convert_del
+
+    def _emphasis(self, el: Tag, text: str, parent_tags: set[str], marker: str, tag: str) -> str:
+        if "_noformat" in parent_tags or not text.strip():
+            return text
+        # Emphasis cannot span Markdown paragraphs. Preserve each paragraph's
+        # boundary whitespace, including hard breaks, outside its delimiters.
+        parts = re.split(r"(\n[ \t]*\n)", text)
+        for index in range(0, len(parts), 2):
+            part = parts[index]
+            if not part.strip():
+                continue
+            start, end = len(part) - len(part.lstrip()), len(part.rstrip())
+            content = part[start:end]
+            before = part[start - 1] if start else ("\n" if index else _neighbor_character(el, True))
+            after = part[end] if end < len(part) else (
+                "\n" if index < len(parts) - 1 else _neighbor_character(el, False))
+            # A punctuation edge beside a word cannot open/close '*' emphasis.
+            # Inline HTML preserves the exact styled range and still allows
+            # Markdown links and code inside it.
+            first = content.lstrip("*")[:1] or content[0]
+            last = content.rstrip("*")[-1:] or content[-1]
+            safe_start = not _punctuation(first) or before.isspace() or _punctuation(before)
+            safe_end = not _punctuation(last) or after.isspace() or _punctuation(after)
+            if safe_start and safe_end:
+                wrapped = marker + content + marker
+            else:
+                wrapped = f"<{tag}>{content}</{tag}>"
+            parts[index] = part[:start] + wrapped + part[end:]
+        return "".join(parts)
+
+    def process_text(self, el, parent_tags=None):
+        text = super().process_text(el, parent_tags)
+        if "_noformat" not in (parent_tags or set()) and _neighbor_character(el, True) == "\n":
+            # Escape source numbers before generated list markers exist. This
+            # also covers divs and transparent inline wrappers at block starts.
+            text = re.sub(r"^([ \t]*\d{1,9})([.)])(?=[ \t])", r"\1\\\2", text)
+        return text
 
     def convert_p(self, el: Tag, text: str, parent_tags: set[str]) -> str:
         if "_noformat" not in parent_tags:
