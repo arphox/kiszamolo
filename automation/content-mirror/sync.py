@@ -737,6 +737,8 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
         assets_refresh = {u for record in selected if record_key(record) in refresh
                           for u in discovered[record_key(record)][0]}
         jobs = {}
+        # Avoid racing Windows path resolution with creation of the shared parent.
+        safe_path(articles_root, "assets").mkdir(exist_ok=True)
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
             for url in sorted(all_assets):
                 previous = state["assets"].get(url, {})

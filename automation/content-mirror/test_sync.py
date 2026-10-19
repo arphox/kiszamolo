@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import hashlib
 import errno
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -331,11 +332,38 @@ class SyncTests(unittest.TestCase):
             return Inventory([], [])
         for _ in range(2):
             calls.clear()
-            sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
-                          record_loader=self.details, metadata_loader=metadata, progress=lambda _: None)
+            report = sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
+                                   record_loader=self.details, metadata_loader=metadata, progress=lambda _: None)
+            self.assertEqual(report["page_failures"], {})
+            self.assertEqual(report["asset_failures"], {})
+            self.assertEqual(report["incomplete_records"], 0)
         self.assertEqual(next(kwargs["ids"] for kind,kwargs in calls if kind=="media"), [])
         self.assertTrue(all(kwargs["fields"] == ("id","name") for kind,kwargs in calls if kind!="media"))
         self.assertIn("hero.png", json.dumps(self.state()["records"]["post:1"]["asset_urls"]))
+
+    @unittest.skipUnless(os.name == "nt", "Windows path resolution regression")
+    def test_media_download_handles_concurrent_parent_creation(self):
+        import ntpath
+
+        self.records = [post(body='<img src="/a.png"><img src="/c.png">')]
+        assets = self.articles / "assets"
+        get_final_path = ntpath._getfinalpathname
+
+        def create_parent_after_missing_path(path):
+            try:
+                return get_final_path(path)
+            except FileNotFoundError as error:
+                if error.winerror == 3 and Path(path).parent == assets:
+                    # Simulate another worker creating the parent between the
+                    # two Windows lookups performed by Path.resolve().
+                    assets.mkdir(exist_ok=True)
+                raise
+
+        with patch("ntpath._getfinalpathname", side_effect=create_parent_after_missing_path):
+            report = self.run_sync(workers=1)
+        self.assertEqual(report["asset_failures"], {})
+        self.assertEqual(report["incomplete_records"], 0)
+        self.assertEqual(report["refreshed_assets"], 2)
 
     def test_legacy_state_needs_no_modified_gmt_migration(self):
         self.run_sync()
