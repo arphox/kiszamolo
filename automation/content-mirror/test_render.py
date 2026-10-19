@@ -422,6 +422,87 @@ class RenderTests(unittest.TestCase):
         text = "\ue000A\ue001 \ue000B\ue001 \ue000C\ue001 \ue000D\ue001"
         self.assertIn(text, make_markdown({"title": "Test"}, f"<p>{text}</p>"))
 
+    def test_url_attributes_are_decoded_only_by_the_html_parser(self):
+        url = "https://example.test/report.pdf?docid=A&timeshift=20160101&lt1=x&REGION=y#part&copy;"
+        encoded = url.replace("&", "&amp;")
+        source = f'<a href="{encoded}">Report</a><img src="{encoded}"><iframe src="{encoded}"></iframe>'
+        self.assertEqual(discover_assets(source, BASE), {url.split("#")[0]})
+        self.assertEqual(discover_embeds(source, BASE), {url.split("#")[0]})
+        rewritten = rewrite_html(source, BASE, {}, {})
+        soup = BeautifulSoup(rewritten, "html.parser")
+        self.assertEqual(soup.a["href"], url)
+        self.assertEqual(soup.img["src"], url)
+        self.assertEqual(soup.iframe["src"], url)
+        self.assertIn(f"[Report]({url})", make_markdown({"title": "Test"}, rewritten))
+        mapped = BeautifulSoup(rewrite_html(source, BASE,
+            {url.split("#")[0]: "assets/report.pdf"}, {}), "html.parser")
+        self.assertEqual(mapped.a["href"], "assets/report.pdf#part&copy;")
+        self.assertEqual(mapped.img["src"], "assets/report.pdf#part&copy;")
+
+    def test_inline_formatting_preserves_whitespace_only_and_nbsp_boundaries(self):
+        for tag, marker in (("strong", "**"), ("b", "**"), ("em", "*"),
+                            ("i", "*"), ("del", "~~"), ("s", "~~")):
+            for space in (" ", "\u00a0", "\u202f"):
+                with self.subTest(tag=tag, space=repr(space)):
+                    source = (f'<p>a<{tag}>{space}</{tag}>b; '
+                              f'a<{tag}>{space}b{space}</{tag}>c</p>')
+                    markdown = make_markdown({"title": "Test"}, source)
+                    self.assertIn(f"a{space}b; a{space}{marker}b{marker}{space}c", markdown)
+
+    def test_link_boundaries_preserve_spaces_and_line_breaks(self):
+        source = ('<p>az<a href="a">&nbsp;<strong>Akadémiára</strong></a>; '
+                  'a<a href="b">&nbsp;</a>b; '
+                  '<a href="c">Első<br></a><a href="d">Második</a></p>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn('az\u00a0[**Akadémiára**](a)', markdown)
+        self.assertIn('a\u00a0b', markdown)
+        self.assertIn('[Első](c)  \n[Második](d)', markdown)
+
+    def test_paragraph_numbers_stay_literal_and_real_lists_keep_numbering(self):
+        source = ('<p>20. Kanada</p><p>19. Egyiptom<br>18) Anglia</p>'
+                  '<ol start="4"><li>Valódi lista</li><li>Folytatás</li></ol>'
+                  '<pre>20. Kód</pre>')
+        markdown = make_markdown({"title": "Test"}, source)
+        for literal in (r"20\. Kanada", r"19\. Egyiptom", r"18\) Anglia"):
+            self.assertIn(literal, markdown)
+        self.assertIn("4. Valódi lista\n5. Folytatás", markdown)
+        self.assertIn("```\n20. Kód\n```", markdown)
+
+    def test_adjacent_equivalent_emphasis_shares_delimiters(self):
+        for first, second, marker in (("em", "em", "*"), ("i", "em", "*"),
+                                      ("strong", "b", "**"), ("del", "s", "~~")):
+            with self.subTest(first=first, second=second):
+                markdown = make_markdown({"title": "Test"},
+                    f"<p>(<{first}>E</{first}><{second}>bben</{second}>)</p>")
+                self.assertIn(f"({marker}Ebben{marker})", markdown)
+        nested = make_markdown({"title": "Test"}, '<p><em><b>E</b></em><em><b>bben</b></em></p>')
+        self.assertIn("***Ebben***", nested)
+        for span in ("", ' colspan="2"'):
+            with self.subTest(span=span):
+                table = make_markdown({"title": "Test"},
+                    f'<table><tr><td{span}><em>E</em><em>bben</em></td></tr></table>')
+                self.assertIn("| *Ebben* |", table)
+
+    def test_inline_normalization_keeps_code_anchors_and_retained_html(self):
+        source = ('<pre><em>E</em><em>bben</em> a<strong>&nbsp;</strong>b</pre>'
+                  '<p><em id="one">Első</em><em id="two">Második</em></p>'
+                  '<table><tr><td><table><tr><td><em>E</em><em>bben</em>'
+                  '</td></tr></table></td></tr></table>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn("```\nEbben a\u00a0b\n```", markdown)
+        self.assertIn('<a id="one"></a>', markdown)
+        self.assertIn('<a id="two"></a>', markdown)
+        retained = BeautifulSoup(markdown, "html.parser").find("table")
+        self.assertEqual(str(retained), str(BeautifulSoup(source, "html.parser").find("table")))
+
+    def test_adjacent_emphasis_keeps_ordered_list_and_nested_list_context(self):
+        source = ('<ol start="4"><li><em>E</em><em>bben</em></li>'
+                  '<li><strong>Má</strong><b>sodik</b>'
+                  '<ul><li><i>Bel</i><em>ső</em></li></ul></li></ol>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn("4. *Ebben*\n5. **Második**", markdown)
+        self.assertIn("\n   - *Belső*", markdown)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -35,7 +35,8 @@ _RESOURCE_ATTRIBUTES = {
 
 def _absolute_http_url(value: str, base_url: str) -> str | None:
     """Resolve a URL and retain only safe, credential-free HTTP(S) URLs."""
-    value = html.unescape(value.strip())
+    # BeautifulSoup has already decoded HTML attribute values.
+    value = value.strip()
     if not value:
         return None
     try:
@@ -54,7 +55,7 @@ def _absolute_http_url(value: str, base_url: str) -> str | None:
 def _absolute_http_reference(value: str, base_url: str) -> str | None:
     """Resolve a safe HTTP(S) reference without removing its fragment."""
     try:
-        absolute = urljoin(base_url, html.unescape(value.strip()))
+        absolute = urljoin(base_url, value.strip())
     except ValueError:
         return None
     if _absolute_http_url(absolute, base_url) is None:
@@ -159,7 +160,7 @@ def _mapped_url(value: str, base_url: str, paths: dict[str, str]) -> str | None:
         path = paths.get(value)
     if path is None:
         return None
-    original = urlsplit(urljoin(base_url, html.unescape(value.strip())))
+    original = urlsplit(urljoin(base_url, value.strip()))
     fragment = f"#{original.fragment}" if original.fragment else ""
     return f"{path}{fragment}"
 
@@ -265,6 +266,66 @@ def extract_public_content(page_html: bytes | str, record: dict[str, Any]) -> st
 
 class _MirrorMarkdownConverter(MarkdownConverter):
     """Markdown converter that keeps structures Markdown cannot represent."""
+
+    def process_tag(self, node: Tag, parent_tags: set[str] | None = None) -> str:
+        # Adjacent equivalent emphasis must share delimiters: *E**bben* is not
+        # equivalent to *Ebben*. Normalize a copy of the immediate container so
+        # retained HTML still sees the original DOM, including inside tables.
+        formats = {"b": "strong", "strong": "strong", "i": "em", "em": "em",
+                   "s": "del", "del": "del"}
+
+        def mergeable(tag, sibling):
+            return (isinstance(tag, Tag) and tag.name in formats and
+                    not tag.has_attr("id") and not tag.has_attr("name") and
+                    isinstance(sibling, Tag) and formats.get(sibling.name) == formats[tag.name] and
+                    sibling.attrs == tag.attrs)
+
+        if ("_noformat" not in (parent_tags or set()) and node.name not in {"pre", "code", "kbd", "samp"}
+                and any(mergeable(tag, tag.next_sibling) for tag in node.children)):
+            original = node
+            node = copy.deepcopy(node)
+            # List numbering and inline/block decisions also consult DOM context.
+            node.parent = original.parent
+            node.previous_sibling = original.previous_sibling
+            node.next_sibling = original.next_sibling
+            for tag in list(node.children):
+                sibling = tag.next_sibling
+                while mergeable(tag, sibling):
+                    for child in list(sibling.contents):
+                        tag.append(child.extract())
+                    sibling.decompose()
+                    sibling = tag.next_sibling
+        return super().process_tag(node, parent_tags)
+
+    def _spaced_inline(self, convert, el: Tag, text: str, parent_tags: set[str]) -> str:
+        # markdownify's chomp() strips all whitespace but restores only ASCII
+        # spaces, and discards whitespace-only tags. Keep boundaries outside markup.
+        if "_noformat" in parent_tags or not text.strip():
+            return text
+        start = len(text) - len(text.lstrip())
+        end = len(text.rstrip())
+        return text[:start] + convert(el, text[start:end], parent_tags) + text[end:]
+
+    def convert_b(self, el: Tag, text: str, parent_tags: set[str]) -> str:
+        return self._spaced_inline(super().convert_b, el, text, parent_tags)
+
+    convert_strong = convert_b
+
+    def convert_i(self, el: Tag, text: str, parent_tags: set[str]) -> str:
+        return self._spaced_inline(super().convert_i, el, text, parent_tags)
+
+    convert_em = convert_i
+
+    def convert_del(self, el: Tag, text: str, parent_tags: set[str]) -> str:
+        return self._spaced_inline(super().convert_del, el, text, parent_tags)
+
+    convert_s = convert_del
+
+    def convert_p(self, el: Tag, text: str, parent_tags: set[str]) -> str:
+        if "_noformat" not in parent_tags:
+            # Paragraph numbers are literal text, not Markdown list markers.
+            text = re.sub(r"(?m)^([ \t]*\d{1,9})([.)])(?=[ \t])", r"\1\\\2", text)
+        return super().convert_p(el, text, parent_tags)
 
     def escape(self, text: str, parent_tags: set[str]) -> str:
         # Markdownify skips this hook for code; retained HTML uses the original DOM.
@@ -385,7 +446,7 @@ class _MirrorMarkdownConverter(MarkdownConverter):
         link = copy.copy(el)
         if link.has_attr("href"):
             link["href"] = _markdown_destination(str(link["href"]))
-        return super().convert_a(link, text, parent_tags)
+        return self._spaced_inline(super().convert_a, link, text, parent_tags)
 
 
 def _markdown_destination(value: str) -> str:
