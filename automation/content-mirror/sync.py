@@ -294,6 +294,42 @@ def record_directory(record):
     return f"records/{record['type']}s/{record['id']}"
 
 
+def load_cached_view(root, key, item):
+    """Read a retained source and view only after checking their preserved evidence."""
+    source_path = safe_path(root, item["directory"] + "/source.json")
+    if not source_path.is_file():
+        raise ValueError(f"Cached source is missing: {key}")
+    source_bytes = source_path.read_bytes()
+    if digest(source_bytes) != item.get("source_sha256"):
+        raise ValueError(f"Cached source hash mismatch: {key}")
+    record = json.loads(source_bytes.decode("utf-8"))
+    if record_key(record) != key:
+        raise ValueError(f"Cached source identity mismatch: {key}")
+    html_path = safe_path(root, item["directory"] + "/source.html")
+    expected_html = record.get("content", {}).get("rendered", "").encode("utf-8")
+    if not html_path.is_file() or html_path.read_bytes() != expected_html:
+        raise ValueError(f"Cached source HTML mismatch: {key}")
+    view_path = safe_path(root, item["directory"] + "/view-source.html")
+    if not view_path.is_file():
+        raise ValueError(f"Cached view source is missing: {key}")
+    body = view_path.read_bytes().decode("utf-8")
+    if item.get("derived_source") == "api_content":
+        if body != record.get("content", {}).get("rendered", ""):
+            raise ValueError(f"Cached view source mismatch: {key}")
+    elif item.get("derived_source") == "public_page_content":
+        page_path = safe_path(root, item["page"]["path"])
+        if not verified_file(root, item["page"]):
+            raise ValueError(f"Cached public page hash mismatch: {key}")
+        expected_view = extract_public_content(page_path.read_bytes(), record)
+        if expected_view is None or body != expected_view:
+            raise ValueError(f"Cached derived view source mismatch: {key}")
+    elif item.get("derived_source") == "source_page_only" and body:
+        raise ValueError(f"Unexpected cached view source for unavailable content: {key}")
+    if item.get("page", {}).get("status") == "downloaded" and not verified_file(root, item["page"]):
+        raise ValueError(f"Cached public page hash mismatch: {key}")
+    return record, body
+
+
 def recent_cutoff(state, started):
     previous = state.get("last_completed_sync_at")
     return (datetime.fromisoformat(previous) if previous else started) - timedelta(days=7)
@@ -761,12 +797,9 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
         render_records = list(selected)
         for key, item in state["records"].items():
             if key not in selected_keys:
-                cached_record = json.loads(safe_path(root, item["directory"] + "/source.json").read_text(encoding="utf-8"))
-                if record_key(cached_record) != key:
-                    raise ValueError(f"Cached source identity mismatch: {key}")
+                cached_record, body = load_cached_view(root, key, item)
                 render_records.append(cached_record)
-                view_path = safe_path(root, item["directory"] + "/view-source.html")
-                view_bodies[key] = view_path.read_bytes().decode("utf-8") if view_path.is_file() else cached_record["content"]["rendered"]
+                view_bodies[key] = body
         reassigned_preserved = render_views(root, articles_root, state, render_records, view_bodies, featured,
             prior_records=prior_records, previous_articles_root=previous_articles_root)
         remote_keys = {record_key(r) for r in remote_records}
@@ -840,39 +873,8 @@ def offline_rebuild(root, articles_root, progress=print):
         featured = {}
         discovered = {}
         for key, item in state["records"].items():
-            source_path = safe_path(root, item["directory"] + "/source.json")
-            if not source_path.is_file():
-                raise ValueError(f"Cached source is missing: {key}")
-            source_bytes = source_path.read_bytes()
-            if digest(source_bytes) != item.get("source_sha256"):
-                raise ValueError(f"Cached source hash mismatch: {key}")
-            record = json.loads(source_bytes.decode("utf-8"))
-            if record_key(record) != key:
-                raise ValueError(f"Cached source identity mismatch: {key}")
-            html_path = safe_path(root, item["directory"] + "/source.html")
-            expected_html = record.get("content", {}).get("rendered", "").encode("utf-8")
-            if not html_path.is_file() or html_path.read_bytes() != expected_html:
-                raise ValueError(f"Cached source HTML mismatch: {key}")
-            view_path = safe_path(root, item["directory"] + "/view-source.html")
-            if not view_path.is_file():
-                raise ValueError(f"Cached view source is missing: {key}")
-            body = view_path.read_bytes().decode("utf-8")
-            if item.get("derived_source") == "api_content":
-                expected_view = record.get("content", {}).get("rendered", "")
-                if body != expected_view:
-                    raise ValueError(f"Cached view source mismatch: {key}")
-            elif item.get("derived_source") == "public_page_content":
-                page_path = safe_path(root, item["page"]["path"])
-                if not verified_file(root, item["page"]):
-                    raise ValueError(f"Cached public page hash mismatch: {key}")
-                expected_view = extract_public_content(page_path.read_bytes(), record)
-                if expected_view is None or body != expected_view:
-                    raise ValueError(f"Cached derived view source mismatch: {key}")
-            elif item.get("derived_source") == "source_page_only" and body:
-                raise ValueError(f"Unexpected cached view source for unavailable content: {key}")
+            record, body = load_cached_view(root, key, item)
             view_bodies[key] = body
-            if item.get("page", {}).get("status") == "downloaded" and not verified_file(root, item["page"]):
-                raise ValueError(f"Cached public page hash mismatch: {key}")
             media_id = record.get("featured_media")
             if media_id:
                 featured_path = safe_path(root, item["directory"] + "/source-featured-media.json")

@@ -309,6 +309,34 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(self.detail_calls, [("posts", [1])])
         self.assertEqual(json.loads((self.root/"records/posts/1/source.json").read_text())["id"], 1)
 
+    def test_retained_corrupt_sources_abort_before_publishing_views(self):
+        self.run_sync()
+        self.records = [post()]
+        before_state = (self.root / "state.json").read_bytes()
+        before_index = (self.articles / "index.jsonl").read_bytes()
+        before_markdown = self.article_file(2).read_bytes()
+        directory = self.root / "records/posts/2"
+        for sample_ids in (None, {1}):
+            for filename in ("source.json", "source.html", "view-source.html"):
+                with self.subTest(sample_ids=sample_ids, filename=filename):
+                    path = directory / filename
+                    original = path.read_bytes()
+                    if filename == "source.json":
+                        record = json.loads(original)
+                        record["title"]["rendered"] = "Corrupted title"
+                        corrupt = sync.json_bytes(record)
+                    else:
+                        corrupt = original + b"<p>Corrupted content</p>"
+                    path.write_bytes(corrupt)
+                    try:
+                        with self.assertRaisesRegex(ValueError, "Cached .* mismatch"):
+                            self.run_sync(sample_ids=sample_ids)
+                        self.assertEqual((self.root / "state.json").read_bytes(), before_state)
+                        self.assertEqual((self.articles / "index.jsonl").read_bytes(), before_index)
+                        self.assertEqual(self.article_file(2).read_bytes(), before_markdown)
+                    finally:
+                        path.write_bytes(original)
+
     def test_census_detail_race_does_not_advance_state(self):
         self.run_sync()
         before = (self.root/"state.json").read_bytes()
