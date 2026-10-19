@@ -65,36 +65,8 @@ def _tag_text(tag: Tag, attribute: str) -> str | None:
     return str(value) if value is not None else None
 
 
-def _srcset_urls(value: str) -> list[str]:
-    """Read URL tokens from srcset while allowing commas inside a URL token."""
-    urls: list[str] = []
-    i = 0
-    length = len(value)
-    while i < length:
-        while i < length and (value[i].isspace() or value[i] == ","):
-            i += 1
-        if i >= length:
-            break
-        start = i
-        while i < length and not value[i].isspace():
-            i += 1
-        raw_token = value[start:i]
-        trailing_comma = len(raw_token) - len(raw_token.rstrip(","))
-        token = raw_token.rstrip(",")
-        if token:
-            urls.append(token)
-        if trailing_comma:
-            continue
-        # A descriptor, when present, ends at the next candidate separator.
-        while i < length and value[i] != ",":
-            i += 1
-        if i < length:
-            i += 1
-    return urls
-
-
 def _srcset_parts(value: str) -> list[tuple[str, str]]:
-    """Return (URL, trailing descriptor) pairs for rewriting srcset values."""
+    """Parse srcset into (URL, descriptor) pairs, allowing commas inside URLs."""
     result: list[tuple[str, str]] = []
     i = 0
     length = len(value)
@@ -141,7 +113,7 @@ def discover_assets(html: str, base_url: str) -> set[str]:
         for attribute in (("srcset", "imagesrcset", "data-srcset") if tag.name in {"img", "source"} else ("srcset", "imagesrcset")):
             value = _tag_text(tag, attribute)
             if value:
-                for candidate in _srcset_urls(value):
+                for candidate, _ in _srcset_parts(value):
                     add(candidate)
         if tag.name == "a":
             href = _tag_text(tag, "href")

@@ -68,6 +68,42 @@ class RenderTests(unittest.TestCase):
             {"https://video.example/watch"},
         )
 
+    def test_srcset_discovery_and_rewriting_handle_the_same_candidates(self):
+        first_url = "https://kiszamolo.hu/wp/a,one.jpg"
+        second_url = "https://kiszamolo.hu/wp/b.jpg"
+        asset_paths = {first_url: "../../media/a.jpg", second_url: "../../media/b.jpg"}
+        cases = [
+            ("", set(), ""),
+            (" \t, , ", set(), ""),
+            (
+                "/wp/a,one.jpg 1x, /wp/b.jpg 2x",
+                {first_url, second_url},
+                "../../media/a.jpg 1x, ../../media/b.jpg 2x",
+            ),
+            (
+                "/wp/a,one.jpg, /wp/b.jpg,",
+                {first_url, second_url},
+                "../../media/a.jpg, ../../media/b.jpg",
+            ),
+            (
+                "/wp/a,one.jpg 320w,\t/wp/b.jpg 640w,",
+                {first_url, second_url},
+                "../../media/a.jpg 320w, ../../media/b.jpg 640w",
+            ),
+            (
+                "data:image/png;base64,AAAA 1x, /wp/b.jpg 2x",
+                {second_url},
+                "data:image/png;base64,AAAA 1x, ../../media/b.jpg 2x",
+            ),
+        ]
+        for value, expected_assets, expected_srcset in cases:
+            with self.subTest(srcset=value):
+                content = f'<source srcset="{value}">'
+                self.assertEqual(discover_assets(content, BASE), expected_assets)
+                rewritten = rewrite_html(content, BASE, asset_paths, {})
+                source = BeautifulSoup(rewritten, "html.parser").find("source")
+                self.assertEqual(source["srcset"], expected_srcset)
+
     def test_rewrite_uses_local_paths_and_preserves_fragments_and_unknowns(self):
         content = (
             '<p><a href="https://kiszamolo.hu/masik-cikk/#resz">belső</a> '
