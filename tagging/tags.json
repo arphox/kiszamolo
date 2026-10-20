@@ -1,0 +1,731 @@
+{
+  "tags": [
+    {
+      "id": "unit-linked",
+      "name": "Unit-linked biztosítás",
+      "rule": "Befektetési eszközalapokhoz kötött életbiztosítás működése, költsége vagy megszüntetése. Nem minden életbiztosítás ilyen.",
+      "synonyms": [
+        "unit linked",
+        "Befektetési egységekhez kötött életbiztosítás"
+      ],
+      "broader": [
+        "life-insurance",
+        "investing"
+      ]
+    },
+    {
+      "id": "costs",
+      "name": "Költségek",
+      "rule": "Díjszerkezet, teljes fenntartási költség vagy költségalapú összehasonlítás érdemi elemzése. Egy ár vagy díj puszta közlése nem elég.",
+      "synonyms": []
+    },
+    {
+      "id": "tbsz",
+      "name": "TBSZ",
+      "rule": "Tartós befektetési számla működése, díja, időtávja, átvitele vagy adózási feltétele. Egy zárójeles adómentességi utalás nem elég.",
+      "synonyms": [
+        "tartós befektetési számla"
+      ],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "government-bonds",
+      "name": "Állampapír",
+      "rule": "Állampapír vásárlása, kibocsátása, hozama vagy piaca, beleértve a prémium sorozatokat. Nem jár automatikusan minden államadósság-említéshez; a Babakötvény külön terméktag.",
+      "synonyms": [],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "investment-funds",
+      "name": "Befektetési alap",
+      "rule": "Befektetési alap működése, választása vagy más termékkel való érdemi összehasonlítása. Az ETF-fel együtt is megadható; minden szülőtag ráírása nem kötelező.",
+      "synonyms": [],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "investing",
+      "name": "Befektetés",
+      "rule": "Pénz vagy vagyon befektetése hozam elérése érdekében, befektetési döntések, termékek és szolgáltatások, valamint befektetési szerződések megszüntetése. Ide tartozik a személyes célok, vagyon, időtáv és kockázattűrés szerinti befektetésválasztás is. A keresés a konkrét befektetési altémákat is lefedi; ezek cikkeire nem kell külön ezt a tág taget felírni. Nem minden megtakarítás, lakásvásárlás vagy megtérülési számítás befektetési téma.",
+      "synonyms": []
+    },
+    {
+      "id": "bank-account",
+      "name": "Bankszámla",
+      "rule": "Bankszámla vagy számlacsomag választása, használata, díjai, feltételei és megszüntetése. A vállalkozói használatot a Vállalkozás taggal lehet jelezni, ha érdemi.",
+      "synonyms": []
+    },
+    {
+      "id": "business",
+      "name": "Vállalkozás",
+      "rule": "Vállalkozás indításának, működtetésének, pénzügyeinek vagy adóterheinek érdemi tárgyalása. Egy cég neve vagy egy szolgáltató vállalati volta nem elég.",
+      "synonyms": []
+    },
+    {
+      "id": "etf",
+      "name": "ETF",
+      "rule": "Tőzsdén kereskedett alap működése, kiválasztása, vásárlása vagy költsége. Nem a részvény és nem az indexkövetés másik neve.",
+      "synonyms": [
+        "tőzsdén kereskedett befektetési alap",
+        "exchange-traded fund"
+      ],
+      "broader": [
+        "investment-funds"
+      ]
+    },
+    {
+      "id": "taxation",
+      "name": "Adózás",
+      "rule": "Adókötelezettség, adómentesség, adókedvezmény, adó-visszatérítés vagy adópolitikai változás érdemi tárgyalása. A tárgyát külön tag jelöli, ahol van hozzá érdemi tartalom; egy adókulcs puszta költségelemként nem elég.",
+      "synonyms": []
+    },
+    {
+      "id": "foreign-currency-loans",
+      "name": "Devizahitel",
+      "rule": "Devizában nyilvántartott vagy devizaalapú hitel árfolyam-, törlesztési vagy elszámolási kérdései.",
+      "synonyms": [],
+      "broader": [
+        "debt"
+      ]
+    },
+    {
+      "id": "will",
+      "name": "Végrendelet",
+      "rule": "Végrendelet készítése, érvényessége, módosítása vagy megtámadása.",
+      "synonyms": [],
+      "broader": [
+        "inheritance"
+      ]
+    },
+    {
+      "id": "inheritance",
+      "name": "Öröklés",
+      "rule": "Öröklési jogosultságok, törvényes sorrend, kötelesrész, kitagadás, hagyatéki eljárás vagy örökölt tartozás érdemi tárgyalása. Ezek eltérő jogi fogalmak; a tag közösen teszi kereshetővé őket. A végrendelet önálló tag is lehet.",
+      "synonyms": []
+    },
+    {
+      "id": "bitcoin",
+      "name": "Bitcoin",
+      "rule": "A Bitcoin használata, értéke, kockázata vagy adózási esete. Nem minden kriptoeszköz szinonimája.",
+      "synonyms": [
+        "BTC"
+      ],
+      "broader": [
+        "crypto"
+      ]
+    },
+    {
+      "id": "crypto",
+      "name": "Kriptoeszközök",
+      "rule": "Kriptopénzek működése, használata, szabályozási vagy befektetési kérdései. A Bitcoin külön tag; a Kriptoeszközök is megadható mellette, minden szülőtag ráírása nem kötelező.",
+      "synonyms": [],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "double-taxation",
+      "name": "Kettős adóztatás",
+      "rule": "Ugyanazon jövedelem több országban adóztatása vagy az ezt korlátozó egyezmény és annak megszűnése. Az országok az indoklásban szerepelnek.",
+      "synonyms": [],
+      "broader": [
+        "taxation"
+      ]
+    },
+    {
+      "id": "donations",
+      "name": "Adományozás",
+      "rule": "Adakozás célja, összege, módja vagy konkrét támogatási felhívás; a segélyszervezet működésének, költségeinek és átláthatóságának mérlegelése is ide tartozik.",
+      "synonyms": [
+        "adakozás"
+      ]
+    },
+    {
+      "id": "volunteering",
+      "name": "Önkéntesség",
+      "rule": "Idővel, munkával vagy személyes tevékenységgel nyújtott önkéntes segítség. A pénzadomány külön fogalom.",
+      "synonyms": []
+    },
+    {
+      "id": "livelihood",
+      "name": "Megélhetés",
+      "rule": "Keresetkiesés, munkavesztés vagy a háztartás mindennapi szükségleteinek finanszírozhatósága és az ehhez nyújtott segítség. A járvány említése önmagában nem elég.",
+      "synonyms": []
+    },
+    {
+      "id": "solar",
+      "name": "Napelem",
+      "rule": "Napelemes rendszer kiválasztása, telepítése, üzemeltetése, hálózati csatlakozása, elszámolása vagy megtérülése. A megtérülés a tárgy témáján belül marad, külön tag nélkül.",
+      "synonyms": []
+    },
+    {
+      "id": "blogging",
+      "name": "Blogírás",
+      "rule": "Blog vagy tartalmi weboldal létrehozása, tartalomkészítése, működtetése és üzleti modellje. Egy saját blogközlemény nem automatikusan ilyen.",
+      "synonyms": []
+    },
+    {
+      "id": "online-advertising",
+      "name": "Internetes hirdetés",
+      "rule": "Internetes hirdetések működése, elszámolása, bevételi modellje vagy a hirdetési hálózatok feltételei. Egy cikkben lévő reklám nem ad ilyen taget.",
+      "synonyms": []
+    },
+    {
+      "id": "seo",
+      "name": "Keresőoptimalizálás",
+      "rule": "Keresőből érkező forgalomért végzett tartalmi és technikai munka. A kereső puszta használata nem elég.",
+      "synonyms": [
+        "SEO"
+      ]
+    },
+    {
+      "id": "wages",
+      "name": "Munkabér",
+      "rule": "Bérek összehasonlítása, bérinformációk hozzáférhetősége vagy fizetésemelés és béralku érdemi tárgyalása.",
+      "synonyms": []
+    },
+    {
+      "id": "job-change",
+      "name": "Munkahelyváltás",
+      "rule": "Másik munkahely keresése, bér- és karrierszempontjai vagy váltás kockázata.",
+      "synonyms": []
+    },
+    {
+      "id": "inflation",
+      "name": "Infláció",
+      "rule": "A pénzromlás mérése, okai, következményei vagy értelmezett inflációs hír. Egy kamatképlet vagy rövid háttéradat nem elég.",
+      "synonyms": [
+        "pénzromlás"
+      ]
+    },
+    {
+      "id": "consumer-confidence",
+      "name": "Fogyasztói bizalom",
+      "rule": "A háztartások gazdasági várakozásai és ezek fogyasztási vagy gazdasági hatása.",
+      "synonyms": []
+    },
+    {
+      "id": "recession",
+      "name": "Recesszió",
+      "rule": "Gazdasági visszaesés, annak kockázata, okai vagy következményei.",
+      "synonyms": []
+    },
+    {
+      "id": "mortgage-loans",
+      "name": "Lakáshitel",
+      "rule": "Lakáscélú hitel felvétele, kamata, feltételei vagy piaca; a támogatott és lakástakarékhoz kapcsolódó konstrukciók is ide tartoznak. A puszta hasonlat nem elég.",
+      "synonyms": [],
+      "broader": [
+        "debt"
+      ]
+    },
+    {
+      "id": "stocks",
+      "name": "Részvény",
+      "rule": "Részvények hozama, osztaléka, adózása vagy piaci mozgásuk értelmezése, időbeli összevetést adó önálló hír. Napi indexpont puszta felsorolása nem elég; az ETF nem automatikusan részvénytéma.",
+      "synonyms": [],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "insurance",
+      "name": "Biztosítás",
+      "rule": "Biztosítások működése, fedezete, díja vagy ügyfélteendői, beleértve a szerződés megszüntetését, az ügyfél által kezdeményezett biztosítóváltást és a biztosítási állomány átvételét. Konkrét biztosítástípussal együtt is megadható; például Biztosítás + Életbiztosítás + Unit-linked biztosítás. Minden szülőtag ráírása nem kötelező. Más témájú reklámbanner nem tartalom.",
+      "synonyms": []
+    },
+    {
+      "id": "babavaro",
+      "name": "Babaváró hitel",
+      "rule": "Babaváró hitel igénybevétele, felhasználása, jogosultsága vagy nemteljesítési következménye. Nem azonos a Babakötvénnyel.",
+      "synonyms": [],
+      "broader": [
+        "debt"
+      ]
+    },
+    {
+      "id": "pension",
+      "name": "Nyugdíj",
+      "rule": "Nyugdíjrendszer működése, fenntarthatósága, átalakítása vagy a nyugdíjas háztartások jövedelmi helyzete. A nyugdíj mint távoli megtakarítási cél puszta említése nem elég.",
+      "synonyms": []
+    },
+    {
+      "id": "sovereign-debt",
+      "name": "Államadósság",
+      "rule": "Állami eladósodás mértéke, lejáratai, finanszírozása vagy fenntarthatósága. Az Állampapír és az Államcsőd önálló fogalom.",
+      "synonyms": [],
+      "broader": [
+        "debt"
+      ]
+    },
+    {
+      "id": "bank-transfer",
+      "name": "Átutalás",
+      "rule": "Banki átutalás működése, díja, jóváírása vagy fennakadása; belföldi és nemzetközi használat is. Az átváltás csak érdemi tárgyalásnál kap külön Devizaváltás taget.",
+      "synonyms": []
+    },
+    {
+      "id": "fuel",
+      "name": "Üzemanyag",
+      "rule": "Üzemanyag ára, adóterhe vagy használatának érdemi elemzése. Az autó összköltségében egyetlen tételként említett benzin nem elég.",
+      "synonyms": []
+    },
+    {
+      "id": "gambling",
+      "name": "Szerencsejáték",
+      "rule": "Szerencsejáték, nyeremény, szabályozás vagy adókezelés érdemi tárgyalása.",
+      "synonyms": []
+    },
+    {
+      "id": "euro-adoption",
+      "name": "Euró bevezetése",
+      "rule": "Euró bevezetésének feltételei, folyamata vagy következményei; az euró árfolyamának említése nem elég.",
+      "synonyms": []
+    },
+    {
+      "id": "driving",
+      "name": "Autózás",
+      "rule": "Autótartás, autóhasználat vagy közlekedési alternatívák érdemi összehasonlítása; egy jármű neve vagy mellékes említése nem elég.",
+      "synonyms": []
+    },
+    {
+      "id": "taxi",
+      "name": "Taxi",
+      "rule": "Taxizás használati és költségszempontjai vagy összehasonlítása más közlekedési móddal.",
+      "synonyms": []
+    },
+    {
+      "id": "financial-course",
+      "name": "Pénzügyi tanfolyam",
+      "rule": "Pénzügyi képzés indulása, elmaradása, választása, ára vagy minőségének értékelése. Egy más tárgyú cikk tanfolyamajánlója nem elég.",
+      "synonyms": []
+    },
+    {
+      "id": "financial-education",
+      "name": "Pénzügyi nevelés",
+      "rule": "Pénzügyi szokások és döntések tanítása gyermekeknek vagy felnőtteknek; konkrét módszerek, programok. Egy tanfolyam tantervének felsorolása nem elég.",
+      "synonyms": []
+    },
+    {
+      "id": "pocket-money",
+      "name": "Zsebpénz",
+      "rule": "Zsebpénz adása, beosztása vagy nevelési szerepe.",
+      "synonyms": []
+    },
+    {
+      "id": "saving",
+      "name": "Megtakarítás",
+      "rule": "Rendszeres félretétel, célhoz kötött gyűjtés vagy megtakarítási szokások kialakítása. Nem automatikus tag minden befektetési termékre.",
+      "synonyms": []
+    },
+    {
+      "id": "deflation",
+      "name": "Defláció",
+      "rule": "Általános árszínvonal-csökkenés és annak gazdasági következményei. Nem azonos a lassuló inflációval.",
+      "synonyms": []
+    },
+    {
+      "id": "stagflation",
+      "name": "Stagfláció",
+      "rule": "Magas infláció és gazdasági stagnálás vagy magas munkanélküliség együttes jelenségének magyarázata.",
+      "synonyms": []
+    },
+    {
+      "id": "monetary-policy",
+      "name": "Monetáris politika",
+      "rule": "Jegybanki kamatpolitika, pénzkibocsátás, jegybanki függetlenség és ezek gazdasági hatásai.",
+      "synonyms": []
+    },
+    {
+      "id": "public-finances",
+      "name": "Állami pénzügyek",
+      "rule": "Állami bevételek, kiadások, költségvetési politika vagy újraelosztás érdemi tárgyalása. Nem automatikus tag minden adóról vagy állampapírról szóló cikkre.",
+      "synonyms": []
+    },
+    {
+      "id": "real-value",
+      "name": "Vásárlóerő",
+      "rule": "Pénz, jövedelem vagy hozam reálértékének és nominális értékének megkülönböztetése, számszerű értelmezése.",
+      "synonyms": []
+    },
+    {
+      "id": "forex",
+      "name": "Devizakereskedés",
+      "rule": "Devizapárok piaci kereskedése, kereskedési módszerei és működése. Nem azonos a megtakarítás hétköznapi devizaváltásával.",
+      "synonyms": [
+        "forex-kereskedés"
+      ],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "financial-psychology",
+      "name": "Pénzügyi döntések lélektana",
+      "rule": "Pénzügyi döntések érzelmi és viselkedési tényezői, önfegyelem, veszteségtűrés és mentális terhelés érdemi elemzése.",
+      "synonyms": []
+    },
+    {
+      "id": "web-development",
+      "name": "Weboldalkészítés",
+      "rule": "Weboldal létrehozása, fejlesztése vagy erre irányuló konkrét szakemberkeresés.",
+      "synonyms": []
+    },
+    {
+      "id": "property-rental",
+      "name": "Lakáskiadás",
+      "rule": "Lakás hosszú vagy rövid távú bérbeadása, működtetése, bevételei, munkaterhe és összehasonlítása. Adózás csak érdemi adózási tartalom mellett társul.",
+      "synonyms": [],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "debt",
+      "name": "Hitelek és tartozások",
+      "rule": "Hitelek és más tartozások felvétele, fennállása, visszafizetése vagy rendezése; lakossági, vállalkozási és állami eladósodás. Ide tartoznak a hitelfelvételi és törlesztési korlátok, a hitelkiváltás, az adósságrendezés, a hitelből vásárláshoz szükséges önerő és a hitelszerződések banki elszámolása miatti visszatérítések, tőke- és kamatkorrekciók is; ezekhez nem kell külön tag. Konkrét hiteltípusok és adósságtémák, például az Előtörlesztés saját tagjei is megadhatók. Az állampapír befektetői szempontú tárgyalása önmagában nem eladósodási téma.",
+      "synonyms": [
+        "Adósság",
+        "Hitel",
+        "Hitelek",
+        "Tartozás",
+        "Tartozások"
+      ]
+    },
+    {
+      "id": "csok",
+      "name": "CSOK",
+      "rule": "Családi otthonteremtési kedvezmény jogosultsága, összege, feltételei vagy ügyintézése.",
+      "synonyms": [
+        "családok otthonteremtési kedvezménye"
+      ]
+    },
+    {
+      "id": "garden-pool",
+      "name": "Kerti medence",
+      "rule": "Medence választása, telepítése, fenntartása, vízkezelése vagy fűtése és ezek költségei. A részletes kezelési módok nem külön tagek.",
+      "synonyms": []
+    },
+    {
+      "id": "sovereign-default",
+      "name": "Államcsőd",
+      "rule": "Állami fizetésképtelenség jelentése, kockázata és következményei.",
+      "synonyms": [],
+      "broader": [
+        "debt"
+      ]
+    },
+    {
+      "id": "exchange-rate",
+      "name": "Devizaárfolyam",
+      "rule": "Devizaárfolyam alakulása, okai és gazdasági következményei. Egy napi árfolyam puszta közlése nem elég.",
+      "synonyms": []
+    },
+    {
+      "id": "poverty",
+      "name": "Szegénység",
+      "rule": "Szegénységben élő háztartások jövedelmi, lakhatási és társadalmi korlátai, pénzügyi helyzete vagy támogatása.",
+      "synonyms": []
+    },
+    {
+      "id": "usury",
+      "name": "Uzsora",
+      "rule": "Kirívóan magas kamattal járó, kiszolgáltatottságot kihasználó hitelezés és adósságcsapdája.",
+      "synonyms": [
+        "uzsorakölcsön"
+      ],
+      "broader": [
+        "debt"
+      ]
+    },
+    {
+      "id": "baby-bond",
+      "name": "Babakötvény",
+      "rule": "Babakötvény hozama, befizetése, korlátja és felhasználási feltétele. Nem azonos a Babaváró hitellel.",
+      "synonyms": [],
+      "broader": [
+        "government-bonds"
+      ]
+    },
+    {
+      "id": "wealth-inequality",
+      "name": "Jövedelmi és vagyoni egyenlőtlenség",
+      "rule": "Jövedelmi vagy vagyoni különbségek eloszlása, mérése, változása és gazdasági összefüggései.",
+      "synonyms": []
+    },
+    {
+      "id": "investment-advice",
+      "name": "Befektetési tanácsadás",
+      "rule": "Befektetési tanácsadás működése, értéke vagy jogi feltételei. A cikk végi tanácsadási ajánló nem ad taget.",
+      "synonyms": [],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "life-insurance",
+      "name": "Életbiztosítás",
+      "rule": "Életbiztosítás fedezete, működése, díjfizetése, kedvezményezettje, megszüntetése vagy ügyfélteendői; a csoportos konstrukció is ide tartozhat. Unit-linked biztosítással és Biztosítással együtt is megadható; minden szülőtag ráírása nem kötelező.",
+      "synonyms": [],
+      "broader": [
+        "insurance"
+      ]
+    },
+    {
+      "id": "publishing",
+      "name": "Könyvkiadás",
+      "rule": "Könyv összeállítása, szerkesztése, megjelentetése vagy ezekhez kapcsolódó együttműködés. Csatolt fejezet tartalma nem következik a felhívásból.",
+      "synonyms": []
+    },
+    {
+      "id": "demographics",
+      "name": "Demográfia",
+      "rule": "Születésszám, termékenység, élettartam vagy népesség korösszetételének alakulása és következményei. Az öregedés és a születésszám eltérő jelenség, közös témakör alá sorolva.",
+      "synonyms": []
+    },
+    {
+      "id": "currency-exchange",
+      "name": "Devizaváltás",
+      "rule": "Pénznemek átváltásának árfolyama, költsége vagy gyakorlati módja; a bankkártyás konverzió is ide tartozik. Nem azonos a devizapiaci kereskedéssel.",
+      "synonyms": []
+    },
+    {
+      "id": "banking-crisis",
+      "name": "Bankválság",
+      "rule": "Bankok fizetőképessége, veszteségviselő képessége és rendszerszintű sérülékenysége.",
+      "synonyms": []
+    },
+    {
+      "id": "nonperforming-loans",
+      "name": "Nemteljesítő hitelek",
+      "rule": "Bedőlt vagy késedelmes hitelállomány mértéke, okai és banki vagy gazdasági következményei.",
+      "synonyms": [],
+      "broader": [
+        "debt"
+      ]
+    },
+    {
+      "id": "health-fund",
+      "name": "Egészségpénztár",
+      "rule": "Egészségpénztári tagság, befizetés, felhasználás, költség vagy adó-visszatérítés érdemi tárgyalása.",
+      "synonyms": []
+    },
+    {
+      "id": "cafeteria",
+      "name": "Cafeteria",
+      "rule": "Munkáltatói béren kívüli juttatások rendszere, felhasználása vagy adóterhe.",
+      "synonyms": []
+    },
+    {
+      "id": "bank-card",
+      "name": "Bankkártya",
+      "rule": "Bankkártya használata, funkciói, díjai, devizaelszámolása vagy biztonsága. Márkaspecifikus kártyaszolgáltatások is ide tartoznak; kártya puszta említése nem elég.",
+      "synonyms": []
+    },
+    {
+      "id": "cash-withdrawal",
+      "name": "Készpénzfelvétel",
+      "rule": "ATM-es vagy banki készpénzfelvétel feltételei, díjai és összehasonlítása, belföldön vagy külföldön.",
+      "synonyms": []
+    },
+    {
+      "id": "housing-savings",
+      "name": "Lakástakarék",
+      "rule": "Lakástakarék-pénztári szerződés befizetése, támogatása, felhasználása, költsége vagy feltételei.",
+      "synonyms": [
+        "LTP",
+        "lakástakarék-pénztári megtakarítás"
+      ],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "prepayment",
+      "name": "Előtörlesztés",
+      "rule": "Hitel lejárat előtti részleges vagy teljes visszafizetése, annak költsége, feltételei és alternatívái.",
+      "synonyms": [],
+      "broader": [
+        "debt"
+      ]
+    },
+    {
+      "id": "renovation",
+      "name": "Lakásfelújítás",
+      "rule": "Lakás felújítása vagy korszerűsítése, annak finanszírozása és elszámolhatósága.",
+      "synonyms": []
+    },
+    {
+      "id": "heating",
+      "name": "Fűtés",
+      "rule": "Fűtési rendszerek választása, korszerűsítése, használata és költségei; például kazán, hőszivattyú vagy elektromos fűtés. A konkrét technológiákhoz nem kell külön tag. Lakásfelújítás és Költségek is megadható mellette, ha a cikk ezeket érdemben tárgyalja.",
+      "synonyms": []
+    },
+    {
+      "id": "utilities",
+      "name": "Rezsi",
+      "rule": "Háztartási energia- és közüzemi díjak, tarifák, fogyasztás és rezsicsökkentés érdemi tárgyalása, például villany-, gáz- vagy vízdíj. Nem csak fűtési téma; a Fűtés és Költségek is megadható mellette, ha érdemi.",
+      "synonyms": []
+    },
+    {
+      "id": "financial-complaints",
+      "name": "Pénzügyi panaszkezelés",
+      "rule": "Pénzügyi szolgáltatónál tett panasz, panaszkezelési eljárás és pénzügyi vitarendezés működése vagy ügyfélteendői; ide tartozik a Pénzügyi Békéltető Testület eljárása is. Az érintett termék tagje akkor társul, ha a cikk annak saját feltételeit vagy működését is érdemben tárgyalja.",
+      "synonyms": [
+        "Pénzügyi Békéltető Testület",
+        "PBT"
+      ]
+    },
+    {
+      "id": "shopping",
+      "name": "Vásárlás",
+      "rule": "Termékek és fogyasztói szolgáltatások vásárlásának döntési szempontjai, feltételei, akciói és vásárlói jogai. Egy termék megvásárlásának puszta említése nem elég; pénzügyi termék vásárlása önmagában nem ilyen téma. Online vásárlás tag esetén mindig add meg a Vásárlás taget is.",
+      "synonyms": []
+    },
+    {
+      "id": "online-shopping",
+      "name": "Online vásárlás",
+      "rule": "Webáruházas vásárlás feltételei, akciói, vásárlói tagságai, rendelése, szállítása vagy elállási lehetőségei. A konkrét szolgáltatókhoz, például Amazonhoz vagy Prime-hoz nem kell külön tag. Mindig add meg mellette a Vásárlás taget is.",
+      "synonyms": [
+        "Internetes vásárlás"
+      ],
+      "broader": [
+        "shopping"
+      ]
+    },
+    {
+      "id": "investor-compensation",
+      "name": "Befektetővédelem",
+      "rule": "Befektetői vagyon védelme, szolgáltatói felszámolás és kártalanítás feltételei.",
+      "synonyms": [],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "home-purchase",
+      "name": "Lakásvásárlás",
+      "rule": "Lakás megszerzésének feltételei, finanszírozása és döntési szempontjai.",
+      "synonyms": []
+    },
+    {
+      "id": "home-construction",
+      "name": "Lakásépítés",
+      "rule": "Új lakás építése, annak finanszírozása, támogatási és elszámolási feltételei.",
+      "synonyms": []
+    },
+    {
+      "id": "money-functions",
+      "name": "A pénz működése",
+      "rule": "Pénz fizetési, értékőrző és elszámolási szerepének magyarázata vagy más eszközzel való összevetése.",
+      "synonyms": []
+    },
+    {
+      "id": "investment-bubble",
+      "name": "Befektetési buborék",
+      "rule": "Eszközárak fundamentumoktól elszakadása, buborékképződés, spekulatív felfutás vagy ezek kritikája. Nem minden spekuláció buborék.",
+      "synonyms": [],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "credit-card",
+      "name": "Hitelkártya",
+      "rule": "Hitelkártya működése, költsége, visszatérítési rendszere vagy használata. Nem minden bankkártya hitelkártya.",
+      "synonyms": [],
+      "broader": [
+        "bank-card",
+        "debt"
+      ]
+    },
+    {
+      "id": "expense-tracking",
+      "name": "Kiadások követése",
+      "rule": "Költések nyilvántartása, kategorizálása és felhasználása a háztartási költségvetésben.",
+      "synonyms": []
+    },
+    {
+      "id": "fraud",
+      "name": "Csalás",
+      "rule": "Pénz vagy adat megszerzésére irányuló megtévesztés felismerése, működése és megelőzése. A QR-kódos, telefonos és piactéri módszereket az indoklás részletezi; az értékesítési túlzás önmagában nem csalás.",
+      "synonyms": []
+    },
+    {
+      "id": "phishing",
+      "name": "Adathalászat",
+      "rule": "Hamis üzenet vagy weboldal révén személyes vagy banki adatok megszerzésére irányuló megtévesztés felismerése és kivédése.",
+      "synonyms": [
+        "phishing"
+      ],
+      "broader": [
+        "fraud"
+      ]
+    },
+    {
+      "id": "streaming",
+      "name": "Internetes filmnézés",
+      "rule": "Internetes film- és sorozatszolgáltatás hozzáférése, előfizetési ajánlata vagy értéke. Konkrét szolgáltatók az indoklásban maradnak.",
+      "synonyms": []
+    },
+    {
+      "id": "vat-exemption",
+      "name": "Alanyi áfamentesség",
+      "rule": "Alanyi áfamentesség értékhatára, jogosultsága és számlázási következményei.",
+      "synonyms": [],
+      "broader": [
+        "taxation"
+      ]
+    },
+    {
+      "id": "flat-rate-tax",
+      "name": "Átalányadózás",
+      "rule": "Átalányadózás szabályai, költséghányada, adóterhe vagy választási szempontjai.",
+      "synonyms": [],
+      "broader": [
+        "taxation"
+      ]
+    },
+    {
+      "id": "privacy",
+      "name": "Adatvédelem",
+      "rule": "Személyes adatok gyűjtése, megosztása, értékesítése, védelme és hozzáférési engedélyek kezelése. A helyadat és alkalmazásengedély itt részlet, nem önálló szűrő.",
+      "synonyms": []
+    },
+    {
+      "id": "khr",
+      "name": "KHR-lista",
+      "rule": "Hitelnyilvántartási státusz és annak hitel- vagy támogatási jogosultságra gyakorolt következményei.",
+      "synonyms": [
+        "KHR",
+        "BAR-lista"
+      ],
+      "broader": [
+        "debt"
+      ]
+    },
+    {
+      "id": "misleading-marketing",
+      "name": "Megtévesztő értékesítés",
+      "rule": "Félrevezető értékesítési állítások, hozamígéretek vagy ajánlati számítások érdemi bírálata. Nem jelenti automatikusan bűncselekmény megállapítását.",
+      "synonyms": []
+    },
+    {
+      "id": "workstation-ergonomics",
+      "name": "Munkahelyi ergonómia",
+      "rule": "Munkatér, asztal, szék, monitor és munkavégzési testhelyzet gyakorlati kialakítása.",
+      "synonyms": []
+    },
+    {
+      "id": "cocoa",
+      "name": "Kakaó",
+      "rule": "Kakaó termelése, ára vagy piaca és ezek érdemi gazdasági értelmezése.",
+      "synonyms": []
+    }
+  ]
+}

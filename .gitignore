@@ -8,3 +8,6 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# Local automatic tagging runs and usage journals.
+/tagging/runs/

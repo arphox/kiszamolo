@@ -1,6 +1,7 @@
 # Kiszámoló – helyi cikkgyűjtemény
 
 A [Kiszámoló blog](https://kiszamolo.hu/) tartalmának saját, helyi másolata és a letöltéséhez, feldolgozásához készült eszközök.
+> A kiszamolo.hu szerzője Csernok Miklós; az általa írt cikkek az ő szellemi termékei.
 
 A cél elsőként az, hogy a cikkek könnyebben olvasható és feldolgozható formában legyenek meg. Erre később címkézés és témák szerinti katalógusok épülhetnek, például egy gyűjtemény a nyugdíjról szóló cikkekből. Hosszabb távon a projekt a blog szerzőjével közös tudástár kialakítását is segítheti.
 
@@ -14,7 +15,7 @@ A cikkek Markdown-változatát elsősorban sima szövegként és AI-eszközökke
 - Tartalomjegyzék és géppel feldolgozható cikklista készítése.
 - A helyi gyűjtemény kézi, igény szerinti frissítése.
 
-A saját címkézés, a témák szerinti új katalógusok és a további tudástárfunkciók még tervek. A blogon már meglévő kategóriákat és címkéket a letöltő megőrzi.
+A [témakereső és címkéző](tagging/README.md) külön eszköz. A jelenlegi beállításokkal 20 ismert és 20 friss cikk Sol medium próbája, külön tartalmi ellenőrzéssel lezajlott. A friss próba teljesítette az előre megbeszélt indulási feltételeket; a teljes gyűjtemény címkézése még nem indult el. A taglista lefedése korlátozott, a hiányzó témákat a címkéző jelzi. A blog saját kategóriáit és címkéit a letöltő megőrzi.
 
 ## Mi hol található?
 
@@ -24,6 +25,7 @@ A saját címkézés, a témák szerinti új katalógusok és a további tudást
 | `articles/assets/` | A letöltött képek és mellékletek. |
 | `raw_source/content-mirror/` | Az eredeti webes források és a frissítés folytatásához szükséges adatok. |
 | `automation/content-mirror/` | A jelenleg használt letöltő és feldolgozó, a tesztjeivel együtt. |
+| `tagging/` | Saját témacímkézés, helyi kereső és a használatuk rövid leírása. |
 
 ## Telepítés és frissítés
 

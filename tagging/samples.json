@@ -1,0 +1,428 @@
+{
+  "sets": {
+    "pilot": [
+      {
+        "id": 66977,
+        "title": "Ilyen még nem volt: őszintén az életbiztosításokról",
+        "published_at": "2011-03-28T15:21:00",
+        "path": "articles/2011/03/2011-03-28 15.21 Ilyen még nem volt - őszintén az életbiztosításokról.md"
+      },
+      {
+        "id": 66983,
+        "title": "Taxi, vagy saját autó? Melyik az olcsóbb?",
+        "published_at": "2011-06-24T17:36:00",
+        "path": "articles/2011/06/2011-06-24 17.36 Taxi, vagy saját autó Melyik az olcsóbb.md"
+      },
+      {
+        "id": 66998,
+        "title": "A nyugdíjkérdés: mekkora is a probléma?",
+        "published_at": "2011-08-18T13:41:00",
+        "path": "articles/2011/08/2011-08-18 13.41 A nyugdíjkérdés - mekkora is a probléma.md"
+      },
+      {
+        "id": 93673,
+        "title": "Megéri-e a TBSZ számla és hol vegyek állampapírt? Olvasói kérdések.",
+        "published_at": "2011-09-10T22:32:00",
+        "path": "articles/2011/09/2011-09-10 22.32 Megéri-e a TBSZ számla és hol vegyek állampapírt Olvasói kérdések.md"
+      },
+      {
+        "id": 67042,
+        "title": "Átváltani vagy nem váltani? Ez itt a kérdés",
+        "published_at": "2011-11-15T10:49:00",
+        "path": "articles/2011/11/2011-11-15 10.49 Átváltani vagy nem váltani Ez itt a kérdés.md"
+      },
+      {
+        "id": 67166,
+        "title": "Tudj meg mindent az egészségpénztárakról",
+        "published_at": "2011-11-25T13:04:03",
+        "path": "articles/2011/11/2011-11-25 13.04 Tudj meg mindent az egészségpénztárakról.md"
+      },
+      {
+        "id": 93594,
+        "title": "Elindul a Kiszámoló-Akadémia!",
+        "published_at": "2012-01-18T14:13:28",
+        "path": "articles/2012/01/2012-01-18 14.13 Elindul a Kiszámoló-Akadémia!.md"
+      },
+      {
+        "id": 74179,
+        "title": "Így tanítsd a gyerekedet a pénzügyekre",
+        "published_at": "2012-02-03T13:28:49",
+        "path": "articles/2012/02/2012-02-03 13.28 Így tanítsd a gyerekedet a pénzügyekre.md"
+      },
+      {
+        "id": 74731,
+        "title": "Az adakozásról",
+        "published_at": "2012-02-06T07:07:42",
+        "path": "articles/2012/02/2012-02-06 07.07 Az adakozásról.md"
+      },
+      {
+        "id": 86373,
+        "title": "Tudod-e, mennyit számol fel a bankod a külföldi kártyahasználatért?",
+        "published_at": "2012-05-03T14:29:14",
+        "path": "articles/2012/05/2012-05-03 14.29 Tudod-e, mennyit számol fel a bankod a külföldi kártyahasználatért.md"
+      },
+      {
+        "id": 90174,
+        "title": "Amit az inflációról tudnod kell",
+        "published_at": "2012-06-02T21:04:29",
+        "path": "articles/2012/06/2012-06-02 21.04 Amit az inflációról tudnod kell.md"
+      },
+      {
+        "id": 94756,
+        "title": "Világpremier: az első vendégszerző a Kiszámolón",
+        "published_at": "2013-01-19T21:45:56",
+        "path": "articles/2013/01/2013-01-19 21.45 Világpremier - az első vendégszerző a Kiszámolón.md"
+      },
+      {
+        "id": 96638,
+        "title": "Vállalkozói számla kalkulátor: melyik a legolcsóbb vállalkozói számla a számodra?",
+        "published_at": "2013-08-01T00:38:43",
+        "path": "articles/2013/08/2013-08-01 00.38 Vállalkozói számla kalkulátor - melyik a legolcsóbb vállalkozói számla a számodra.md"
+      },
+      {
+        "id": 97864,
+        "title": "Befektetési alap vagy ETF?",
+        "published_at": "2014-03-24T09:48:57",
+        "path": "articles/2014/03/2014-03-24 09.48 Befektetési alap vagy ETF.md"
+      },
+      {
+        "id": 98749,
+        "title": "A nagy lakástakarékpénztári összefoglaló",
+        "published_at": "2014-08-11T08:15:22",
+        "path": "articles/2014/08/2014-08-11 08.15 A nagy lakástakarékpénztári összefoglaló.md"
+      },
+      {
+        "id": 98971,
+        "title": "Hitelesek: ki mennyi pénzt kaphat vissza?",
+        "published_at": "2014-09-11T09:00:46",
+        "path": "articles/2014/09/2014-09-11 09.00 Hitelesek - ki mennyi pénzt kaphat vissza.md"
+      },
+      {
+        "id": 100377,
+        "title": "Olvasói kérdések",
+        "published_at": "2015-03-31T10:04:56",
+        "path": "articles/2015/03/2015-03-31 10.04 Olvasói kérdések.md"
+      },
+      {
+        "id": 100390,
+        "title": "Pénzügy és a jog II: a végrendeletről és az örökösödés szabályairól",
+        "published_at": "2015-04-01T22:10:15",
+        "path": "articles/2015/04/2015-04-01 22.10 Pénzügy és a jog II - a végrendeletről és az örökösödés szabályairól.md"
+      },
+      {
+        "id": 100724,
+        "title": "A debreceni Akadémia elmarad",
+        "published_at": "2015-05-19T12:38:40",
+        "path": "articles/2015/05/2015-05-19 12.38 A debreceni Akadémia elmarad.md"
+      },
+      {
+        "id": 101732,
+        "title": "Napelem megtérülése",
+        "published_at": "2015-12-14T12:09:39",
+        "path": "articles/2015/12/2015-12-14 12.09 Napelem megtérülése.md"
+      },
+      {
+        "id": 101867,
+        "title": "CSOK: kérdések és válaszok az új lakástámogatásról",
+        "published_at": "2016-01-01T23:48:44",
+        "path": "articles/2016/01/2016-01-01 23.48 CSOK - kérdések és válaszok az új lakástámogatásról.md"
+      },
+      {
+        "id": 103686,
+        "title": "Weboldal a Bagázs-nak",
+        "published_at": "2016-08-23T12:03:14",
+        "path": "articles/2016/08/2016-08-23 12.03 Weboldal a Bagázs-nak.md"
+      },
+      {
+        "id": 104048,
+        "title": "Kiszámoló életbiztosítás kötvény",
+        "published_at": "2016-10-04T18:40:46",
+        "path": "articles/2016/10/2016-10-04 18.40 Kiszámoló életbiztosítás kötvény.md"
+      },
+      {
+        "id": 104999,
+        "title": "A CIG Pannóniáé lett a Dimenzió",
+        "published_at": "2017-02-23T23:20:50",
+        "path": "articles/2017/02/2017-02-23 23.20 A CIG Pannóniáé lett a Dimenzió.md"
+      },
+      {
+        "id": 106820,
+        "title": "Kiszámoló Életbiztosítás október",
+        "published_at": "2017-10-18T11:39:21",
+        "path": "articles/2017/10/2017-10-18 11.39 Kiszámoló Életbiztosítás október.md"
+      },
+      {
+        "id": 107151,
+        "title": "A Bitcoinról még egyszer",
+        "published_at": "2017-12-12T19:58:57",
+        "path": "articles/2017/12/2017-12-12 19.58 A Bitcoinról még egyszer.md"
+      },
+      {
+        "id": 107555,
+        "title": "A bitcoin adózása",
+        "published_at": "2018-02-12T10:45:16",
+        "path": "articles/2018/02/2018-02-12 10.45 A bitcoin adózása.md"
+      },
+      {
+        "id": 108443,
+        "title": "Kiszámoló Életbiztosítás augusztus",
+        "published_at": "2018-08-03T15:52:19",
+        "path": "articles/2018/08/2018-08-03 15.52 Kiszámoló Életbiztosítás augusztus.md"
+      },
+      {
+        "id": 108750,
+        "title": "Rövid távú lakáskiadás tapasztalatok",
+        "published_at": "2018-10-02T13:42:41",
+        "path": "articles/2018/10/2018-10-02 13.42 Rövid távú lakáskiadás tapasztalatok.md"
+      },
+      {
+        "id": 109870,
+        "title": "Curve kártya tudnivalók",
+        "published_at": "2019-06-26T21:50:51",
+        "path": "articles/2019/06/2019-06-26 21.50 Curve kártya tudnivalók.md"
+      },
+      {
+        "id": 109951,
+        "title": "Változtak az adósságfék szabályai",
+        "published_at": "2019-07-07T21:09:11",
+        "path": "articles/2019/07/2019-07-07 21.09 Változtak az adósságfék szabályai.md"
+      },
+      {
+        "id": 109992,
+        "title": "Kerti medence: hogy kell kezelni és mennyibe kerül?",
+        "published_at": "2019-07-14T21:12:18",
+        "path": "articles/2019/07/2019-07-14 21.12 Kerti medence - hogy kell kezelni és mennyibe kerül.md"
+      },
+      {
+        "id": 111149,
+        "title": "Te is tudsz segíteni",
+        "published_at": "2020-03-16T12:30:08",
+        "path": "articles/2020/03/2020-03-16 12.30 Te is tudsz segíteni.md"
+      },
+      {
+        "id": 115295,
+        "title": "Legjobb befektetés a napelem",
+        "published_at": "2021-04-06T16:52:59",
+        "path": "articles/2021/04/2021-04-06 16.52 Legjobb befektetés a napelem.md"
+      },
+      {
+        "id": 115368,
+        "title": "Megélni blogírásból 3. rész frissítve",
+        "published_at": "2021-04-14T08:30:02",
+        "path": "articles/2021/04/2021-04-14 08.30 Megélni blogírásból 3. rész frissítve.md"
+      },
+      {
+        "id": 117925,
+        "title": "Hogyan keresnél egy másik munkahelyen?",
+        "published_at": "2022-02-16T10:27:56",
+        "path": "articles/2022/02/2022-02-16 10.27 Hogyan keresnél egy másik munkahelyen.md"
+      },
+      {
+        "id": 118713,
+        "title": "Heti hírek röviden",
+        "published_at": "2022-06-12T20:03:14",
+        "path": "articles/2022/06/2022-06-12 20.03 Heti hírek röviden.md"
+      },
+      {
+        "id": 119103,
+        "title": "Államcsőd a küszöbön?",
+        "published_at": "2022-07-14T14:27:46",
+        "path": "articles/2022/07/2022-07-14 14.27 Államcsőd a küszöbön.md"
+      },
+      {
+        "id": 119915,
+        "title": "A legszegényebbek pénzügyei",
+        "published_at": "2022-11-06T11:43:15",
+        "path": "articles/2022/11/2022-11-06 11.43 A legszegényebbek pénzügyei.md"
+      },
+      {
+        "id": 120536,
+        "title": "Végleges az amerikai adóegyezmény megszűnése",
+        "published_at": "2023-02-19T08:37:51",
+        "path": "articles/2023/02/2023-02-19 08.37 Végleges az amerikai adóegyezmény megszűnése.md"
+      },
+      {
+        "id": 122221,
+        "title": "Ez történt a héten 1105",
+        "published_at": "2023-11-05T12:39:33",
+        "path": "articles/2023/11/2023-11-05 12.39 Ez történt a héten 1105.md"
+      },
+      {
+        "id": 123451,
+        "title": "Bezárták a kiskaput",
+        "published_at": "2024-02-13T12:07:41",
+        "path": "articles/2024/02/2024-02-13 12.07 Bezárták a kiskaput.md"
+      },
+      {
+        "id": 124029,
+        "title": "Fizessenek a szegények",
+        "published_at": "2024-04-24T08:26:58",
+        "path": "articles/2024/04/2024-04-24 08.26 Fizessenek a szegények.md"
+      },
+      {
+        "id": 124353,
+        "title": "Tanfolyamot milliókért?",
+        "published_at": "2024-05-21T14:41:52",
+        "path": "articles/2024/05/2024-05-21 14.41 Tanfolyamot milliókért.md"
+      },
+      {
+        "id": 125355,
+        "title": "Vigyázz a QR kóddal és egyéb csalások",
+        "published_at": "2024-11-25T13:16:18",
+        "path": "articles/2024/11/2024-11-25 13.16 Vigyázz a QR kóddal és egyéb csalások.md"
+      },
+      {
+        "id": 125576,
+        "title": "Ingyen Apple TV a hétvégén",
+        "published_at": "2025-01-02T10:57:52",
+        "path": "articles/2025/01/2025-01-02 10.57 Ingyen Apple TV a hétvégén.md"
+      },
+      {
+        "id": 126930,
+        "title": "Adóváltozások jövőre",
+        "published_at": "2025-11-17T19:29:00",
+        "path": "articles/2025/11/2025-11-17 19.29 Adóváltozások jövőre.md"
+      },
+      {
+        "id": 127604,
+        "title": "Tudom hol laksz és melyik óvodába jár a gyereked",
+        "published_at": "2026-06-05T11:09:06",
+        "path": "articles/2026/06/2026-06-05 11.09 Tudom hol laksz és melyik óvodába jár a gyereked.md"
+      },
+      {
+        "id": 127838,
+        "title": "Fontos változás a Kiszámoló életbiztosításban",
+        "published_at": "2026-08-27T13:22:30",
+        "path": "articles/2026/08/2026-08-27 13.22 Fontos változás a Kiszámoló életbiztosításban.md"
+      },
+      {
+        "id": 128037,
+        "title": "Kiszámoló könyv: pénzügyek a családban",
+        "published_at": "2026-10-08T13:59:58",
+        "path": "articles/2026/10/2026-10-08 13.59 Kiszámoló könyv - pénzügyek a családban.md"
+      }
+    ],
+    "holdout": [
+      {
+        "id": 66991,
+        "title": "Tudnivalók a bankkártyákról",
+        "published_at": "2011-07-29T23:06:00",
+        "path": "articles/2011/07/2011-07-29 23.06 Tudnivalók a bankkártyákról.md"
+      },
+      {
+        "id": 94534,
+        "title": "Meghosszabbították az árfolyamgát határidejét",
+        "published_at": "2012-12-20T07:07:57",
+        "path": "articles/2012/12/2012-12-20 07.07 Meghosszabbították az árfolyamgát határidejét.md"
+      },
+      {
+        "id": 97286,
+        "title": "Napi 11.03.",
+        "published_at": "2013-11-03T21:45:01",
+        "path": "articles/2013/11/2013-11-03 21.45 Napi 11.03.md"
+      },
+      {
+        "id": 98065,
+        "title": "Bevásárlás: mit jelent a felirat a terméken?",
+        "published_at": "2014-04-17T10:53:39",
+        "path": "articles/2014/04/2014-04-17 10.53 Bevásárlás - mit jelent a felirat a terméken.md"
+      },
+      {
+        "id": 100730,
+        "title": "Lottóláz",
+        "published_at": "2015-05-20T23:24:18",
+        "path": "articles/2015/05/2015-05-20 23.24 Lottóláz.md"
+      },
+      {
+        "id": 103022,
+        "title": "Offtopik: Ezt tudja rólad a Google és így védekezz ellene",
+        "published_at": "2016-05-14T20:35:43",
+        "path": "articles/2016/05/2016-05-14 20.35 Offtopik - Ezt tudja rólad a Google és így védekezz ellene.md"
+      },
+      {
+        "id": 106695,
+        "title": "Tovább csökken a prémium állampapír kamatai (2023/I és 2021/J)",
+        "published_at": "2017-09-27T16:12:33",
+        "path": "articles/2017/09/2017-09-27 16.12 Tovább csökken a prémium állampapír kamatai (2023 I és 2021 J).md"
+      },
+      {
+        "id": 108312,
+        "title": "Amazon Prime Day július 16-án",
+        "published_at": "2018-07-04T09:13:21",
+        "path": "articles/2018/07/2018-07-04 09.13 Amazon Prime Day július 16-án.md"
+      },
+      {
+        "id": 108650,
+        "title": "Érdemes klímával fűteni?",
+        "published_at": "2018-09-10T10:32:51",
+        "path": "articles/2018/09/2018-09-10 10.32 Érdemes klímával fűteni.md"
+      },
+      {
+        "id": 108795,
+        "title": "Kiszámoló életbiztosítás október",
+        "published_at": "2018-10-10T11:06:56",
+        "path": "articles/2018/10/2018-10-10 11.06 Kiszámoló életbiztosítás október.md"
+      },
+      {
+        "id": 110295,
+        "title": "Aegon Smart Casco 2.",
+        "published_at": "2019-08-30T13:05:15",
+        "path": "articles/2019/08/2019-08-30 13.05 Aegon Smart Casco 2.md"
+      },
+      {
+        "id": 113838,
+        "title": "A vásárlás boldoggá tesz?",
+        "published_at": "2020-11-18T20:47:01",
+        "path": "articles/2020/11/2020-11-18 20.47 A vásárlás boldoggá tesz.md"
+      },
+      {
+        "id": 115015,
+        "title": "A bőség zavara",
+        "published_at": "2021-03-05T10:23:33",
+        "path": "articles/2021/03/2021-03-05 10.23 A bőség zavara.md"
+      },
+      {
+        "id": 116640,
+        "title": "Mi lesz a CSOK-kal, babaváróval és a CSOK hitellel válás esetén?",
+        "published_at": "2021-12-14T11:28:48",
+        "path": "articles/2021/12/2021-12-14 11.28 Mi lesz a CSOK-kal, babaváróval és a CSOK hitellel válás esetén.md"
+      },
+      {
+        "id": 118634,
+        "title": "Heti hírek röviden",
+        "published_at": "2022-05-29T20:41:42",
+        "path": "articles/2022/05/2022-05-29 20.41 Heti hírek röviden.md"
+      },
+      {
+        "id": 120692,
+        "title": "Cristo casco- kilométer alapú casco biztosítás",
+        "published_at": "2023-03-08T08:43:05",
+        "path": "articles/2023/03/2023-03-08 08.43 Cristo casco- kilométer alapú casco biztosítás.md"
+      },
+      {
+        "id": 94091,
+        "title": "Időgép: Fizess magadnak tizedet és egyéb megtakarítási technikák",
+        "published_at": "2024-10-26T09:21:59",
+        "path": "articles/2024/10/2024-10-26 09.21 Időgép - Fizess magadnak tizedet és egyéb megtakarítási technikák.md"
+      },
+      {
+        "id": 125587,
+        "title": "Rendszeres havi megtakarítás ETF-be",
+        "published_at": "2025-01-09T11:30:19",
+        "path": "articles/2025/01/2025-01-09 11.30 Rendszeres havi megtakarítás ETF-be.md"
+      },
+      {
+        "id": 127021,
+        "title": "Autóköltség kalkulátor",
+        "published_at": "2025-12-09T08:32:55",
+        "path": "articles/2025/12/2025-12-09 08.32 Autóköltség kalkulátor.md"
+      },
+      {
+        "id": 127896,
+        "title": "Mit tegyél, ha panaszod van?",
+        "published_at": "2026-09-02T20:40:38",
+        "path": "articles/2026/09/2026-09-02 20.40 Mit tegyél, ha panaszod van.md"
+      }
+    ]
+  }
+}
