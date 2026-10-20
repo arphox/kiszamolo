@@ -90,6 +90,60 @@ class SyncTests(unittest.TestCase):
         self.assertIn("https://other.test/b.png", text)
         self.assertIn("other.test", report["media_hosts"])
 
+    def test_only_explicitly_excluded_record_is_skipped_before_fetching(self):
+        self.records.append(post(104048))
+        self.records[1]["content"]["protected"] = True
+        report = self.run_sync()
+        self.assertEqual(set(self.state()["records"]), {"post:1", "post:2"})
+        self.assertEqual(self.detail_calls, [("posts", [1, 2])])
+        self.assertFalse((self.root / "records/posts/104048").exists())
+        self.assertNotIn("https://kiszamolo.hu/p104048/", [url for url, _ in self.client.calls])
+        self.assertEqual(set(report["excluded_records"]), {"post:104048"})
+        self.assertEqual(self.state()["records"]["post:2"]["acquisition_status"], "incomplete")
+
+    def test_exclusion_prunes_existing_files_and_keeps_shared_media(self):
+        for mode in ("sync", "rebuild"):
+            with self.subTest(mode=mode):
+                self.records = [post(), post(104048, body='<img src="/a.png"><img src="/private.png">')]
+                self.records[0]["content"]["rendered"] += '<a href="/p104048/">Policy</a>'
+                with patch("sync.EXCLUDED_RECORDS", {}):
+                    self.run_sync()
+                old_article = self.article_file(104048)
+                self.assertTrue(old_article.exists())
+                self.client.calls.clear()
+                self.detail_calls.clear()
+                if mode == "sync":
+                    self.run_sync()
+                else:
+                    # A missing excluded source must not prevent an offline rebuild.
+                    (self.root / "records/posts/104048/source.json").unlink()
+                    with patch("sync.HttpClient", side_effect=AssertionError("Network forbidden")):
+                        sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
+                self.assertEqual(set(self.state()["records"]), {"post:1"})
+                self.assertFalse(old_article.exists())
+                self.assertFalse((self.root / "records/posts/104048").exists())
+                self.assertFalse((self.articles / sync.asset_filename("https://kiszamolo.hu/private.png")).exists())
+                self.assertTrue((self.articles / sync.asset_filename("https://kiszamolo.hu/a.png")).is_file())
+                self.assertNotIn("https://kiszamolo.hu/private.png", self.state()["assets"])
+                self.assertIn("[Policy](https://kiszamolo.hu/p104048/)", self.article_file(1).read_text(encoding="utf-8"))
+                self.assertNotIn("104048", (self.articles / "index.jsonl").read_text(encoding="utf-8"))
+                self.assertNotIn("Title 104048", (self.articles / "INDEX.md").read_text(encoding="utf-8"))
+                self.assertEqual(self.client.calls, [])
+                self.assertEqual(self.detail_calls, [])
+                self.run_sync(full=True)
+                self.assertEqual(set(self.state()["records"]), {"post:1"})
+
+    def test_excluded_source_directory_is_validated_before_deleting_any_files(self):
+        self.records.append(post(104048))
+        with patch("sync.EXCLUDED_RECORDS", {}):
+            self.run_sync()
+        state = self.state()
+        state["records"]["post:104048"]["directory"] = "records/posts/1"
+        with self.assertRaisesRegex(ValueError, "directory mismatch"):
+            sync.prune_excluded(self.root, self.articles, state)
+        self.assertTrue(self.article_file(104048).exists())
+        self.assertTrue((self.root / "records/posts/1/source.json").exists())
+
     def test_cross_article_links_preserve_referenced_technical_anchors(self):
         self.records[0] = post(body='<a href="/p2/#headline-38-120338">Másik cikk</a>')
         self.records[1] = post(2, body='<h2 id="headline-38-120338">Célpont</h2>')

@@ -52,6 +52,8 @@ Ha egy átnevezés másik rekord korábbi fájlnevét veszi át (például két 
 
 ## Szinkronizálási szabályok
 
+A `sync.py` `EXCLUDED_RECORDS` beállításával egyes bejegyzések kizárhatók. A sync és a `--rebuild` törli a hozzájuk tartozó helyi cikket és forrásmappát, frissíti az indexeket, és megőrzi a más cikkek által is használt médiát.
+
 Minden futás lekéri a teljes publikált API-leltárt, de csak az ID-t, típust, státuszt, módosítási időket és a GMT publikálási időt (`_fields=id,type,status,modified,modified_gmt,date_gmt`). A lapozás és a végső darabszámpróba továbbra is teljes; eltűnés csak külön API-404 után jelölhető. Normál futásban a WordPress módosítási időinek változása alapján kér teljes rekordot, a változatlanokat hash-ellenőrzött helyi `source.json`-ból használja újra. A korábbi állapotfájlok külön migráció nélkül használhatók; hiányzó/sérült forrás vagy kiemeltkép-cache célzott újralekérést indít.
 
 Elfogadott kompromisszum: a WordPress módosítási időinek változása nélküli, régi tartalom- vagy kiemeltképmetaadat-változást a normál futás nem feltétlenül észleli. A hétnapos átfedésben és `--full` esetén a teljes rekordokat is újrakéri. Ha a leltár és a célzott rekordlekérés között változik az időbélyeg vagy eltűnik egy kért rekord, a futás leáll és újrafuttatást kér; nem ment hamis eltűnésjelölést.

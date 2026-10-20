@@ -31,6 +31,9 @@ DEFAULT_OUTPUT = ROOT / "articles"
 DEFAULT_SOURCE_OUTPUT = ROOT / "raw_source" / "content-mirror"
 ALLOWED_HOSTS = {"kiszamolo.hu", "www.kiszamolo.hu"}
 SCHEMA_VERSION = 1
+EXCLUDED_RECORDS = {
+    "post:104048": "Password-protected insurance policy; excluded by user request.",
+}
 
 
 def utc_now():
@@ -292,6 +295,48 @@ def record_key(record):
 
 def record_directory(record):
     return f"records/{record['type']}s/{record['id']}"
+
+
+def prune_excluded(root, articles_root, state):
+    """Remove explicitly excluded records and their unshared local files."""
+    excluded = {key: item for key, item in state["records"].items() if key in EXCLUDED_RECORDS}
+    if not excluded:
+        return []
+    kept = [item for key, item in state["records"].items() if key not in excluded]
+    shared_assets = {url for item in kept for url in item.get("asset_urls", [])}
+    removed_assets = {url for item in excluded.values() for url in item.get("asset_urls", [])} - shared_assets
+    shared_paths = {asset["path"] for url, asset in state["assets"].items()
+                    if url not in removed_assets and asset.get("path")}
+    files, directories = set(), []
+    for key, item in excluded.items():
+        if record_key(item) != key or item["directory"] != record_directory(item):
+            raise ValueError(f"Excluded record identity or directory mismatch: {key}")
+        directory = safe_path(root, item["directory"])
+        if directory != root / item["directory"]:
+            raise ValueError(f"Excluded source directory must not use symlinks: {key}")
+        directories.append(directory)
+        if item.get("path"):
+            path = safe_path(articles_root, item["path"])
+            if path != articles_root / item["path"] or any(other.get("path") == item["path"] for other in kept):
+                raise ValueError(f"Excluded Markdown path is shared or uses symlinks: {key}")
+            files.add(path)
+    for url in removed_assets:
+        asset = state["assets"].get(url, {})
+        if asset.get("path") and asset["path"] not in shared_paths:
+            files.add(_tracked_asset_path(articles_root, asset["path"]))
+    # All deletion targets have been resolved and checked before any removal.
+    for path in files:
+        path.unlink(missing_ok=True)
+    for directory in directories:
+        if directory.exists():
+            shutil.rmtree(directory)
+    for key, item in excluded.items():
+        state["records"].pop(key)
+        state.get("obsolete_markdown", {}).pop(item.get("path"), None)
+    for url in removed_assets:
+        state["assets"].pop(url, None)
+    atomic_write(root / "state.json", json_bytes(state))
+    return sorted(excluded)
 
 
 def load_cached_view(root, key, item):
@@ -633,12 +678,16 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
         state = load_state(root)
         previous_articles_root = state.get("articles_root")
         migrate_assets(root, articles_root, state)
+        prune_excluded(root, articles_root, state)
         prior_records = {key: dict(item) for key, item in state["records"].items()}
         cutoff = recent_cutoff(state, started)
         inventories = [inventory_loader(client, kind, progress=progress) for kind in ("posts", "pages")]
         census = [record for inv in inventories for record in inv.records]
         if len({record["id"] for record in census}) != len(census):
             raise ValueError("Duplicate WordPress IDs across posts/pages")
+        excluded = {record_key(r): EXCLUDED_RECORDS[record_key(r)]
+                    for r in census if record_key(r) in EXCLUDED_RECORDS}
+        census = [r for r in census if record_key(r) not in EXCLUDED_RECORDS]
         if sample_ids is None:
             confirm_missing(client, state, census)
         if sample_ids is not None and not set(sample_ids).issubset({r["id"] for r in census}):
@@ -820,6 +869,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
                     if state["assets"][u]["status"] == "failed"}
         report = dict(started_at=stamp, finished_at=utc_now().isoformat(),
             mode="sample" if sample_ids is not None else "full_inventory_sync",
+            excluded_records=excluded,
             remote_posts=len(inventories[0].records), remote_pages=len(inventories[1].records),
             selected_records=len(selected), refreshed_pages=len(refresh), refreshed_assets=len(jobs),
             full_records_fetched=len(fetched_keys), cached_records_reused=len(remote_records) - len(fetched_keys),
@@ -871,6 +921,7 @@ def offline_rebuild(root, articles_root, progress=print):
         if state.get("articles_root") != str(articles_root):
             raise ValueError("Offline rebuild requires the articles root recorded in state")
         moved = migrate_assets(root, articles_root, state)
+        excluded = prune_excluded(root, articles_root, state)
         records = []
         view_bodies = {}
         featured = {}
@@ -911,6 +962,7 @@ def offline_rebuild(root, articles_root, progress=print):
         old_report = json.loads(old_report_path.read_text(encoding="utf-8")) if old_report_path.is_file() else {}
         publish_indexes(root, state, stats, old_report, articles_root)
         report = dict(rebuilt_at=utc_now().isoformat(), moved_assets=moved,
+                      excluded_records=excluded,
                       records=len(records), locally_modified_reassigned_files_preserved=preserved)
         atomic_write(articles_root / "rebuild-report.json", json_bytes(report))
         progress(f"Offline rebuild complete: {len(records)} records; moved assets: {moved}")
