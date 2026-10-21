@@ -22,6 +22,10 @@ IMAGES = {".png", ".jpg", ".jpeg", ".webp"}
 MEDIA = IMAGES | set(".gif .svg .avif .bmp .tif .tiff .pdf .doc .docx .odt .ppt .pptx .xls .xlsx .csv .txt .rtf .mp3 .mp4 .m4a .m4v .wav .ogg .webm .mov .mkv .zip .rar .7z".split())
 LINK = r'(<[^>]+>|[^\s)]+)(?:\s+"[^"]*")?'
 IMAGE_LINK = re.compile(r'!\[[\s\S]*?\]\(' + LINK + r'\)')
+DECORATIVE_IMAGES = {
+    "https://kiszamolo.hu/hirdetes2.gif": "",
+    "https://kiszamolo.hu/wp-includes/images/smilies/icon_smile.gif": ":)",
+}
 
 
 class LabelError(Exception):
@@ -115,8 +119,9 @@ def image_sources(image):
 
 
 def image_variants(row, root):
+    decorations = dict(DECORATIVE_IMAGES)
     if not row.get("source_record"):
-        return {}
+        return {}, decorations
     if row["source_record"] != f"records/posts/{row['id']}":
         raise LabelError("A forrásútvonal nem a címkézendő cikkhez tartozik.")
     source_root = root / "raw_source/content-mirror"
@@ -128,6 +133,10 @@ def image_variants(row, root):
         asset = assets.get(urljoin(row["url"], target), {})
         return local_path(root / "articles", asset["path"]) if asset.get("path") else None
 
+    for url, text in DECORATIVE_IMAGES.items():
+        if path := cached(url):
+            decorations[path] = text
+
     variants = {}
     for image in soup.find_all("img"):
         candidates = image_sources(image)
@@ -137,7 +146,41 @@ def image_variants(row, root):
             for url in candidates:
                 if path := cached(url):
                     variants[path] = preferred
-    return variants
+    return variants, decorations
+
+
+def replace_decorative_images(body, path, articles_root, decorations):
+    """Replace only verified decoration URLs and their registered local copies."""
+    def replacement(target):
+        target = target.strip("<>")
+        parts = urlsplit(target)
+        key = (urljoin("https://kiszamolo.hu/", target) if parts.scheme or parts.netloc
+               else local_path(path.parent, target, articles_root))
+        return decorations.get(key)
+
+    def markdown_image(match):
+        linked = re.match(r'\]\(' + LINK + r'\)', body[match.end():])
+        if linked and Path(urlsplit(linked.group(1).strip("<>")).path).suffix.lower() in IMAGES:
+            return match.group(0)
+        text = replacement(match.group(1))
+        return match.group(0) if text is None else text
+
+    def html_image(match):
+        image = html_images.get(match.start())
+        if image is None:
+            return match.group(0)
+        texts = [replacement(target) for target in image_sources(image)]
+        if texts and texts[0] is not None and all(text == texts[0] for text in texts):
+            return texts[0]
+        return match.group(0)
+
+    body = IMAGE_LINK.sub(markdown_image, body)
+    # Keep parent sources/original links without reserializing the Markdown body.
+    line_starts = [0] + [match.end() for match in re.finditer("\n", body)]
+    soup = BeautifulSoup(body, "html.parser")
+    html_images = {line_starts[image.sourceline - 1] + image.sourcepos: image
+                   for image in soup.find_all("img")}
+    return re.sub(r'''<img\b(?:[^>"']|"[^"]*"|'[^']*')*>''', html_image, body, flags=re.I)
 
 
 def article_images(body, path, articles_root, variants=None):
@@ -347,7 +390,10 @@ def label_article(article_id, root=None, transport=None, *, force=False):
         raise ReviewRequired("A külső beágyazott tartalomhoz humán ellenőrzés szükséges.")
     body = clean_markdown(path.read_text(encoding="utf-8"), row["title"])
     has_images = IMAGE_LINK.search(body) or BeautifulSoup(body, "html.parser").find("img")
-    variants = image_variants(row, root) if has_images else {}
+    variants = {}
+    if has_images:
+        variants, decorations = image_variants(row, root)
+        body = replace_decorative_images(body, path, root / "articles", decorations)
     images = article_images(body, path, root / "articles", variants)
     if not body and not images:
         raise ReviewRequired("A cikknek nincs értékelhető helyi tartalma.")

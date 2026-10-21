@@ -245,6 +245,65 @@ class LabelTests(unittest.TestCase):
         self.transport.assert_not_called()
         self.assertEqual(self.path.read_bytes(), self.before)
 
+    def test_known_remote_decorations_do_not_require_images(self):
+        for body in (
+            'BODY\n![:)](https://kiszamolo.hu/wp-includes/images/smilies/icon_smile.gif)\n'
+            '[![](https://kiszamolo.hu/hirdetes2.gif)](https://kiszamolo.hu/penzugyi-tanacsadas/)',
+            'BODY\n<img src="//kiszamolo.hu/wp-includes/images/smilies/icon_smile.gif" alt=":-)">\n'
+            '<a href="https://kiszamolo.hu/penzugyi-tanacsadas/"><img src="//kiszamolo.hu/hirdetes2.gif" title="1 > 0"></a>',
+        ):
+            with self.subTest(body=body):
+                self.path.write_bytes(self.before)
+                self.body(body)
+                self.run_article()
+                request = self.transport.call_args.args[0]
+                self.assertEqual(request["images"], [])
+                self.assertIn("BODY\n:)", request["prompt"])
+                self.assertNotIn("hirdetes2.gif", request["prompt"])
+                self.assertNotIn("icon_smile.gif", request["prompt"])
+
+    def test_registered_local_decorations_do_not_require_images(self):
+        source = self.root / "raw_source/content-mirror/records/posts/20"
+        source.mkdir(parents=True)
+        source.joinpath("view-source.html").write_text(
+            '<img src="//kiszamolo.hu/wp-includes/images/smilies/icon_smile.gif">'
+            '<img src="//kiszamolo.hu/hirdetes2.gif">', encoding="utf-8")
+        self.rows[1].update(source_record="records/posts/20", url="https://kiszamolo.hu/test/")
+        self.write_index()
+        self.write_json("raw_source/content-mirror/state.json", {"assets": {
+            "https://kiszamolo.hu/wp-includes/images/smilies/icon_smile.gif": {"path": "assets/smile.gif"},
+            "https://kiszamolo.hu/hirdetes2.gif": {"path": "assets/ad.gif"},
+        }})
+        for body in ('BODY\n![:)](../../assets/smile.gif)\n![](../../assets/ad.gif)',
+                     'BODY\n<img src="../../assets/smile.gif">\n<img src="../../assets/ad.gif">'):
+            with self.subTest(body=body):
+                self.path.write_bytes(self.before)
+                self.body(body)
+                self.run_article()
+                request = self.transport.call_args.args[0]
+                self.assertEqual(request["images"], [])
+                self.assertIn("BODY\n:)", request["prompt"])
+                self.assertNotIn("assets/", request["prompt"])
+
+    def test_decorations_do_not_hide_unknown_or_missing_images(self):
+        smile = '![:)](https://kiszamolo.hu/wp-includes/images/smilies/icon_smile.gif)'
+        for image in ('![Chart](../../assets/missing.png)',
+                      '![:)](https://example.test/wp-includes/images/smilies/icon_smile.gif)',
+                      '![](../../assets/hirdetes2.gif)',
+                      '<img src="https://kiszamolo.hu/wp-includes/images/smilies/icon_smile.gif" '
+                      'srcset="https://example.test/chart.png 2x">',
+                      '<picture><source srcset="https://example.test/chart.png 2x">'
+                      '<img src="https://kiszamolo.hu/wp-includes/images/smilies/icon_smile.gif"></picture>',
+                      '<a href="https://example.test/chart.png">'
+                      '<img src="https://kiszamolo.hu/wp-includes/images/smilies/icon_smile.gif"></a>',
+                      f'[{smile}](https://example.test/chart.png)'):
+            with self.subTest(image=image):
+                self.body(f"BODY\n{smile}\n{image}")
+                with self.assertRaises(label.ReviewRequired):
+                    self.run_article()
+                self.assertEqual(self.path.read_bytes(), self.before)
+        self.transport.assert_not_called()
+
     def test_missing_external_unsupported_images_and_attachments_need_review(self):
         cases = ['![Chart](../../assets/missing.png)', '![Chart](https://example.test/chart.png)',
                  '![Chart](../../assets/chart.gif)', '[File](../../assets/report.pdf)',

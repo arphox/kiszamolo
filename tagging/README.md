@@ -83,6 +83,10 @@ A program minden cikkhez friss sessiont indít, és a helyi képeket is
 figyelembe veszi. Hiányzó vagy nem feldolgozható tartalomnál humán ellenőrzést
 kér.
 
+A címkézés bemenetében az ismert WordPress-szmájlit szöveges jellé alakítja,
+a blog ismert reklámképét kihagyja. Ezeket pontos forráscímük és a hozzájuk
+nyilvántartott helyi fájlútvonal alapján ismeri fel.
+
 Ha a cikk nincs a helyi cikklistában vagy hiányzik a fájlja, a program leáll;
 a letöltést külön kell elindítani. A már címkézett cikk tagjait modellhívás
 nélkül kiírja. Új tag, kizárás vagy más humán döntés szükségességét jelzi,
