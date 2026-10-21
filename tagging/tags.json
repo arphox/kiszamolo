@@ -51,7 +51,7 @@
     {
       "id": "investing",
       "name": "Befektetés",
-      "rule": "Pénz vagy vagyon befektetése hozam elérése érdekében, befektetési döntések, termékek és szolgáltatások, valamint befektetési szerződések megszüntetése. Ide tartozik a személyes célok, vagyon, időtáv és kockázattűrés szerinti befektetésválasztás is. A keresés a konkrét befektetési altémákat is lefedi; ezek cikkeire nem kell külön ezt a tág taget felírni. Nem minden megtakarítás, lakásvásárlás vagy megtérülési számítás befektetési téma.",
+      "rule": "Pénz vagy vagyon befektetése hozam elérése érdekében, befektetési döntések, termékek és szolgáltatások, valamint befektetési szerződések megszüntetése. Ide tartozik a személyes célok, vagyon, időtáv és kockázattűrés szerinti befektetésválasztás, továbbá a gyűjtői eszközök várható értékének és értéknövekedési esélyének mérlegelése is. A keresés a konkrét befektetési altémákat is lefedi; ezek cikkeire nem kell külön ezt a tág taget felírni. Nem minden megtakarítás, lakásvásárlás vagy megtérülési számítás befektetési téma.",
       "synonyms": []
     },
     {
@@ -227,7 +227,7 @@
     {
       "id": "stocks",
       "name": "Részvény",
-      "rule": "Részvények hozama, osztaléka, adózása vagy piaci mozgásuk értelmezése, időbeli összevetést adó önálló hír. Napi indexpont puszta felsorolása nem elég; az ETF nem automatikusan részvénytéma.",
+      "rule": "Részvények hozama, osztaléka, adózása vagy piaci mozgásuk értelmezése, időbeli összevetést adó önálló hír. A részvénypiacok és tőzsdék piaci értéke, mérete és ezek összehasonlítása is ide tartozik. Napi indexpont puszta felsorolása nem elég; az ETF nem automatikusan részvénytéma.",
       "synonyms": [],
       "broader": [
         "investing"
@@ -307,9 +307,11 @@
     },
     {
       "id": "financial-education",
-      "name": "Pénzügyi nevelés",
-      "rule": "Pénzügyi szokások és döntések tanítása gyermekeknek vagy felnőtteknek; konkrét módszerek, programok. Egy tanfolyam tantervének felsorolása nem elég.",
-      "synonyms": []
+      "name": "Pénzügyi műveltség",
+      "rule": "Pénzügyi szokások és döntések tanítása gyermekeknek vagy felnőtteknek, valamint a pénzügyi tájékozódáshoz szükséges általános alapismeretek és készségek érdemi magyarázata. Ide tartoznak a nevelési módszerek és programok, a gazdasági hírek kritikus olvasása, valamint a pénzügyi számadatok nagyságrendjeinek és számneveinek értelmezése. Egy tanfolyam tantervének felsorolása nem elég.",
+      "synonyms": [
+        "Pénzügyi nevelés"
+      ]
     },
     {
       "id": "pocket-money",
@@ -653,7 +655,7 @@
     {
       "id": "fraud",
       "name": "Csalás",
-      "rule": "Pénz vagy adat megszerzésére irányuló megtévesztés felismerése, működése és megelőzése. A QR-kódos, telefonos és piactéri módszereket az indoklás részletezi; az értékesítési túlzás önmagában nem csalás.",
+      "rule": "Pénz vagy adat megszerzésére, illetve kéretlen online művelet kiváltására irányuló megtévesztés felismerése, működése és megelőzése, beleértve a kikényszerített lájkolást vagy megosztást. A QR-kódos, telefonos és piactéri módszereket az indoklás részletezi; az értékesítési túlzás önmagában nem csalás.",
       "synonyms": []
     },
     {
@@ -726,6 +728,737 @@
       "name": "Kakaó",
       "rule": "Kakaó termelése, ára vagy piaca és ezek érdemi gazdasági értelmezése.",
       "synonyms": []
+    },
+    {
+      "id": "bank-deposit",
+      "name": "Bankbetét",
+      "rule": "Bankbetét lekötése, kamata, feltételei, betétbiztosítása vagy más megtakarítási formával való érdemi összehasonlítása. Egy bankszámla vagy banki kamat puszta említése nem elég.",
+      "synonyms": [
+        "Bankbetétek",
+        "lekötött betét",
+        "látra szóló betét"
+      ],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "bonds",
+      "name": "Kötvény",
+      "rule": "Állami, banki vagy vállalati kötvény vásárlása, kibocsátása, kamata, hozama, kockázata vagy piaca, illetve a kötvénybefektetés általános működése. Érdemi állampapír-téma esetén ezt az Állampapír mellett is add meg; a Babakötvény önmagában nem elég a Kötvény taghez.",
+      "synonyms": [
+        "kötvénybefektetés",
+        "Kötvények",
+        "Vállalati kötvény",
+        "Vállalati kötvények"
+      ],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "nyesz",
+      "name": "NYESZ",
+      "rule": "Nyugdíj-előtakarékossági számla működése, nyitása, befizetése, befektetései, költsége, adókedvezménye vagy megszüntetése.",
+      "synonyms": [
+        "nyugdíj-előtakarékossági számla",
+        "NYESZ-R"
+      ],
+      "broader": [
+        "pension",
+        "investing"
+      ]
+    },
+    {
+      "id": "voluntary-pension-fund",
+      "name": "Önkéntes nyugdíjpénztár",
+      "rule": "Önkéntes nyugdíjpénztári tagság, befizetés, portfólió, költség, adó-visszatérítés, szolgáltatás vagy kilépés érdemi tárgyalása.",
+      "synonyms": [
+        "önkéntes nyugdíjpénztári tagság",
+        "ÖNYP"
+      ],
+      "broader": [
+        "pension",
+        "investing"
+      ]
+    },
+    {
+      "id": "gold-investing",
+      "name": "Aranybefektetés",
+      "rule": "Arany befektetési célú vásárlása, tartása, eladása, értéke, költsége vagy más befektetéssel való összehasonlítása. Ékszer vagy ipari felhasználás önmagában nem elég.",
+      "synonyms": [
+        "befektetési arany",
+        "Arany"
+      ],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "options",
+      "name": "Opciós ügyletek",
+      "rule": "Tőzsdei vagy más pénzügyi opciós ügyletek működése, árazása, stratégiája, kockázata vagy használata. A vételi vagy eladási jog hétköznapi említése nem elég.",
+      "synonyms": [
+        "opciós ügylet",
+        "opciós kereskedés",
+        "Opció",
+        "Opciók"
+      ],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "home-renting",
+      "name": "Lakásbérlés",
+      "rule": "Bérlői szempontból lakás bérlése, bérleti feltételei, díja, jogai, kötelezettségei vagy költségei. A lakás bérbeadói működése és bevétele a Lakáskiadás témája.",
+      "synonyms": [
+        "albérlet",
+        "lakásbérlet"
+      ]
+    },
+    {
+      "id": "farmland-investing",
+      "name": "Termőföld-befektetés",
+      "rule": "Termőföld befektetési célú vásárlása, birtoklása, hasznosítása, értéke vagy hozama. Mezőgazdasági termelés puszta említése nem elég.",
+      "synonyms": [
+        "termőföld mint befektetés",
+        "Termőföld"
+      ],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "telephony",
+      "name": "Telefonálás",
+      "rule": "Vezetékes vagy mobiltelefonálás, hívások díja, tarifák, előfizetések vagy mobiladat-csomagok érdemi tárgyalása. Ide tartoznak a telefonos kommunikáció gyakorlati fogásai, például a számsorok érthető diktálása. Telefonkészülék puszta említése vagy vásárlása nem elég.",
+      "synonyms": [
+        "mobiltelefonálás",
+        "telefon-előfizetés",
+        "mobil tarifa",
+        "Telefonszámla",
+        "Mobilszámla"
+      ]
+    },
+    {
+      "id": "tourism",
+      "name": "Turizmus és utazás",
+      "rule": "Turizmus vagy utazás tervezése, költségei, kereslete, fogyasztói szempontjai vagy gazdasági hatásai, ha érdemi témája a cikknek. Egy nyaralási példa vagy mellékes utazási említés nem elég.",
+      "synonyms": [
+        "turizmus",
+        "utazás"
+      ]
+    },
+    {
+      "id": "economic-growth",
+      "name": "Gazdasági növekedés",
+      "rule": "A gazdaság teljesítménye és növekedése, például a GDP vagy az egy főre jutó GDP szintje, változása, országok közötti összehasonlítása, a világgazdaságon belüli aránya, valamint a gazdasági felzárkózás és ezek okai vagy következményei. A GDP puszta nevezőként vagy mellékes statisztikai adatként való említése nem elég.",
+      "synonyms": [
+        "GDP",
+        "GDP/fő",
+        "gazdasági felzárkózás"
+      ]
+    },
+    {
+      "id": "learning-career",
+      "name": "Tanulás és karriertervezés",
+      "rule": "Tanulási és szakmai fejlődési célok, képzések, önképzés, készségek vagy karrierutak választása és ezek megtérülése. A munkabér vagy egy állás puszta említése nem elég.",
+      "synonyms": [
+        "karriertervezés",
+        "önképzés",
+        "szakmai képzés",
+        "továbbképzés"
+      ]
+    },
+    {
+      "id": "higher-education",
+      "name": "Felsőoktatás",
+      "rule": "Felsőoktatáshoz való hozzáférés, egyetemi képzés és szakválasztás, tandíj, állami vagy diákhitelből történő finanszírozás, illetve a diploma költségei és megtérülése.",
+      "synonyms": [
+        "egyetemi képzés",
+        "tandíj",
+        "felsőfokú képzés"
+      ],
+      "broader": [
+        "learning-career"
+      ]
+    },
+    {
+      "id": "banking-system",
+      "name": "Bankok működése",
+      "rule": "A bankok gazdasági szerepe, pénzügyi közvetítése, működési alapelvei vagy üzleti modelljei, beleértve az iszlám bankolást. Ide tartozik a banki tulajdonosi háttér, tőkeerő és átláthatóság működési vagy biztonsági jelentőségének magyarázata is. Egy bank neve, számlája vagy fogyasztói ajánlata önmagában nem elég.",
+      "synonyms": [
+        "bankrendszer",
+        "bankok gazdasági szerepe",
+        "pénzügyi közvetítés",
+        "iszlám bankolás"
+      ]
+    },
+    {
+      "id": "real-estate-market",
+      "name": "Ingatlanpiac",
+      "rule": "Az ingatlanpiac árai, kínálata, kereslete, tranzakcióinak száma vagy előrejelzései, lakó- és üzleti ingatlanoknál egyaránt. Egyéni ingatlanvásárlás, lakáshitel vagy lakáskiadás önmagában nem elég.",
+      "synonyms": [
+        "lakáspiac",
+        "lakásárak",
+        "ingatlanárak"
+      ]
+    },
+    {
+      "id": "cash-use",
+      "name": "Készpénzhasználat",
+      "rule": "A készpénzes fizetés gyakorlati használata, készpénzforgalom és -logisztika, készpénzre vonatkozó korlátozások vagy a készpénz digitális fizetéssel való érdemi összehasonlítása. Az ATM-es vagy banki készpénzfelvétel díja és feltétele önmagában a Készpénzfelvétel témája.",
+      "synonyms": [
+        "készpénz",
+        "készpénzes fizetés",
+        "készpénzforgalom"
+      ]
+    },
+    {
+      "id": "kata",
+      "name": "KATA",
+      "rule": "A KATA adózási mód szabályai, választása és jogosultsága, adóterhe, befizetése vagy más adózási móddal való összehasonlítása, történeti szabályokkal együtt. Egy rövid említés nem elég.",
+      "synonyms": [
+        "kisadózó vállalkozások tételes adója",
+        "kisadózó vállalkozás"
+      ],
+      "broader": [
+        "taxation"
+      ]
+    },
+    {
+      "id": "healthcare",
+      "name": "Egészségügy",
+      "rule": "Az egészségügyi ellátórendszer működése, hozzáférés és jogosultság, finanszírozás, illetve állami és magánellátás érdemi tárgyalása. Egy betegség vagy kezelés puszta említése nem elég; elsősegélynyújtási felkészülés és gyakorlat külön Elsősegély téma.",
+      "synonyms": [
+        "egészségügyi ellátás",
+        "egészségügyi rendszer",
+        "egészségügyi finanszírozás"
+      ]
+    },
+    {
+      "id": "energy-commodities",
+      "name": "Energia és nyersanyagok",
+      "rule": "Energia vagy nyersanyag termelésének, kínálatának, keresletének, árának vagy piaci ciklusainak érdemi elemzése. Egy háztartási számla említése vagy egy befektetési termék árfolyama önmagában nem elég.",
+      "synonyms": [
+        "energiahordozók",
+        "nyersanyagpiac",
+        "nyersanyagárak"
+      ]
+    },
+    {
+      "id": "used-goods",
+      "name": "Használt tárgyak adásvétele",
+      "rule": "Használt tárgyak vásárlása vagy értékesítése vevői vagy eladói szempontból, beleértve a garázsvásárt és továbbértékesítést. Az eladás önmagában nem indokolja a Vásárlás taget.",
+      "synonyms": [
+        "használt tárgyak",
+        "használt cikkek",
+        "használt termékek",
+        "használt termékek adásvétele",
+        "használtcikk-kereskedelem",
+        "garázsvásár",
+        "továbbértékesítés"
+      ]
+    },
+    {
+      "id": "gemstone-investing",
+      "name": "Drágakő-befektetés",
+      "rule": "Gyémánt vagy más drágakő befektetési célú kiválasztása, értékelése, likviditása, kockázata vagy befektetési értékesítése. Ékszer vagy divatcélú említés önmagában nem elég.",
+      "synonyms": [
+        "gyémánt",
+        "drágakő",
+        "gyémántbefektetés",
+        "drágakő befektetés",
+        "befektetési gyémánt"
+      ],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "consumer-groups",
+      "name": "Vásárlói csoportok",
+      "rule": "Csoportos vásárlási vagy finanszírozási konstrukciók működése, tagi befizetése, vásárlási jogainak elosztása, kivárási rendje és kockázata. A közösségi médiás vásárlói csoport, a szokásos bankhitel vagy vállalati beszerzőcsapat önmagában nem elég. Csalást ne következtess pusztán a csoportos formából.",
+      "synonyms": [
+        "fogyasztói csoport",
+        "fogyasztói csoportok",
+        "csoportos vásárlás",
+        "közös vásárlás",
+        "vásárlói közösség"
+      ]
+    },
+    {
+      "id": "first-aid",
+      "name": "Elsősegély",
+      "rule": "Elsősegélynyújtásra való érdemi felkészülés, oktatás vagy gyakorlat, gyermekek esetén is. Baleset vagy sérülés puszta említése nem elég.",
+      "synonyms": [
+        "elsősegélynyújtás",
+        "elsősegély-oktatás",
+        "elsősegélytanfolyam"
+      ]
+    },
+    {
+      "id": "budgeting",
+      "name": "Pénzbeosztás",
+      "rule": "Személyes vagy háztartási bevételek és meglévő vagyon tervezett felosztása kiadások, tartalékok és hosszabb távú célok között: költségvetés, költési keretek vagy a vagyon felhasználásának ütemezése. Kiadások puszta rögzítése vagy egy befektetés kiválasztása önmagában nem elég.",
+      "synonyms": [
+        "háztartási költségvetés",
+        "személyes költségvetés",
+        "családi költségvetés",
+        "költségvetés-tervezés"
+      ]
+    },
+    {
+      "id": "couple-finances",
+      "name": "Párkapcsolati pénzügyek",
+      "rule": "Párok közös vagy külön pénzkezelése, pénzügyi döntései, céljai, felelőssége és pénzről való kommunikációja, beleértve a közös és külön vagyonról való megállapodást. Házastárs vagy partner puszta említése nem elég.",
+      "synonyms": [
+        "házastársi pénzügyek",
+        "pénzügyek a házasságban",
+        "közös kassza",
+        "külön kassza"
+      ]
+    },
+    {
+      "id": "financial-supervision",
+      "name": "Pénzügyi felügyelet",
+      "rule": "Pénzügyi felügyeleti hatóságok feladata, illetékessége, engedélyezése, nyilvántartása, ellenőrzése, figyelmeztetése vagy fellépési lehetősége érdemi témaként. Hatóságnév vagy engedély puszta említése nem elég; egyedi ügyfélpanasz rendezése külön Pénzügyi panaszkezelés téma.",
+      "synonyms": [
+        "pénzügyi felügyeleti hatóság",
+        "pénzügyi szolgáltatók felügyelete"
+      ]
+    },
+    {
+      "id": "relocation",
+      "name": "Külföldre költözés és letelepedés",
+      "rule": "Külföldre költözés vagy külföldi letelepedés feltételei, tartózkodási jogosultsága, előkészítése, gyakorlati vagy pénzügyi szempontjai. Külföldi ország puszta említése vagy turisztikai utazás önmagában nem elég.",
+      "synonyms": [
+        "külföldre költözés",
+        "külföldi letelepedés",
+        "kivándorlás"
+      ]
+    },
+    {
+      "id": "self-help-fund",
+      "name": "Önsegélyező pénztár",
+      "rule": "Önsegélyező pénztári tagság, befizetés, felhasználás, szolgáltatás, költség, adó-visszatérítés vagy hozzáférési feltétel érdemi tárgyalása. Az Egészségpénztár és az Önkéntes nyugdíjpénztár külön termékek; közös adózási keretük önmagában nem indokolja mindhárom taget.",
+      "synonyms": [
+        "önsegélyező pénztárak",
+        "önsegélyező pénztári szolgáltatások"
+      ]
+    },
+    {
+      "id": "labor-market",
+      "name": "Munkaerőpiac",
+      "rule": "Foglalkoztatottság, munkanélküliség és munkaerő-kereslet vagy -kínálat alakulása, okai és következményei. Egy állás vagy munkanélküliségi adat puszta említése nem elég; egyéni állásváltás és karriertervezés külön témák.",
+      "synonyms": [
+        "munkanélküliség",
+        "foglalkoztatottság",
+        "munkaerőpiaci helyzet"
+      ]
+    },
+    {
+      "id": "financial-certificates",
+      "name": "Tanúsítványok",
+      "rule": "Pénzügyi certifikátok, azaz értékpapírosított származékos termékek működése, kiválasztása, vásárlása, költsége, kockázata vagy fedezeti és befektetési használata. A mögöttes eszköz puszta említése nem elég. Ez a tag pénzügyi termékeket jelöl; oklevelekre, illetve műszaki vagy digitális tanúsítványokra nem használható.",
+      "synonyms": [
+        "certifikát",
+        "certifikátok",
+        "befektetési tanúsítvány",
+        "befektetési tanúsítványok"
+      ],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "leasing",
+      "name": "Lízing",
+      "rule": "Pénzügyi vagy operatív lízing működése, választása, feltételei, költségei vagy összehasonlítása vásárlással, hitellel vagy más konstrukcióval; gépjármű, ingatlan és más eszköz esetén is. Egy rövid említés nem elég; a lízing nem minden formája hitel.",
+      "synonyms": [
+        "autólízing",
+        "pénzügyi lízing",
+        "operatív lízing",
+        "visszlízing"
+      ]
+    },
+    {
+      "id": "childcare-benefits",
+      "name": "Gyermekgondozási ellátások",
+      "rule": "Gyermekgondozási pénzbeli ellátások, például GYES, GYED vagy CSED jogosultsága, összege, igénylése vagy munkavégzés melletti folyósítása érdemi témaként. Egy rövid említés nem elég; a családi adókedvezmény, a lakáscélú támogatások és a gyermekcélú megtakarítások önmagukban nem tartoznak ide.",
+      "synonyms": [
+        "GYES",
+        "GYED",
+        "CSED",
+        "gyermekgondozási segély",
+        "gyermekgondozást segítő ellátás",
+        "gyermekgondozási díj",
+        "csecsemőgondozási díj"
+      ]
+    },
+    {
+      "id": "basic-income",
+      "name": "Alapjövedelem",
+      "rule": "Mindenkinek vagy egy általánosan meghatározott népességi csoportnak feltétel nélkül biztosított, rendszeres alapjövedelem javaslata, jogosultsága, finanszírozása vagy gazdasági és társadalmi hatása. Egy rövid említés vagy hagyományos, rászorultsághoz kötött megélhetési támogatás önmagában nem elég.",
+      "synonyms": [
+        "garantált alapjövedelem",
+        "feltétel nélküli alapjövedelem"
+      ]
+    },
+    {
+      "id": "money-laundering",
+      "name": "Pénzmosás és megelőzése",
+      "rule": "Pénzmosás működése, megelőzése és az ellene irányuló szabályozás, ügyfél-azonosítás vagy a pénz eredetének ellenőrzése érdemi témaként. Egy rövid említés nem elég; konkrét jogsértést ne következtess a szövegen túl.",
+      "synonyms": [
+        "pénzmosás",
+        "pénzmosás elleni szabályozás",
+        "pénzmosás megelőzése"
+      ]
+    },
+    {
+      "id": "public-transport",
+      "name": "Tömegközlekedés",
+      "rule": "Helyi vagy helyközi közösségi közlekedés használata, jegyei és bérletei, díjai, érvényességi és hozzáférési feltételei vagy érdemi összehasonlítása más közlekedési módokkal. A közösségi közlekedési hálózatok mérete, kiépülése és fejlődése is ide tartozik. Jármű vagy alkalmi utazás puszta említése nem elég; kizárólag taxiról szóló cikk önmagában nem tartozik ide.",
+      "synonyms": [
+        "közösségi közlekedés",
+        "közforgalmú közlekedés"
+      ]
+    },
+    {
+      "id": "lighting",
+      "name": "Világítás",
+      "rule": "Világítás és fényforrások választása, használata, fényjellemzői, fogyasztása vagy költségei érdemi témaként. A technológiák, például LED és kompakt fénycső, e téma részei. Izzó vagy világítás puszta említése nem elég.",
+      "synonyms": [
+        "fényforrások",
+        "LED-világítás",
+        "LED izzó",
+        "kompakt fénycső"
+      ]
+    },
+    {
+      "id": "safe-deposit-rental",
+      "name": "Széfbérlés",
+      "rule": "Bérelt széfek elérhetősége, választása, díjai, hozzáférési és használati feltételei érdemi témaként, szolgáltatótól és helyszíntől függetlenül. Széf puszta említése vagy saját háztartási széf vásárlása önmagában nem elég.",
+      "synonyms": [
+        "banki széfbérlés",
+        "széf bérlése",
+        "bérelt széf"
+      ]
+    },
+    {
+      "id": "personal-goal-planning",
+      "name": "Személyes céltervezés",
+      "rule": "Személyes életcélok megfogalmazása, megvalósításuk tervezése, illetve az elért eredmények és hibák értékelése érdemi témaként, például évértékelés és éves tervezés. Egy cél puszta említése, kizárólag pénzbeosztás vagy kizárólag karriertervezés önmagában nem elég.",
+      "synonyms": [
+        "személyes célkitűzés",
+        "évcélok",
+        "évértékelés",
+        "éves életcélok tervezése"
+      ]
+    },
+    {
+      "id": "war",
+      "name": "Háború",
+      "rule": "Fegyveres konfliktusok, kialakulásuk, lefolyásuk, eszkalációjuk vagy társadalmi és gazdasági következményeik érdemi tárgyalása. Háború puszta említése vagy általános belpolitikai vita önmagában nem elég.",
+      "synonyms": [
+        "fegyveres konfliktus",
+        "háborús konfliktus"
+      ]
+    },
+    {
+      "id": "children-finances",
+      "name": "Gyerekvállalás pénzügyei",
+      "rule": "Gyerekvállalásra való pénzügyi felkészülés és a gyermekneveléshez kapcsolódó jövedelemváltozás, beszerzés, rendszeres kiadás vagy előzetes tartalékképzés érdemi tárgyalása. Általános családi pénzügy, kizárólag demográfiai elemzés vagy a gyerekek pénzügyi nevelése önmagában nem elég.",
+      "synonyms": [
+        "gyermekvállalás pénzügyei",
+        "gyerekvállalás költségei",
+        "gyermeknevelés költségei"
+      ]
+    },
+    {
+      "id": "statistics",
+      "name": "Statisztika",
+      "rule": "Statisztikai fogalmak, módszerek vagy következtetések érdemi magyarázata, alkalmazása vagy értelmezése, például átlag, medián, eloszlás, mintavétel vagy oksági következtetés. Számadatok vagy statisztikák puszta idézése nem elég.",
+      "synonyms": [
+        "statisztikai alapfogalmak",
+        "statisztikai módszerek",
+        "statisztikai adatok értelmezése"
+      ]
+    },
+    {
+      "id": "payment-wallets",
+      "name": "Elektronikus pénztárcák",
+      "rule": "Fizetésre használt elektronikus pénztárcák és hasonló fizetésközvetítő szolgáltatások működése, egyenlegfeltöltése, elfogadása, pénzküldése, pénzkivétele, díja vagy használati feltétele érdemi témaként. Szokásos bankszámla, bankkártya vagy átutalás használata önmagában nem elég; kriptokulcsok tárolása nem tartozik ide.",
+      "synonyms": [
+        "elektronikus pénztárca",
+        "digitális pénztárca",
+        "digitális pénztárcák",
+        "e-pénztárca",
+        "e-wallet"
+      ]
+    },
+    {
+      "id": "futures",
+      "name": "Határidős ügyletek",
+      "rule": "Határidős vételi és eladási ügyletek (futures és forward) működése, használata, fedezeti igénye, lejárata, görgetése vagy az ilyen ügyleteket használó alapok árkövetése érdemi témaként. Egy lejárati időpont vagy fizetési határidő puszta említése nem elég; az opciós jog önmagában külön Opciós ügyletek téma.",
+      "synonyms": [
+        "határidős kereskedés",
+        "határidős ügylet",
+        "futures",
+        "forward"
+      ],
+      "broader": [
+        "investing"
+      ]
+    },
+    {
+      "id": "international-trade",
+      "name": "Nemzetközi kereskedelem és globalizáció",
+      "rule": "Országok közötti áru- és szolgáltatáskereskedelem, export, import, nemzetközi termelési kapcsolatok, a termelés országok közötti áthelyezése vagy a gazdasági globalizáció hatásai érdemi témaként. Külföldi termék, vállalat vagy befektetés puszta említése nem elég; egyéni külföldre költözés önmagában nem ide tartozik.",
+      "synonyms": [
+        "nemzetközi kereskedelem",
+        "külkereskedelem",
+        "globalizáció",
+        "export és import"
+      ]
+    },
+    {
+      "id": "civil-organizations",
+      "name": "Egyesületek és civil szervezetek",
+      "rule": "Egyesületek és más civil szervezetek alapítása, szervezeti működése, tagsága, döntéshozatala vagy finanszírozása érdemi témaként. Egy szervezet puszta megnevezése, adománygyűjtése vagy szolgáltatási ajánlata önmagában nem elég; a szervezet működését is érdemben tárgyalja a cikk.",
+      "synonyms": [
+        "egyesület",
+        "egyesületek",
+        "civil szervezet",
+        "civil szervezetek",
+        "egyesület alapítása"
+      ]
+    },
+    {
+      "id": "cycling",
+      "name": "Kerékpározás",
+      "rule": "Kerékpár választása, használata, fenntartása, kerékpáros közlekedés vagy kerékpárkölcsönzés érdemi témaként. Egy alkalmi biciklis példa vagy kerékpár puszta említése nem elég.",
+      "synonyms": [
+        "biciklizés",
+        "kerékpárhasználat",
+        "kerékpárkölcsönzés",
+        "kerékpáros közlekedés"
+      ]
+    },
+    {
+      "id": "refugee-affairs",
+      "name": "Menekültügy",
+      "rule": "Menekültek helyzete, befogadása, ellátása, menedékjogi eljárása vagy a menekültválság kezelése érdemi témaként. Menekültek puszta említése, általános külföldre költözés vagy kizárólag a menekülést kiváltó háború tárgyalása önmagában nem elég.",
+      "synonyms": [
+        "menekültválság",
+        "menekültek befogadása",
+        "menekültek ellátása",
+        "menedékjog"
+      ]
+    },
+    {
+      "id": "household-consumption",
+      "name": "Háztartások fogyasztása",
+      "rule": "Háztartások fogyasztási szokásai, fogyasztásuk mennyisége, kiadásaik összetétele vagy ezek időbeli és csoportok közötti különbségei érdemi témaként. Egyetlen vásárlás, kizárólag a kiadások nyilvántartása vagy egyéni pénzbeosztás önmagában nem elég.",
+      "synonyms": [
+        "háztartási fogyasztás",
+        "fogyasztási szerkezet",
+        "háztartási kiadások szerkezete",
+        "fogyasztási szokások"
+      ]
+    },
+    {
+      "id": "employment-law",
+      "name": "Munkajog",
+      "rule": "Munkaviszony létesítésének, fennállásának vagy megszüntetésének jogi szabályai, munkavállalói jogok és munkáltatói kötelezettségek érdemi témaként, például próbaidő, felmondás, végkielégítés vagy jogvédelem. Álláskeresés, munkaerőpiaci helyzet vagy bérek puszta tárgyalása önmagában nem elég.",
+      "synonyms": [
+        "munkavállalói jogok",
+        "munkáltatói kötelezettségek",
+        "munkaviszony jogi szabályai"
+      ]
+    },
+    {
+      "id": "property-sale",
+      "name": "Ingatlaneladás",
+      "rule": "Ingatlan eladásával kapcsolatos gyakorlati döntések, hirdetés, árazás, közvetítő választása és szerződése, értékesítési feltételek vagy az eladás menete eladói szempontból, érdemi témaként. Ingatlan eladásának puszta említése, kizárólag vásárlói döntés vagy általános ingatlanpiaci helyzetkép önmagában nem elég.",
+      "synonyms": [
+        "lakáseladás",
+        "ingatlanértékesítés",
+        "ingatlan értékesítése"
+      ]
+    },
+    {
+      "id": "school-education",
+      "name": "Közoktatás",
+      "rule": "Iskolai oktatás rendszere, tananyaga, tanítási módszerei, hozzáférése, finanszírozása vagy reformja érdemi témaként, fenntartótól függetlenül. Egy iskola vagy iskolai példa puszta említése, kizárólag felsőoktatás, tanfolyami részvétel vagy egyéni karriertervezés önmagában nem elég.",
+      "synonyms": [
+        "köznevelés",
+        "iskolai oktatás",
+        "iskolarendszer",
+        "iskolai tananyag"
+      ]
+    },
+    {
+      "id": "european-union",
+      "name": "Európai Unió",
+      "rule": "Az Európai Unió intézményi működése, közös döntései, integrációja, tagsága, bővítése vagy tagállami kilépés és ezek következményei érdemi témaként. EU vagy uniós ország puszta említése, európai adatok összehasonlítása vagy kizárólag az euró árfolyama önmagában nem elég.",
+      "synonyms": [
+        "EU",
+        "uniós tagság",
+        "európai integráció",
+        "Brexit"
+      ]
+    },
+    {
+      "id": "network-marketing",
+      "name": "Hálózati értékesítés (MLM)",
+      "rule": "Többszintű értékesítői és jutalékhálózatok (MLM) működése, termékértékesítése, toborzási és díjazási feltételei vagy értékelése érdemi témaként. MLM puszta említése nem elég; az MLM önmagában nem jelent csalást, a Csalás taghoz külön tartalmi alap szükséges.",
+      "synonyms": [
+        "MLM",
+        "hálózati értékesítés",
+        "többszintű értékesítés",
+        "multi-level marketing"
+      ]
+    },
+    {
+      "id": "financial-independence",
+      "name": "Pénzügyi függetlenség",
+      "rule": "Munkajövedelemtől független megélhetés elérése vagy fenntartása, vagyonból és befektetési jövedelemből finanszírozott élet, illetve ilyen alapú korai visszavonulás érdemi témaként. Általános megtakarítás, befektetés vagy kizárólag állami nyugdíjjogosultság önmagában nem elég; párkapcsolaton belüli önálló kereset önmagában nem ezt a témát jelöli.",
+      "synonyms": [
+        "FIRE",
+        "anyagi függetlenség",
+        "korai visszavonulás",
+        "korai nyugdíjba vonulás"
+      ]
+    },
+    {
+      "id": "copyright",
+      "name": "Szerzői jog",
+      "rule": "Szerzői alkotások, például szövegek, képek, zene, filmek és szoftverek felhasználása, másolása, terjesztése, engedélyezése, alkotói díjazása vagy digitális kalózkodása érdemi témaként, jogi vagy etikai szempontból. Egy mű vagy letöltés puszta említése nem elég; általános lopás, szabadalom vagy védjegy önmagában nem ide tartozik.",
+      "synonyms": [
+        "szerzői jogok",
+        "jogdíj",
+        "digitális kalózkodás",
+        "szoftverkalózkodás"
+      ]
+    },
+    {
+      "id": "automation-ai",
+      "name": "Automatizálás és mesterséges intelligencia",
+      "rule": "Munkafolyamatok automatizálása, robotika vagy mesterséges intelligencia működése, alkalmazása, terjedése, illetve társadalmi és gazdasági hatásai érdemi témaként. Egy technológiai cég vagy automatizált funkció puszta említése nem elég; egy robotikai vagy AI-befektetés ágazati elnevezése önmagában nem ezt a témát jelöli.",
+      "synonyms": [
+        "automatizálás",
+        "mesterséges intelligencia",
+        "robotika",
+        "AI",
+        "MI"
+      ]
+    },
+    {
+      "id": "health-prevention",
+      "name": "Egészség és megelőzés",
+      "rule": "Emberek testi vagy lelki egészségi állapota, megbetegedési és halálozási mintázatai, egészségmegőrzése, higiénéje vagy betegségmegelőzése érdemi témaként. Betegség vagy egészség puszta említése nem elég; kizárólag az ellátórendszer működése, hozzáférése vagy finanszírozása az Egészségügy témához tartozik.",
+      "synonyms": [
+        "egészségmegőrzés",
+        "betegségmegelőzés",
+        "egészségi állapot",
+        "higiénia",
+        "fertőzésmegelőzés"
+      ]
+    },
+    {
+      "id": "crowdfunding",
+      "name": "Közösségi finanszírozás",
+      "rule": "Projektek, termékek vagy célok sok résztvevő bevonásával, közösségi kampányban történő finanszírozása, kampánytervezése, platformválasztása, feltételei vagy kockázatai érdemi témaként. Ide tartozhat jutalom, előrendelés, adomány vagy befektetés alapú kampány is. Egy kampány vagy platform puszta említése nem elég; vásárlói csoport, MLM vagy adományozás önmagában nem teszi automatikussá ezt a taget.",
+      "synonyms": [
+        "crowdfunding",
+        "közösségi finanszírozási kampány",
+        "közösségi előfinanszírozás"
+      ]
+    },
+    {
+      "id": "internet-tv-subscriptions",
+      "name": "Internet- és TV-előfizetés",
+      "rule": "Internethozzáférési vagy televízió-előfizetések, illetve ezeket tartalmazó csomagok választása, elérhetősége, díjai, szolgáltatási és szerződési feltételei érdemi témaként. Internet vagy tévénézés puszta említése nem elég; kizárólag telefonhívás és SMS a Telefonálás, kizárólag online filmes vagy sorozatos streamingszolgáltatás a Streaming témához tartozik.",
+      "synonyms": [
+        "internet-előfizetés",
+        "internetszolgáltatás",
+        "internethozzáférés",
+        "tévé-előfizetés",
+        "televízió-előfizetés",
+        "internet és tévé"
+      ]
+    },
+    {
+      "id": "work-life-balance",
+      "name": "Munka és magánélet egyensúlya",
+      "rule": "A fizetett munka és kereset, a munkaidő, a magán- és családi élet, a pihenés vagy a szabadidő közötti érdemi döntések és kompromisszumok. Munka, jövedelem vagy család puszta említése nem elég; nem jelöli automatikusan a pénzügyi függetlenséget.",
+      "synonyms": [
+        "munka-magánélet egyensúly",
+        "munka és családi élet összehangolása"
+      ]
+    },
+    {
+      "id": "time-management",
+      "name": "Időgazdálkodás",
+      "rule": "Az idő és figyelem rövid és hosszú távú felhasználásának, tervezésének és beosztásának érdemi tárgyalása, beleértve az életidő tevékenységek közötti megoszlásának értelmezését, a figyelemelterelő szokásokat, prioritásokat és gyakorlati módszereket. Az idő puszta említése, határidő vagy életcél megfogalmazása önmagában nem elég.",
+      "synonyms": [
+        "időbeosztás",
+        "időmenedzsment"
+      ]
+    },
+    {
+      "id": "motorcycling",
+      "name": "Motorozás",
+      "rule": "Motorkerékpárok és robogók használata, vásárlása, üzemeltetése, költsége vagy bérlése érdemi témaként, az elektromos robogókat is beleértve. Jármű puszta említése nem elég; a kerékpározás és az álló elektromos roller külön téma.",
+      "synonyms": [
+        "robogózás",
+        "motorkerékpár",
+        "robogóbérlés"
+      ]
+    },
+    {
+      "id": "postal-services",
+      "name": "Postai szolgáltatások",
+      "rule": "Postai vagy futárszolgálati levél- és csomagküldés vagy -fogadás, kézbesítés, nyomon követés, feltételek, díjak és ügyintézés érdemi témaként. Puszta postaköltség-említés vagy webáruházi kézbesítés mellékesen nem elég; nem fedi az összes elektronikus ügyintézést vagy a postahivatalban intézett minden ügyletet.",
+      "synonyms": [
+        "postázás",
+        "levélküldés",
+        "csomagküldés"
+      ]
+    },
+    {
+      "id": "public-administration",
+      "name": "Hivatali ügyintézés",
+      "rule": "Hivatali és hatósági ügyintézés, okmányok és igazolások, kötelező adatszolgáltatás vagy elektronikus közigazgatás érdemi tárgyalása. A közigazgatási eljárások adminisztrációs terhei, érthetősége és egyszerűsítése is ide tartozik. Nem minden állami intézkedés vagy pénzügyi szolgáltatói ügyintézés; hivatal vagy ügyfélkapu puszta említése nem elég.",
+      "synonyms": [
+        "Hatósági ügyintézés",
+        "Elektronikus ügyintézés",
+        "Közigazgatás",
+        "Bürokrácia"
+      ]
+    },
+    {
+      "id": "market-competition",
+      "name": "Piaci verseny",
+      "rule": "Piaci verseny, monopóliumok, kartellek, piaci koncentráció vagy versenyjogi fellépés érdemi tárgyalása, ideértve hatásukat az árakra, szolgáltatásminőségre és a piacra lépésre. Vállalati felvásárlás, piaci részesedés vagy versenytárs puszta említése önmagában nem elég.",
+      "synonyms": [
+        "Versenyjog",
+        "Monopólium",
+        "Piaci koncentráció"
+      ]
+    },
+    {
+      "id": "price-controls",
+      "name": "Árszabályozás",
+      "rule": "Termékek és szolgáltatások árának állami vagy hatósági szabályozása, árstopok és árréskorlátozás működésének, feltételeinek vagy gazdasági hatásainak érdemi tárgyalása. Puszta áremelkedés, inflációs adat, állami támogatás vagy általános jegybanki kamatdöntés önmagában nem elég.",
+      "synonyms": [
+        "Árstopok",
+        "Hatósági ár",
+        "Árrésstop",
+        "Árréskorlátozás"
+      ]
     }
   ]
 }

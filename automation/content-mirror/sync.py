@@ -31,9 +31,29 @@ DEFAULT_OUTPUT = ROOT / "articles"
 DEFAULT_SOURCE_OUTPUT = ROOT / "raw_source" / "content-mirror"
 ALLOWED_HOSTS = {"kiszamolo.hu", "www.kiszamolo.hu"}
 SCHEMA_VERSION = 1
-EXCLUDED_RECORDS = {
-    "post:104048": "Password-protected insurance policy; excluded by user request.",
-}
+
+
+def load_exclusions(path):
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"Duplicate exclusion key: {key!r}")
+            result[key] = value
+        return result
+
+    records = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    if not isinstance(records, dict):
+        raise ValueError("Exclusions must be an object mapping record keys to reasons")
+    for key, reason in records.items():
+        if not re.fullmatch(r"(?:post|page):[1-9][0-9]*", key):
+            raise ValueError(f"Invalid exclusion key: {key!r}")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError(f"Exclusion reason must be a nonempty string: {key!r}")
+    return records
+
+
+EXCLUDED_RECORDS = load_exclusions(Path(__file__).with_name("exclusions.json"))
 
 
 def utc_now():

@@ -1,16 +1,19 @@
 """Classify local article text with the fixed Hungarian tagging vocabulary."""
 
 import argparse
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import hashlib
 import inspect
 import json
 import os
 from pathlib import Path
 import re
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -43,7 +46,14 @@ def atomic_write(path, value):
     temp = path.with_name(path.name + ".tmp")
     value = {key: item for key, item in value.items() if key != "_path"}
     temp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(temp, path)
+    for attempt in range(5):
+        try:
+            os.replace(temp, path)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def load_json(path):
@@ -359,7 +369,8 @@ def output_lock(path):
     return lock_path
 
 
-def classify(row, state, setting, allowed, max_requests, run, transport, reprocess=False):
+def classification_steps(row, state, setting, allowed, max_requests, run, reprocess=False,
+                        should_stop=lambda: False):
     try:
         path = resolve_article_path(row["path"])
         raw = path.read_bytes()
@@ -397,6 +408,9 @@ def classify(row, state, setting, allowed, max_requests, run, transport, reproce
         return article_record(row, markdown_hash, fingerprint, setting, {}, status="estimate",
                               request_bytes=request_size, request_count=1)
     for attempt_num in range(1, 4):
+        if should_stop():
+            return article_record(row, markdown_hash, fingerprint, setting, {}, status="error",
+                                  error="stopped after another request failed")
         attempts_used = sum(1 for a in state["attempts"] if a.get("id") == row["id"] and a.get("fingerprint") == fingerprint)
         if attempts_used >= 3:
             return article_record(row, markdown_hash, fingerprint, setting, {}, status="error", error="attempt limit reached")
@@ -409,7 +423,7 @@ def classify(row, state, setting, allowed, max_requests, run, transport, reproce
         atomic_write(state["_path"], state)
         started = time.monotonic()
         try:
-            response = transport(request)
+            response = yield request
             usage = valid_usage(response.get("usage"))
             if usage:
                 attempt["usage"] = usage
@@ -421,8 +435,6 @@ def classify(row, state, setting, allowed, max_requests, run, transport, reproce
             attempt["elapsed_seconds"] = response.get("elapsed_seconds", round(time.monotonic() - started, 3))
             record = article_record(row, markdown_hash, fingerprint, setting, result)
             record["returned_model"] = response.get("model")
-            upsert_article(state, record)
-            atomic_write(state["_path"], state)
             return record
         except FatalCodexError:
             attempt["state"] = "failed_fatal"
@@ -437,6 +449,29 @@ def classify(row, state, setting, allowed, max_requests, run, transport, reproce
             if attempt_num == 3:
                 return article_record(row, markdown_hash, fingerprint, setting, {}, status="error", error=attempt["error"])
     raise AssertionError("unreachable")
+
+
+def classify(row, state, setting, allowed, max_requests, run, transport, reprocess=False):
+    """Keep the synchronous public API while allowing the coordinator to schedule transport calls."""
+    steps = classification_steps(row, state, setting, allowed, max_requests, run, reprocess)
+    sent = False
+    try:
+        request = next(steps)
+        while True:
+            try:
+                response = transport(request)
+            except BaseException as error:
+                sent = True
+                request = steps.throw(error)
+            else:
+                sent = True
+                request = steps.send(response)
+    except StopIteration as completed:
+        record = completed.value
+        if sent and run and record and record["status"] in ("classified", "insufficient_content"):
+            upsert_article(state, record)
+            atomic_write(state["_path"], state)
+        return record
 
 
 def article_record(row, markdown_hash, fingerprint, setting, result, status=None, **extra):
@@ -458,12 +493,23 @@ def upsert_article(state, record):
         state["articles"][index] = record
 
 
+def cached_record_snapshot(state, article_id):
+    """Return a content snapshot for a row already present in the result file."""
+    existing = next((article for article in state["articles"] if article["id"] == article_id), None)
+    return json_bytes(existing) if existing is not None else None
+
+
+def record_matches_snapshot(record, snapshot):
+    return snapshot is not None and json_bytes(record) == snapshot
+
+
 def main(argv=None, transport=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--split", choices=("pilot", "holdout", "all"), default="pilot")
     parser.add_argument("--output")
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--max-requests", type=int, default=150)
+    parser.add_argument("--workers", type=int, choices=(1, 2, 3, 4), default=1)
     parser.add_argument("--reprocess", action="store_true")
     parser.add_argument("--limit", type=int)
     args = parser.parse_args(argv)
@@ -509,11 +555,15 @@ def process(args, output, transport):
     rows = article_rows(args.split)
     if args.limit:
         rows = rows[:args.limit]
+    if args.run and args.workers > 1:
+        return process_parallel(args, output, rows, state, setting, tags, transport or codex_exec)
     estimates = []
     preview_statuses = {}
     stop_reason = None
     for row in rows:
         try:
+            cached_snapshot = cached_record_snapshot(state, row["id"])
+            attempt_count = len(state["attempts"])
             record = classify(row, state, setting, {tag["id"] for tag in tags["tags"]}, args.max_requests,
                               args.run, transport or codex_exec, args.reprocess)
             if not args.run:
@@ -522,8 +572,10 @@ def process(args, output, transport):
                 else:
                     preview_statuses[record["status"]] = preview_statuses.get(record["status"], 0) + 1
                 continue
-            upsert_article(state, record)
-            atomic_write(output, state)
+            if (attempt_count != len(state["attempts"])
+                    or not record_matches_snapshot(record, cached_snapshot)):
+                upsert_article(state, record)
+                atomic_write(output, state)
         except FatalCodexError as error:
             print(str(error), file=sys.stderr)
             stop_reason = "subscription_or_cli_error"
@@ -532,6 +584,10 @@ def process(args, output, transport):
             print(str(error), file=sys.stderr)
             stop_reason = "request_cap_reached" if "request cap" in str(error).casefold() else "processing_error"
             break
+    return finish_process(args, output, state, estimates, preview_statuses, stop_reason)
+
+
+def finish_process(args, output, state, estimates, preview_statuses, stop_reason):
     missing_topics = {}
     for article in state["articles"]:
         for topic in article.get("missing_topics", []):
@@ -553,6 +609,197 @@ def process(args, output, transport):
     print(json.dumps(state["summary"], ensure_ascii=False))
     incomplete = any(status_counts.get(status, 0) for status in ("error", "stale", "input_too_long"))
     return 2 if stop_reason or incomplete else 0
+
+
+def process_parallel(args, output, rows, state, setting, tags, transport, steps_factory=None):
+    if len({row["id"] for row in rows}) != len(rows):
+        print("duplicate article IDs in input", file=sys.stderr)
+        return finish_process(args, output, state, [], {}, "processing_error")
+    allowed = {tag["id"] for tag in tags["tags"]}
+    pending = {}
+    completed_records = {}
+    records = iter(rows)
+    stop = False
+    stop_reason = None
+    interrupt_requested = [False]
+    estimates = []
+    preview_statuses = {}
+
+    def save_record(record, cached_snapshot=None):
+        if record_matches_snapshot(record, cached_snapshot):
+            return
+        upsert_article(state, record)
+        atomic_write(output, state)
+
+    def advance(row, steps, response=None, error=None, first=False):
+        try:
+            if first:
+                yielded = next(steps)
+            elif error is not None:
+                yielded = steps.throw(error)
+            else:
+                yielded = steps.send(response)
+            return yielded, None
+        except StopIteration as completed:
+            return None, completed.value
+
+    def defer_interrupt(action):
+        if threading.current_thread() is not threading.main_thread():
+            return action()
+        previous = signal.getsignal(signal.SIGINT)
+
+        def request_stop(signum, frame):
+            interrupt_requested[0] = True
+
+        signal.signal(signal.SIGINT, request_stop)
+        try:
+            return action()
+        finally:
+            signal.signal(signal.SIGINT, previous)
+
+    def consume_response(future, row, steps, response, error):
+        if error is None:
+            request, record = advance(row, steps, response=response)
+        else:
+            request, record = advance(row, steps, error=error)
+        if record is not None:
+            completed_records[future] = record
+            save_record(record)
+            completed_records.pop(future, None)
+        return request, record
+
+    def submit_request(executor, row, steps, request):
+        future = executor.submit(transport, request)
+        pending[future] = (row, steps)
+
+    def cancel_dispatch(dispatch):
+        canceled = False
+        for _, _, _, attempt in dispatch:
+            if attempt in state["attempts"]:
+                state["attempts"].remove(attempt)
+                canceled = True
+        if canceled:
+            atomic_write(output, state)
+
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        exhausted = False
+        try:
+          while pending or not exhausted:
+            if interrupt_requested[0]:
+                stop = True
+            while not stop and len(pending) < args.workers and not exhausted:
+                try:
+                    row = next(records)
+                except StopIteration:
+                    exhausted = True
+                    break
+                cached_snapshot = cached_record_snapshot(state, row["id"])
+                try:
+                    make_steps = steps_factory or classification_steps
+                    steps = make_steps(row, state, setting, allowed, args.max_requests,
+                                       True, args.reprocess,
+                                       lambda: stop or interrupt_requested[0])
+                    request, record = defer_interrupt(lambda: advance(row, steps, first=True))
+                    if record is not None:
+                        save_record(record, cached_snapshot)
+                    else:
+                        reserved = state["attempts"][-1]
+                        if stop or interrupt_requested[0]:
+                            defer_interrupt(lambda: cancel_dispatch([(row, steps, request, reserved)]))
+                            stop = True
+                        else:
+                            defer_interrupt(lambda: submit_request(executor, row, steps, request))
+                    if interrupt_requested[0]:
+                        stop = True
+                except FatalCodexError as error:
+                    print(str(error), file=sys.stderr)
+                    stop_reason = "subscription_or_cli_error"
+                    stop = True
+                except LabelError as error:
+                    print(str(error), file=sys.stderr)
+                    stop_reason = "request_cap_reached" if "request cap" in str(error).casefold() else "processing_error"
+                    stop = True
+            if not pending:
+                break
+            completed, _ = wait(pending, return_when=FIRST_COMPLETED)
+            ready = [(future, pending[future]) for future in completed]
+            outcomes = []
+            fatal = None
+            for future, pair in ready:
+                try:
+                    outcomes.append((future, pair, future.result(), None))
+                except Exception as error:
+                    outcomes.append((future, pair, None, error))
+                    if isinstance(error, FatalCodexError):
+                        fatal = fatal or error
+            if fatal is not None:
+                stop = True
+            dispatch = []
+            # Inspect the whole completed batch before starting replacement transport calls.
+            for future, (row, steps), response, error in outcomes:
+                try:
+                    request, record = defer_interrupt(
+                        lambda: consume_response(future, row, steps, response, error))
+                except FatalCodexError as fatal_error:
+                    fatal = fatal or fatal_error
+                    pending.pop(future, None)
+                    continue
+                except LabelError as label_error:
+                    print(str(label_error), file=sys.stderr)
+                    stop_reason = "request_cap_reached" if "request cap" in str(label_error).casefold() else "processing_error"
+                    stop = True
+                    pending.pop(future, None)
+                    continue
+                if request is not None:
+                    dispatch.append((row, steps, request, state["attempts"][-1]))
+                if future not in completed_records:
+                    pending.pop(future, None)
+                if interrupt_requested[0]:
+                    stop = True
+            if fatal is not None:
+                print(str(fatal), file=sys.stderr)
+                stop_reason = "subscription_or_cli_error"
+                stop = True
+            for index, (row, steps, request, _) in enumerate(dispatch):
+                if stop or interrupt_requested[0]:
+                    defer_interrupt(lambda: cancel_dispatch(dispatch[index:]))
+                    stop = True
+                    break
+                defer_interrupt(lambda row=row, steps=steps, request=request:
+                                submit_request(executor, row, steps, request))
+                if interrupt_requested[0]:
+                    defer_interrupt(lambda: cancel_dispatch(dispatch[index + 1:]))
+                    stop = True
+                    break
+            if interrupt_requested[0]:
+                stop = True
+        except KeyboardInterrupt:
+            stop = True
+            while pending:
+                completed, _ = wait(pending, return_when=FIRST_COMPLETED)
+                for future in completed:
+                    row, steps = pending[future]
+                    if future in completed_records:
+                        save_record(completed_records.pop(future))
+                        pending.pop(future, None)
+                        continue
+                    try:
+                        response = future.result()
+                        _, record = advance(row, steps, response=response)
+                    except Exception as error:
+                        try:
+                            _, record = advance(row, steps, error=error)
+                        except Exception:
+                            pending.pop(future, None)
+                            continue
+                    if record is not None:
+                        save_record(record)
+                    pending.pop(future, None)
+            raise
+        # On a fatal result, the loop drains remaining dispatched calls; stop prevents retry reservations.
+    if interrupt_requested[0]:
+        raise KeyboardInterrupt()
+    return finish_process(args, output, state, estimates, preview_statuses, stop_reason)
 
 
 if __name__ == "__main__":

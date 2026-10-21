@@ -1,21 +1,24 @@
 # Kiszámoló – helyi cikkgyűjtemény
 
-A [Kiszámoló blog](https://kiszamolo.hu/) tartalmának saját, helyi másolata és a letöltéséhez, feldolgozásához készült eszközök.
+A [Kiszámoló blog](https://kiszamolo.hu/) tudásanyagának helyi gyűjteménye, a letöltéséhez és feldolgozásához készült eszközökkel.
 > A kiszamolo.hu szerzője Csernok Miklós; az általa írt cikkek az ő szellemi termékei.
 
-A cél elsőként az, hogy a cikkek könnyebben olvasható és feldolgozható formában legyenek meg. Erre később címkézés és témák szerinti katalógusok épülhetnek, például egy gyűjtemény a nyugdíjról szóló cikkekből. Hosszabb távon a projekt a blog szerzőjével közös tudástár kialakítását is segítheti.
+A cél elsőként az, hogy a cikkek könnyebben olvasható és feldolgozható formában legyenek meg. A cikk–tag összerendelésekre később témák szerinti katalógusok épülhetnek, például egy gyűjtemény a nyugdíjról szóló cikkekből. Hosszabb távon a projekt a blog szerzőjével közös tudástár kialakítását is segítheti.
 
 A cikkek Markdown-változatát elsősorban sima szövegként és AI-eszközökkel használjuk; a szöveghűség mellett az olvashatóság is fontos.
 
 ## Mi működik már?
 
-- A nyilvános cikkek és önálló oldalak letöltése, az eredeti források megőrzésével.
+- A gyűjteménybe válogatott nyilvános cikkek és oldalak letöltése, az eredeti források megőrzésével.
 - Olvasható Markdown-fájlok készítése, év és hónap szerinti mappákban. A Markdown egyszerű szöveges formátum, amely a címeket, listákat és hivatkozásokat is megőrzi.
 - A blog saját tárhelyén elérhető képek és mellékletek letöltése, valamint a helyi cikkek közötti hivatkozások kialakítása.
 - Tartalomjegyzék és géppel feldolgozható cikklista készítése.
 - A helyi gyűjtemény kézi, igény szerinti frissítése.
 
-A [témakereső és címkéző](tagging/README.md) külön eszköz. A jelenlegi beállításokkal 20 ismert és 20 friss cikk Sol medium próbája, külön tartalmi ellenőrzéssel lezajlott. A friss próba teljesítette az előre megbeszélt indulási feltételeket; a teljes gyűjtemény címkézése még nem indult el. A taglista lefedése korlátozott, a hiányzó témákat a címkéző jelzi. A blog saját kategóriáit és címkéit a letöltő megőrzi.
+A [cikk–tag összerendelések](tagging/README.md) a `tagging/assignments.json`
+fájlban vannak, a tagok neve és jelentése a `tagging/tags.json` fájlban.
+Az összerendelések Gitben követhető szöveges adatok. A blog saját kategóriáit
+és címkéit a letöltő ettől függetlenül megőrzi.
 
 ## Mi hol található?
 
@@ -25,7 +28,7 @@ A [témakereső és címkéző](tagging/README.md) külön eszköz. A jelenlegi 
 | `articles/assets/` | A letöltött képek és mellékletek. |
 | `raw_source/content-mirror/` | Az eredeti webes források és a frissítés folytatásához szükséges adatok. |
 | `automation/content-mirror/` | A jelenleg használt letöltő és feldolgozó, a tesztjeivel együtt. |
-| `tagging/` | Saját témacímkézés, helyi kereső és a használatuk rövid leírása. |
+| `tagging/` | Cikk–tag összerendelések, tagdefiníciók és a megőrzött címkézőkód. |
 
 ## Telepítés és frissítés
 
@@ -54,7 +57,7 @@ A további kapcsolókat, a hibakódokat és a hálózat nélküli újragenerál�
 - A letöltő a jelenleg elérhető tartalmat követi; a cikkek korábbi változatairól nem készít történetet. Ha egy cikk eltűnik a blogról, a már mentett helyi példánya megmarad.
 - A hozzászólásokat külön nem gyűjti. A teljes weboldal mentett HTML-forrásában azonban szerepelhetnek hozzászólások.
 - Más webhelyek fájljai és a külső videólejátszók tartalmai hivatkozásként maradnak meg. A gyűjtemény ezért nem minden részében használható internet nélkül; a webes kalkulátorok működését sem másolja le.
-- A letöltött adatok és az előállított cikkfájlok nincsenek Gitben. A repó másolása csak a kódot és a dokumentációt viszi át. A meglévő gyűjtemény megőrzéséhez az `articles/` és a `raw_source/` mappát külön is menteni kell.
+- A letöltött adatok és az előállított cikkfájlok nincsenek Gitben. A repó a kódot, a dokumentációt és a cikk–tag összerendeléseket tartalmazza. A meglévő gyűjtemény megőrzéséhez az `articles/` és a `raw_source/` mappát külön is menteni kell.
 
 ## Tesztek
 

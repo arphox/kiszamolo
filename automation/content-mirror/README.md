@@ -52,7 +52,11 @@ Ha egy átnevezés másik rekord korábbi fájlnevét veszi át (például két 
 
 ## Szinkronizálási szabályok
 
-A `sync.py` `EXCLUDED_RECORDS` beállításával egyes bejegyzések kizárhatók. A sync és a `--rebuild` törli a hozzájuk tartozó helyi cikket és forrásmappát, frissíti az indexeket, és megőrzi a más cikkek által is használt médiát.
+Az [exclusions.json](exclusions.json) fájlban egyes bejegyzések kizárhatók. A kulcs a letöltő rekordazonosítója (például `post:104197` vagy `page:2`), az érték a kizárás tartalmi indoka. A program induláskor betölti és ellenőrzi a fájlt; az indokok a szinkronizálási riportban is megjelennek. A sync és a `--rebuild` törli a kizárt bejegyzésekhez tartozó helyi cikket és forrásmappát, frissíti az indexeket, és megőrzi a más cikkek által is használt médiát.
+
+A gyűjtemény a blog tudásanyagát fedi le. Az ehhez lazán kapcsolódó, saját érdemi magyarázat nélküli egyszeri külső érdekességeket kizárjuk.
+
+A cikkgyűjteményből kizárjuk a navigációs és cikkjegyzékoldalakat, a szolgáltatás- és eszközoldalakat, az adminisztratív oldalakat, a tesztanyagot, valamint a külön kiválasztott alkalmi közleményeket és önálló érdemi szöveg nélküli cikkajánlókat. A pusztán más tartalomra hivatkozó bejegyzést is kizárjuk, ha a hivatkozott érdemi tartalom már nem elérhető. A lista nem zár ki automatikusan minden új WordPress-oldalt. A címkézési állapot vagy a szöveghossz önmagában nem kizárási feltétel.
 
 Minden futás lekéri a teljes publikált API-leltárt, de csak az ID-t, típust, státuszt, módosítási időket és a GMT publikálási időt (`_fields=id,type,status,modified,modified_gmt,date_gmt`). A lapozás és a végső darabszámpróba továbbra is teljes; eltűnés csak külön API-404 után jelölhető. Normál futásban a WordPress módosítási időinek változása alapján kér teljes rekordot, a változatlanokat hash-ellenőrzött helyi `source.json`-ból használja újra. A korábbi állapotfájlok külön migráció nélkül használhatók; hiányzó/sérült forrás vagy kiemeltkép-cache célzott újralekérést indít.
 

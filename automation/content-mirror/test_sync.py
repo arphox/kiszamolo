@@ -23,6 +23,14 @@ def post(number=1, *, modified="2011-01-01T00:00:00", date="2011-01-01T00:00:00"
                          "protected": False}, categories=[], tags=[])
 
 
+def page(number=1, *, modified="2011-01-01T00:00:00", date="2011-01-01T00:00:00", body=None):
+    record = post(number, modified=modified, date=date, body=body)
+    record["type"] = "page"
+    record["link"] = f"https://kiszamolo.hu/page-{number}/"
+    record["title"]["rendered"] = f"Page {number}"
+    return record
+
+
 class FakeClient:
     def __init__(self):
         self.calls = []
@@ -45,6 +53,49 @@ class FakeClient:
         return Download(200, {"ETag": '"tag"', "Content-Type": "text/html" if url.endswith("/") else "image/png"}, url, len(body), hashlib.sha256(body).hexdigest())
 
 
+class ExclusionFileTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.path = Path(temporary.name) / "exclusions.json"
+
+    def load(self, text):
+        self.path.write_text(text, encoding="utf-8")
+        return sync.load_exclusions(self.path)
+
+    def test_loads_record_keys_and_preserves_reasons(self):
+        records = {"page:2": "Adminisztratív oldal.", "post:104197": "Maintenance notice."}
+        self.assertEqual(self.load(json.dumps(records, ensure_ascii=False)), records)
+        self.assertEqual(self.load("{}"), {})
+
+    def test_rejects_non_object_root(self):
+        for text in ("[]", "null", '"reason"', "42"):
+            with self.subTest(text=text), self.assertRaisesRegex(ValueError, "must be an object"):
+                self.load(text)
+
+    def test_rejects_invalid_record_keys(self):
+        for key in ("2", "posts:2", "other:2", "post:0", "page:01", "post:-2", "post:2\n"):
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "Invalid exclusion key"):
+                self.load(json.dumps({key: "Reason"}))
+
+    def test_requires_nonempty_string_reason(self):
+        for reason in ("", " \t\n", None, 0, False, [], {}):
+            with self.subTest(reason=reason), self.assertRaisesRegex(ValueError, "nonempty string"):
+                self.load(json.dumps({"post:2": reason}))
+
+    def test_rejects_duplicate_keys(self):
+        with self.assertRaisesRegex(ValueError, "Duplicate exclusion key"):
+            self.load('{"post:2":"First reason","post:2":"Second reason"}')
+
+    def test_rejects_malformed_json(self):
+        with self.assertRaises(json.JSONDecodeError):
+            self.load('{"post:2":')
+
+    def test_missing_file_does_not_silently_disable_exclusions(self):
+        with self.assertRaises(FileNotFoundError):
+            sync.load_exclusions(self.path)
+
+
 class SyncTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -52,6 +103,7 @@ class SyncTests(unittest.TestCase):
         self.articles = Path(self.temp.name) / "articles"
         self.client = FakeClient()
         self.records = [post(), post(2)]
+        self.pages = []
         self.detail_calls = []
 
     def tearDown(self):
@@ -59,11 +111,13 @@ class SyncTests(unittest.TestCase):
 
     def inventory(self, client, kind, **kwargs):
         fields = ("id", "type", "status", "modified", "modified_gmt", "date_gmt")
-        return Inventory([{k:r[k] for k in fields} for r in self.records] if kind == "posts" else [], [])
+        records = self.records if kind == "posts" else self.pages if kind == "pages" else []
+        return Inventory([{k:r[k] for k in fields} for r in records], [])
 
     def details(self, client, kind, ids, **kwargs):
         self.detail_calls.append((kind, list(ids)))
-        return Inventory([json.loads(json.dumps(r)) for r in self.records
+        records = self.records if kind == "posts" else self.pages if kind == "pages" else []
+        return Inventory([json.loads(json.dumps(r)) for r in records
                           if r["id"] in ids and r["type"] + "s" == kind], [])
 
     def run_sync(self, **kwargs):
@@ -100,6 +154,27 @@ class SyncTests(unittest.TestCase):
         self.assertNotIn("https://kiszamolo.hu/p104048/", [url for url, _ in self.client.calls])
         self.assertEqual(set(report["excluded_records"]), {"post:104048"})
         self.assertEqual(self.state()["records"]["post:2"]["acquisition_status"], "incomplete")
+
+    def test_approved_page_and_post_exclusions_skip_hydration_and_public_downloads(self):
+        excluded_pages = [int(key.split(":")[1]) for key in sync.EXCLUDED_RECORDS if key.startswith("page:")]
+        excluded_posts = [int(key.split(":")[1]) for key in sync.EXCLUDED_RECORDS if key.startswith("post:")]
+        self.records = [post(number) for number in [1, *excluded_posts]]
+        self.pages = [page(number) for number in [500, *excluded_pages]]
+
+        report = self.run_sync()
+
+        self.assertEqual(self.detail_calls, [("posts", [1]), ("pages", [500])])
+        self.assertEqual(report["excluded_records"], sync.EXCLUDED_RECORDS)
+        self.assertEqual(set(self.state()["records"]), {"post:1", "page:500"})
+        downloaded_urls = {url for url, _ in self.client.calls}
+        self.assertIn("https://kiszamolo.hu/p1/", downloaded_urls)
+        self.assertIn("https://kiszamolo.hu/page-500/", downloaded_urls)
+        for number in excluded_posts:
+            self.assertNotIn(f"https://kiszamolo.hu/p{number}/", downloaded_urls)
+            self.assertFalse((self.root / f"records/posts/{number}").exists())
+        for number in excluded_pages:
+            self.assertNotIn(f"https://kiszamolo.hu/page-{number}/", downloaded_urls)
+            self.assertFalse((self.root / f"records/pages/{number}").exists())
 
     def test_exclusion_prunes_existing_files_and_keeps_shared_media(self):
         for mode in ("sync", "rebuild"):
