@@ -1,4 +1,4 @@
-- Read [README.md](README.md) before starting work.
+- Read and follow the project guidance in [README.md](README.md) before starting work.
 - Before changing tags or tagging rules, read the tag-selection principles and user decisions in [tagging/README.md](tagging/README.md).
 - Keep the project simple.
 - Communicate with the user in simple, clear, everyday language.

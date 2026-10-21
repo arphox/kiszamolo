@@ -148,7 +148,43 @@ class SyncTests(unittest.TestCase):
         self.assertFalse(list(self.articles.rglob("*.html")))
         self.assertTrue((self.root / "records/posts/1/source.html").exists())
         self.assertIn("https://other.test/b.png", text)
-        self.assertIn("other.test", report["media_hosts"])
+        self.assertIn("https://other.test/b.png", self.state()["records"]["post:1"]["asset_urls"])
+
+    def test_media_source_statistics_refresh_only_during_offline_rebuild(self):
+        self.run_sync()
+        self.assertFalse((self.articles / "media-sources.json").exists())
+        sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
+        stats_path = self.articles / "media-sources.json"
+        before = stats_path.read_bytes()
+        self.assertIn("[Médiaforrások statisztikája](MEDIA-SOURCES.md)",
+                      (self.articles / "INDEX.md").read_text(encoding="utf-8"))
+        self.records[0] = post(modified="2026-10-19T00:00:00",
+            body='<p>Updated</p><img src="https://outside.test/new.png">')
+        self.run_sync()
+        self.assertEqual(stats_path.read_bytes(), before)
+        sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
+        refreshed = json.loads(stats_path.read_text(encoding="utf-8"))
+        self.assertIn("outside.test", refreshed)
+
+    def test_unchanged_taxonomy_does_not_trigger_fetch_or_rerender(self):
+        self.records[0]["categories"] = [5]
+        current_name = "Finance"
+        calls = []
+
+        def metadata(client, kind, **kwargs):
+            calls.append(kind)
+            return Inventory([{"id": 5, "name": current_name}] if kind == "categories" else [], [])
+
+        sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
+            record_loader=self.details, metadata_loader=metadata, progress=lambda _: None)
+        self.assertEqual(self.state()["records"]["post:1"]["category_names"], ["Finance"])
+        calls.clear()
+        current_name = "Updated category"
+        with patch("sync.render_views", side_effect=AssertionError("Unchanged articles rerendered")):
+            sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
+                record_loader=self.details, metadata_loader=metadata, progress=lambda _: None)
+        self.assertEqual(calls, [])
+        self.assertEqual(self.state()["records"]["post:1"]["category_names"], ["Finance"])
 
     def test_only_explicitly_excluded_record_is_skipped_before_fetching(self):
         self.records.append(post(104048))
@@ -212,6 +248,27 @@ class SyncTests(unittest.TestCase):
                 self.assertEqual(self.client.calls, [])
                 self.assertEqual(self.detail_calls, [])
 
+    def test_exclusion_link_fallback_survives_inventory_failure(self):
+        self.records = [post(body='<a href="/p104048/">Policy</a>'), post(104048)]
+        with patch("sync.EXCLUDED_RECORDS", {}):
+            self.run_sync()
+        incoming = self.article_file(1)
+        self.assertIn("104048.md", incoming.read_text(encoding="utf-8"))
+
+        def failed_inventory(*args, **kwargs):
+            raise OSError("Simulated inventory failure")
+
+        with self.assertRaisesRegex(OSError, "inventory failure"):
+            sync.run_sync(self.root, client=self.client, inventory_loader=failed_inventory,
+                record_loader=self.details, metadata_loader=lambda *a, **k: Inventory([], []),
+                progress=lambda _: None)
+        self.assertIn("https://kiszamolo.hu/p104048/", incoming.read_text(encoding="utf-8"))
+        self.assertNotIn("104048.md", incoming.read_text(encoding="utf-8"))
+        self.assertEqual(set(self.state()["records"]), {"post:1"})
+
+        self.run_sync()
+        self.assertIn("https://kiszamolo.hu/p104048/", incoming.read_text(encoding="utf-8"))
+
     def test_excluded_source_directory_is_validated_before_deleting_any_files(self):
         self.records.append(post(104048))
         with patch("sync.EXCLUDED_RECORDS", {}):
@@ -223,16 +280,34 @@ class SyncTests(unittest.TestCase):
         self.assertTrue(self.article_file(104048).exists())
         self.assertTrue((self.root / "records/posts/1/source.json").exists())
 
-    def test_cross_article_links_preserve_referenced_technical_anchors(self):
+    def test_legacy_anchor_references_survive_targeted_render_without_reading_referer(self):
         self.records[0] = post(body='<a href="/p2/#headline-38-120338">Másik cikk</a>')
         self.records[1] = post(2, body='<h2 id="headline-38-120338">Célpont</h2>')
         self.run_sync()
         self.assertIn('#headline-38-120338)', self.article_file(1).read_text(encoding="utf-8"))
         self.assertIn('<a id="headline-38-120338"></a>',
                       self.article_file(2).read_text(encoding="utf-8"))
+        state = self.state()
+        for item in state["records"].values():
+            item.pop("referenced_anchors", None)
+        (self.root / "state.json").write_bytes(sync.json_bytes(state))
+        self.records[1] = post(2, modified="2026-10-19T00:00:00",
+                               body='<h2 id="headline-38-120338">Changed target</h2>')
+        incoming = self.article_file(1)
+        original_read_text = Path.read_text
+
+        def guarded_read_text(path, *args, **kwargs):
+            if path == incoming:
+                raise AssertionError("Unchanged referring article was read")
+            return original_read_text(path, *args, **kwargs)
+
+        with patch.object(Path, "read_text", guarded_read_text):
+            self.run_sync()
+        self.assertIn('<a id="headline-38-120338"></a>',
+                      self.article_file(2).read_text(encoding="utf-8"))
         self.records[0] = post(modified="2026-10-19T00:00:00", body='<p>Nincs hivatkozás.</p>')
         self.run_sync()
-        self.assertNotIn('headline-38-120338', self.article_file(2).read_text(encoding="utf-8"))
+        self.assertIn('headline-38-120338', self.article_file(2).read_text(encoding="utf-8"))
 
     def test_unchanged_timestamp_reuses_cache_and_timestamp_less_change_is_ignored(self):
         self.run_sync()
@@ -289,6 +364,20 @@ class SyncTests(unittest.TestCase):
         self.run_sync()
         self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
 
+    def test_legacy_protected_record_remains_incomplete_and_is_retried(self):
+        self.records = [post()]
+        self.records[0]["content"]["protected"] = True
+        self.run_sync()
+        state = self.state()
+        state["records"]["post:1"].pop("protected_content")
+        (self.root / "state.json").write_bytes(sync.json_bytes(state))
+        self.detail_calls.clear()
+        report = self.run_sync()
+        self.assertEqual(self.detail_calls, [("posts", [1])])
+        self.assertEqual(report["incomplete_records"], 1)
+        self.assertTrue(self.state()["records"]["post:1"]["protected_content"])
+        self.assertEqual(self.state()["records"]["post:1"]["acquisition_status"], "incomplete")
+
     def test_changed_asset_bytes_set_pending_but_same_bytes_do_not(self):
         self.run_sync()
         self.clear_tagging_pending()
@@ -301,12 +390,6 @@ class SyncTests(unittest.TestCase):
         asset_path.unlink()
         self.run_sync()
         self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
-
-    def test_published_date_does_not_refresh_unchanged_record(self):
-        p = post(date="2099-01-01T00:00:00")
-        previous = {"status": "active", "source_sha256": sync.digest(sync.json_bytes(p)),
-                    "page": {"status": "downloaded"}}
-        self.assertFalse(sync.should_refresh(p, previous))
 
     def test_failed_asset_is_explicit_and_retried(self):
         self.records[0]["content"]["rendered"] += '<img src="/healthy.png">'
@@ -364,15 +447,13 @@ class SyncTests(unittest.TestCase):
                           metadata_loader=lambda *a, **k: Inventory([], []), progress=lambda _: None)
         self.assertEqual(before, ((self.root / "state.json").read_bytes(), (self.articles / "index.jsonl").read_bytes()))
 
-    def test_corrupt_cache_does_not_send_conditionals(self):
+    def test_offline_rebuild_rejects_corrupt_cached_asset(self):
         self.run_sync()
         state = self.state()
         asset = state["assets"]["https://kiszamolo.hu/a.png"]
         (self.articles / asset["path"]).write_bytes(b"corrupt")
-        self.client.calls.clear()
-        self.run_sync()
-        call = next(c for c in self.client.calls if c[0] == "https://kiszamolo.hu/a.png")
-        self.assertIsNone(call[1])
+        with self.assertRaisesRegex(ValueError, "Cached media hash mismatch"):
+            sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
 
     def test_live_missing_candidate_aborts_without_false_status(self):
         self.run_sync()
@@ -484,10 +565,10 @@ class SyncTests(unittest.TestCase):
         for raw in (sync.json_bytes(stale), b"invalid JSON"):
             with self.subTest(raw=raw):
                 cached_path.write_bytes(raw)
-                self.assertEqual(run()["incomplete_records"], 1)
                 before = self.article_file(1).read_bytes()
                 self.assertNotIn(b"Unverified hero", before)
-                sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
+                with self.assertRaises(ValueError):
+                    sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
                 self.assertEqual(self.article_file(1).read_bytes(), before)
                 self.assertEqual(cached_path.read_bytes(), raw)
 
@@ -539,6 +620,76 @@ class SyncTests(unittest.TestCase):
         self.assertIn("../../assets/", text)
         self.assertEqual(self.state()["records"]["page:1"]["derived_source"], "public_page_content")
 
+    def test_cached_page_repair_preserves_public_body_assets_and_embeds(self):
+        self.records = []
+        self.pages = [page()]
+        self.pages[0]["content"]["rendered"] = ""
+        self.client.payloads[self.pages[0]["link"]] = (
+            b'<div class="ct-inner-content"><p>Actual page</p><img src="/builder.png">'
+            b'<iframe src="https://www.youtube.com/embed/example"></iframe></div>')
+        self.run_sync()
+        before = self.state()["records"]["page:1"]
+        before_markdown = self.article_file(1, "page").read_bytes()
+        for sample_ids in (None, {1}):
+            with self.subTest(sample_ids=sample_ids):
+                self.article_file(1, "page").unlink()
+                self.client.calls.clear()
+                self.detail_calls.clear()
+                self.run_sync(sample_ids=sample_ids)
+                after = self.state()["records"]["page:1"]
+                self.assertEqual(after["asset_urls"], before["asset_urls"])
+                self.assertEqual(after["embed_urls"], before["embed_urls"])
+                self.assertEqual(self.article_file(1, "page").read_bytes(), before_markdown)
+                self.assertEqual(self.client.calls, [])
+                self.assertEqual(self.detail_calls, [])
+
+    def test_new_article_localizes_existing_links_without_rerendering_referer(self):
+        self.records = [post(body='<a href="http://www.kiszamolo.hu/p2/#part">Next</a>'
+                                 '<iframe src="https://kiszamolo.hu/p2/embed/"></iframe>')]
+        self.run_sync()
+        incoming = self.article_file(1)
+        incoming.write_text(incoming.read_text(encoding="utf-8") + "\nLocal note.\n", encoding="utf-8")
+        self.records.append(post(2))
+        self.detail_calls.clear()
+        original_render = sync.render_views
+
+        def render_new_article(*args, **kwargs):
+            self.assertEqual([record["id"] for record in args[3]], [2])
+            return original_render(*args, **kwargs)
+
+        with patch("sync.render_views", side_effect=render_new_article):
+            report = self.run_sync()
+        text = incoming.read_text(encoding="utf-8")
+        self.assertIn("[Next](2011-01-01%2000.00%20Title%202.md#part)", text)
+        self.assertNotIn("https://kiszamolo.hu/p2/embed/", text)
+        self.assertIn("Local note.", text)
+        self.assertEqual(self.detail_calls, [("posts", [2])])
+        self.assertEqual(report["links_repaired"], 1)
+
+    def test_renamed_target_repairs_existing_linked_image(self):
+        self.records[0] = post(body='<a href="/p2/"><img src="/a.png" alt="cover"></a>')
+        self.run_sync()
+        old = self.article_file(2)
+        self.records[1]["title"]["rendered"] = "Renamed target"
+        self.records[1]["modified"] = self.records[1]["modified_gmt"] = "2026-10-08T12:00:00"
+        self.run_sync()
+        text = self.article_file(1).read_text(encoding="utf-8")
+        self.assertIn("[![cover](../../assets/", text)
+        self.assertIn("](2011-01-01%2000.00%20Renamed%20target.md)", text)
+        self.assertFalse(old.exists())
+
+    def test_renamed_target_repairs_existing_link_with_inline_code_label(self):
+        self.records[0] = post(body='<a href="/p2/">Some <code>code</code> link</a>')
+        self.run_sync()
+        old = self.article_file(2)
+        self.records[1]["title"]["rendered"] = "Renamed target"
+        self.records[1]["modified"] = self.records[1]["modified_gmt"] = "2026-10-08T12:00:00"
+        self.run_sync()
+        self.assertIn(
+            "[Some `code` link](2011-01-01%2000.00%20Renamed%20target.md)",
+            self.article_file(1).read_text(encoding="utf-8"))
+        self.assertFalse(old.exists())
+
     def test_title_date_changes_move_markdown_and_update_incoming_links(self):
         self.run_sync()
         old = self.article_file(2)
@@ -553,6 +704,18 @@ class SyncTests(unittest.TestCase):
         self.assertTrue(new.is_file())
         self.assertFalse(old.exists())
         self.assertIn("../../2020/03/2020-03-04%2012.34%20Changed%20title.md#part", self.article_file(1).read_text(encoding="utf-8"))
+
+    def test_renamed_target_repairs_manually_edited_incoming_markdown(self):
+        self.run_sync()
+        incoming = self.article_file(1)
+        incoming.write_text(incoming.read_text(encoding="utf-8") + "\nLocal note.\n", encoding="utf-8")
+        self.records[1]["title"]["rendered"] = "Renamed target"
+        self.records[1]["modified"] = self.records[1]["modified_gmt"] = "2026-10-08T12:00:00"
+        report = self.run_sync()
+        text = incoming.read_text(encoding="utf-8")
+        self.assertIn("Local note.", text)
+        self.assertIn("Renamed%20target.md#part", text)
+        self.assertEqual(report["links_repaired"], 1)
 
     def test_renaming_preserves_locally_modified_old_file(self):
         self.run_sync()
@@ -615,47 +778,94 @@ class SyncTests(unittest.TestCase):
         self.run_sync()
         self.detail_calls.clear()
         self.client.calls.clear()
-        self.run_sync()
+        state = self.state()
+        protected = {
+            self.root / item["directory"] / name
+            for item in state["records"].values()
+            for name in ("source.json", "source.html", "view-source.html", "source-page.html")
+        }
+        protected.update(self.articles / item["path"] for item in state["records"].values())
+        protected.update(self.articles / asset["path"] for asset in state["assets"].values()
+                         if asset.get("path"))
+        original_read_bytes = Path.read_bytes
+
+        def guarded_read_bytes(path):
+            if path in protected:
+                raise AssertionError(f"Unchanged content was read: {path}")
+            return original_read_bytes(path)
+
+        with patch.object(Path, "read_bytes", guarded_read_bytes), \
+             patch("sync.discover_record", side_effect=AssertionError("Unchanged article was parsed")), \
+             patch("sync.load_cached_view", side_effect=AssertionError("Unchanged source was loaded")):
+            report = self.run_sync()
         self.assertEqual(self.detail_calls, [])
         self.assertEqual(self.client.calls, [])
+        self.assertEqual(report["processed_records"], 0)
+        self.assertEqual(report["rendered_records"], 0)
         self.assertEqual(self.state()["records"]["post:1"]["source_sha256"],
                          sync.digest(sync.json_bytes(self.records[0])))
 
-    def test_corrupt_full_source_is_refetched(self):
+    def test_missing_markdown_repairs_only_that_record_from_cache(self):
         self.run_sync()
-        (self.root/"records/posts/1/source.json").write_bytes(b"corrupt")
+        (self.article_file(1)).unlink()
+        self.detail_calls.clear()
+        self.client.calls.clear()
+        report = self.run_sync()
+        self.assertEqual(self.detail_calls, [])
+        self.assertEqual(self.client.calls, [])
+        self.assertEqual(report["processed_records"], 1)
+        self.assertEqual(report["rendered_records"], 1)
+        self.assertTrue(self.article_file(1).is_file())
+
+    def test_media_retry_does_not_reload_or_rerender_article(self):
+        self.client.fail.add("https://kiszamolo.hu/a.png")
+        self.run_sync()
+        self.client.fail.clear()
+        self.detail_calls.clear()
+        self.client.calls.clear()
+        with patch("sync.load_cached_view", side_effect=AssertionError("Media retry loaded article")), \
+             patch("sync.render_views", side_effect=AssertionError("Media retry rerendered articles")):
+            self.run_sync()
+        self.assertEqual(self.detail_calls, [])
+        self.assertEqual([url for url, _ in self.client.calls], ["https://kiszamolo.hu/a.png"])
+        text = self.article_file(1).read_text(encoding="utf-8")
+        self.assertNotIn("https://kiszamolo.hu/a.png", text)
+        self.assertIn("../../assets/", text)
+
+    def test_missing_raw_source_is_refetched(self):
+        self.run_sync()
+        (self.root/"records/posts/1/source.json").unlink()
         self.detail_calls.clear()
         self.run_sync()
         self.assertEqual(self.detail_calls, [("posts", [1])])
         self.assertEqual(json.loads((self.root/"records/posts/1/source.json").read_text())["id"], 1)
 
-    def test_retained_corrupt_sources_abort_before_publishing_views(self):
+    def test_offline_rebuild_rejects_corrupt_cached_sources(self):
         self.run_sync()
         self.records = [post()]
         before_state = (self.root / "state.json").read_bytes()
         before_index = (self.articles / "index.jsonl").read_bytes()
         before_markdown = self.article_file(2).read_bytes()
         directory = self.root / "records/posts/2"
-        for sample_ids in (None, {1}):
-            for filename in ("source.json", "source.html", "view-source.html"):
-                with self.subTest(sample_ids=sample_ids, filename=filename):
-                    path = directory / filename
-                    original = path.read_bytes()
-                    if filename == "source.json":
-                        record = json.loads(original)
-                        record["title"]["rendered"] = "Corrupted title"
-                        corrupt = sync.json_bytes(record)
-                    else:
-                        corrupt = original + b"<p>Corrupted content</p>"
-                    path.write_bytes(corrupt)
-                    try:
-                        with self.assertRaisesRegex(ValueError, "Cached .* mismatch"):
-                            self.run_sync(sample_ids=sample_ids)
-                        self.assertEqual((self.root / "state.json").read_bytes(), before_state)
-                        self.assertEqual((self.articles / "index.jsonl").read_bytes(), before_index)
-                        self.assertEqual(self.article_file(2).read_bytes(), before_markdown)
-                    finally:
-                        path.write_bytes(original)
+        for filename in ("source.json", "source.html", "view-source.html"):
+            with self.subTest(filename=filename):
+                path = directory / filename
+                original = path.read_bytes()
+                if filename == "source.json":
+                    record = json.loads(original)
+                    record["title"]["rendered"] = "Corrupted title"
+                    corrupt = sync.json_bytes(record)
+                else:
+                    corrupt = original + b"<p>Corrupted content</p>"
+                path.write_bytes(corrupt)
+                try:
+                    with self.assertRaisesRegex(ValueError, "Cached .* mismatch"):
+                        sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
+                    self.assertEqual((self.root / "state.json").read_bytes(), before_state)
+                    self.assertEqual((self.articles / "index.jsonl").read_bytes(), before_index)
+                    self.assertEqual(self.article_file(2).read_bytes(), before_markdown)
+                finally:
+                    path.write_bytes(original)
 
     def test_census_detail_race_does_not_advance_state(self):
         self.run_sync()
@@ -685,7 +895,7 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(report["page_failures"], {})
             self.assertEqual(report["asset_failures"], {})
             self.assertEqual(report["incomplete_records"], 0)
-        self.assertEqual(next(kwargs["ids"] for kind,kwargs in calls if kind=="media"), [])
+        self.assertNotIn("media", [kind for kind, _ in calls])
         self.assertTrue(all(kwargs["fields"] == ("id","name") for kind,kwargs in calls if kind!="media"))
         self.assertIn("hero.png", json.dumps(self.state()["records"]["post:1"]["asset_urls"]))
 

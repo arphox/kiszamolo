@@ -23,6 +23,7 @@ from bs4 import BeautifulSoup
 
 from remote import HttpClient, Inventory, fetch_census, fetch_records, fetch_metadata
 from paths import plan_article_paths
+from article_links import repair_markdown_links
 from render import (conversion_warnings, discover_assets, discover_embeds,
                     extract_public_content, make_markdown, plain_title, referenced_anchors, rewrite_html)
 
@@ -166,6 +167,8 @@ def migrate_assets(root, articles_root, state):
         raise ValueError(f"Unsupported assets location: {location!r}")
     old_articles_root = Path(state.get("articles_root") or articles_root).resolve()
     source_root = root if location == "raw" else old_articles_root
+    if location == "articles" and source_root == articles_root:
+        return 0
     if location == "articles":
         validate_roots(root, source_root)
         if source_root != articles_root and (source_root.is_relative_to(articles_root) or articles_root.is_relative_to(source_root)):
@@ -395,58 +398,47 @@ def load_cached_view(root, key, item):
     return record, body
 
 
-def should_refresh(record, previous):
-    """Refresh article sources independently of failed asset downloads."""
-    if record is None or not previous or previous.get("status") != "active":
-        return True
-    if previous.get("source_sha256") != digest(json_bytes(record)):
-        return True
-    if previous.get("page", {}).get("status") != "downloaded":
-        return True
-    if previous.get("featured_media_error") or previous.get("derived_view_available") is False:
-        return True
-    if record.get("content", {}).get("protected"):
-        return True
-    return False
-
-
-def hydrate_inventory(root, census, state, client, *, record_loader, progress):
-    """Reuse hash-verified full sources; fetch only records due for refresh."""
-    records = {}
+def hydrate_inventory(root, articles_root, census, state, client, *, sample_ids, record_loader, progress):
+    """Fetch only new/modified records or records whose required source files are missing."""
     requested = {"posts": [], "pages": []}
+    repair_keys = set()
     for number, summary in enumerate(census, 1):
         key = record_key(summary)
         previous = state["records"].get(key, {})
-        cached = None
-        if previous.get("directory"):
-            source = safe_path(root, previous["directory"] + "/source.json")
-            if source.is_file():
-                data = source.read_bytes()
-                if digest(data) == previous.get("source_sha256"):
-                    candidate = json.loads(data.decode("utf-8"))
-                    if record_key(candidate) != key:
-                        raise ValueError(f"Cached source identity mismatch: {key}")
-                    cached = candidate
-        changed = cached is None or any(summary.get(field) != cached.get(field)
-                                       for field in ("modified", "modified_gmt"))
-        needs_refresh = changed
-        if should_refresh(cached, previous):
-            needs_refresh = True
-        if not verified_file(root, previous.get("page", {})):
-            needs_refresh = True
-        if cached and cached.get("featured_media"):
-            featured_path = previous["directory"] + "/source-featured-media.json"
-            if not verified_file(root, dict(path=featured_path, sha256=previous.get("featured_media_sha256"))):
-                needs_refresh = True
+        selected = sample_ids is None or summary["id"] in sample_ids
+        directory = previous.get("directory") or record_directory(summary)
+        raw_files_present = all(safe_path(root, f"{directory}/{name}").is_file()
+                                for name in ("source.json", "source.html", "view-source.html"))
+        page = previous.get("page", {})
+        page_present = bool(page.get("path") and safe_path(root, page["path"]).is_file())
+        featured_path = f"{directory}/source-featured-media.json"
+        featured_present = (not previous.get("featured_media_sha256") or
+                            safe_path(root, featured_path).is_file())
+        modified = (summary.get("modified") != previous.get("modified_at") or
+                    (previous.get("modified_at_gmt") is not None and
+                     summary.get("modified_gmt") != previous.get("modified_at_gmt")))
+        # Older state did not record protection; recheck its incomplete sources once.
+        legacy_incomplete = ("protected_content" not in previous and
+                             previous.get("acquisition_status") == "incomplete")
+        needs_refresh = (not previous or previous.get("status") != "active" or modified or
+                         not raw_files_present or page.get("status") != "downloaded" or
+                         not page_present or not featured_present or
+                         not previous.get("path") or
+                         previous.get("featured_media_error") or
+                         previous.get("derived_view_available") is False or
+                         legacy_incomplete or
+                         previous.get("protected_content", False))
         if needs_refresh:
-            requested[summary["type"] + "s"].append(summary["id"])
-        else:
-            records[key] = cached
+            if selected:
+                requested[summary["type"] + "s"].append(summary["id"])
+        elif selected and not safe_path(articles_root, previous["path"]).is_file():
+            repair_keys.add(key)
         if number % 250 == 0 or number == len(census):
             progress(f"Local sources checked: {number}/{len(census)}")
     summaries = {record_key(r): r for r in census}
     detail_inventories = {}
     fetched_keys = set()
+    fetched_records = {}
     for kind, ids in requested.items():
         inventory = record_loader(client, kind, ids=ids, progress=progress) if ids else Inventory([], [])
         if {r["id"] for r in inventory.records} != set(ids) or len(inventory.records) != len(ids):
@@ -458,10 +450,10 @@ def hydrate_inventory(root, census, state, client, *, record_loader, progress):
                     record.get(field) != summary.get(field)
                     for field in ("modified", "modified_gmt", "date_gmt")):
                 raise ValueError(f"Record changed during census: {key}; rerun sync")
-            records[key] = record
+            fetched_records[key] = record
             fetched_keys.add(key)
         detail_inventories["details-" + kind] = inventory
-    return [records[record_key(r)] for r in census], detail_inventories, fetched_keys
+    return fetched_records, detail_inventories, fetched_keys, repair_keys
 
 
 def discover_record(record, featured=None):
@@ -566,12 +558,13 @@ def publish_article_index(articles_root, state):
     atomic_write(articles_root / "index.jsonl", "".join(lines).encode("utf-8"))
 
 
-def publish_indexes(root, state, stats, report, articles_root=None):
+def publish_indexes(root, state, stats, report, articles_root=None, *, update_media_sources=True):
     articles_root = articles_root or root
     records = sorted(state["records"].values(), key=lambda r: (r["published_at"], r["key"]))
     publish_article_index(articles_root, state)
-    md = ["# Kiszámoló helyi tartalomarchívum", "", "Az eltűnt távoli tartalmak is szerepelnek; státuszuk `remote_missing`.",
-          "", "[Médiaforrások statisztikája](MEDIA-SOURCES.md)", ""]
+    md = ["# Kiszámoló helyi tartalomarchívum", "", "Az eltűnt távoli tartalmak is szerepelnek; státuszuk `remote_missing`.", ""]
+    if update_media_sources or (articles_root / "media-sources.json").is_file():
+        md.extend(["[Médiaforrások statisztikája](MEDIA-SOURCES.md)", ""])
     year = None
     for item in records:
         current = item["published_at"][:4]
@@ -593,13 +586,14 @@ def publish_indexes(root, state, stats, report, articles_root=None):
             md.append(f"- [{title}]({quote(item['path'], safe='/')}) · {item['status']}")
         md.append("")
     atomic_write(articles_root / "INDEX.md", ("\n".join(md) + "\n").encode("utf-8"))
-    smd = ["# Médiaforrások", "", "Az aktuális teljes ID-leltárhoz tartozó, legutóbb letöltött cikk- és oldaltörzsekben, valamint elérhető kiemelt képekben felismert URL-ek. A srcset-változatok külön URL-nek számítanak; ez nem különálló ábrák száma.",
-           "", "| Host | Egyedi média-/fájl-URL | Érintett tartalom | Kép-URL | Képes tartalom | Embed-URL | Letölthető |",
-           "|---|---:|---:|---:|---:|---:|---|"]
-    for host, item in sorted(stats.items(), key=lambda x: (-x[1]["images"], x[0])):
-        smd.append(f"| {host} | {item['assets']} | {item['asset_documents']} | {item['images']} | {item['image_documents']} | {item['embeds']} | {'igen' if item['download_allowed'] else 'nem'} |")
-    atomic_write(articles_root / "MEDIA-SOURCES.md", ("\n".join(smd) + "\n").encode("utf-8"))
-    atomic_write(articles_root / "media-sources.json", json_bytes(stats))
+    if update_media_sources:
+        smd = ["# Médiaforrások", "", "Az aktuális teljes ID-leltárhoz tartozó, legutóbb letöltött cikk- és oldaltörzsekben, valamint elérhető kiemelt képekben felismert URL-ek. A srcset-változatok külön URL-nek számítanak; ez nem különálló ábrák száma.",
+               "", "| Host | Egyedi média-/fájl-URL | Érintett tartalom | Kép-URL | Képes tartalom | Embed-URL | Letölthető |",
+               "|---|---:|---:|---:|---:|---:|---:|"]
+        for host, item in sorted(stats.items(), key=lambda x: (-x[1]["images"], x[0])):
+            smd.append(f"| {host} | {item['assets']} | {item['asset_documents']} | {item['images']} | {item['image_documents']} | {item['embeds']} | {'igen' if item['download_allowed'] else 'nem'} |")
+        atomic_write(articles_root / "MEDIA-SOURCES.md", ("\n".join(smd) + "\n").encode("utf-8"))
+        atomic_write(articles_root / "media-sources.json", json_bytes(stats))
     atomic_write(articles_root / "last-report.json", json_bytes(report))
     # State is the commit marker and source of truth if publishing is interrupted.
     atomic_write(root / "state.json", json_bytes(state))
@@ -669,7 +663,20 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
                 link = soup.new_tag("a", href=frame["src"])
                 link.string = "Beágyazott cikk"
                 frame.replace_with(link)
-        markdown = make_markdown(display_record, str(soup), retained_anchors=retained_anchors).encode("utf-8")
+        source_anchors = {str(tag["id"]) for tag in soup.find_all(True) if tag.has_attr("id")}
+        previous_anchors = set()
+        if output_path.is_file():
+            previous_markdown = output_path.read_text(encoding="utf-8")
+            previous_anchors = set(re.findall(r'<a id="([^"]+)"></a>', previous_markdown))
+        markdown_text = make_markdown(display_record, str(soup),
+            retained_anchors=retained_anchors | source_anchors | previous_anchors)
+        if previous_anchors:
+            missing_anchors = sorted(previous_anchors -
+                                     set(re.findall(r'<a id="([^"]+)"></a>', markdown_text)))
+            if missing_anchors:
+                markdown_text += "\n" + "\n".join(
+                    f'<a id="{html.escape(anchor, quote=True)}"></a>' for anchor in missing_anchors) + "\n"
+        markdown = markdown_text.encode("utf-8")
         atomic_write(output_path, markdown)
         item["markdown_sha256"] = digest(markdown)
         if update_status:
@@ -697,8 +704,38 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
         state = load_state(root)
         previous_articles_root = state.get("articles_root")
         migrate_assets(root, articles_root, state)
+        before_exclusions = {key: dict(item) for key, item in state["records"].items()}
+        excluded_keys = sorted(key for key in state["records"] if key in EXCLUDED_RECORDS)
+        deleted_targets = {
+            before_exclusions[key]["path"]: before_exclusions[key]["url"]
+            for key in excluded_keys
+            if before_exclusions.get(key, {}).get("path") and before_exclusions.get(key, {}).get("url")
+        }
+        exclusion_links_repaired = 0
+        if deleted_targets:
+            for key, item in state["records"].items():
+                if key in excluded_keys or not item.get("path"):
+                    continue
+                path = safe_path(articles_root, item["path"])
+                if not path.is_file():
+                    continue
+                original = path.read_bytes()
+                text = original.decode("utf-8")
+                repaired = repair_markdown_links(text, item["path"], {}, deleted_targets=deleted_targets)
+                if repaired == text:
+                    continue
+                atomic_write(path, repaired.encode("utf-8"))
+                exclusion_links_repaired += 1
+                if item.get("markdown_sha256") == digest(original):
+                    item["markdown_sha256"] = digest(repaired.encode("utf-8"))
+        if exclusion_links_repaired:
+            atomic_write(root / "state.json", json_bytes(state))
         prune_excluded(root, articles_root, state)
+        deleted_targets = {}
         prior_records = {key: dict(item) for key, item in state["records"].items()}
+        for item in state["records"].values():
+            if item.get("type") == "post":
+                item.setdefault("tagging_pending", False)
         inventories = [inventory_loader(client, kind, progress=progress) for kind in ("posts", "pages")]
         census = [record for inv in inventories for record in inv.records]
         if len({record["id"] for record in census}) != len(census):
@@ -710,47 +747,57 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             confirm_missing(client, state, census)
         if sample_ids is not None and not set(sample_ids).issubset({r["id"] for r in census}):
             raise ValueError("Sample includes IDs absent from the complete public inventory")
-        remote_records, detail_inventories, fetched_keys = hydrate_inventory(
-            root, census, state, client, record_loader=record_loader, progress=progress)
-        progress(f"Full records fetched: {len(fetched_keys)}; cached sources reused: {len(remote_records) - len(fetched_keys)}")
-        for record in remote_records:
-            if urlsplit(record["link"]).hostname not in ALLOWED_HOSTS:
-                raise ValueError(f"Unexpected article host: {record['link']}")
-        selected = [r for r in remote_records if sample_ids is None or r["id"] in sample_ids]
-        if sample_ids is not None and {r["id"] for r in selected} != set(sample_ids):
-            raise ValueError("Sample includes IDs absent from the complete public inventory")
-        selected_keys = {record_key(r) for r in selected}
-        retained = [item for key, item in state["records"].items() if key not in selected_keys]
-        planned_paths = plan_article_paths(selected, retained, articles_root=articles_root)
-        progress(f"Inventory complete: {len(remote_records)} records; selected: {len(selected)}")
-        taxonomies = {kind: metadata_loader(client, kind, progress=progress,
-                                           fields=("id", "name"))
-                      for kind in ("categories", "tags")}
+        summaries = {record_key(record): record for record in census}
+        scope_summaries = [record for record in census
+                           if sample_ids is None or record["id"] in sample_ids]
+        scope_keys = {record_key(record) for record in scope_summaries}
+        legacy_stats_path = articles_root / "media-sources.json"
+        stats = (json.loads(legacy_stats_path.read_text(encoding="utf-8"))
+                 if legacy_stats_path.is_file() else {})
+        fetched_records, detail_inventories, fetched_keys, repair_keys = hydrate_inventory(
+            root, articles_root, census, state, client, sample_ids=sample_ids,
+            record_loader=record_loader, progress=progress)
+        fetched_keys &= scope_keys
+        progress(f"Full records fetched: {len(fetched_keys)}; unchanged sources reused: {len(scope_keys) - len(fetched_keys)}")
+        need_taxonomies = bool(fetched_keys)
+        taxonomies = ({kind: metadata_loader(client, kind, progress=progress,
+                                            fields=("id", "name"))
+                       for kind in ("categories", "tags")} if need_taxonomies else {})
         names = {kind: {term["id"]: plain_title(term["name"]) for term in inv.records}
                  for kind, inv in taxonomies.items()}
-        featured_ids = {r["featured_media"] for r in remote_records
-                        if r.get("featured_media") and record_key(r) in fetched_keys}
+        process_keys = ((fetched_keys | repair_keys) & scope_keys)
+        if sample_ids is not None:
+            process_keys.update(scope_keys)
+        process_records = {key: fetched_records[key] for key in process_keys if key in fetched_records}
+        view_bodies = {}
+        for key in sorted(process_keys - process_records.keys()):
+            cached_record, body = load_cached_view(root, key, state["records"][key])
+            process_records[key] = cached_record
+            view_bodies[key] = body
+        featured_ids = {record["featured_media"] for key, record in process_records.items()
+                        if key in fetched_keys and record.get("featured_media")}
         media_error = None
         failed_media_ids = set()
         try:
-            media_inventory = metadata_loader(client, "media", ids=sorted(featured_ids), progress=progress)
+            media_inventory = (metadata_loader(client, "media", ids=sorted(featured_ids), progress=progress)
+                               if featured_ids else Inventory([], []))
         except Exception as error:
             media_inventory = getattr(error, "partial_inventory", None)
             failed_media_ids = set(getattr(error, "missing_ids", featured_ids))
             media_error = f"{type(error).__name__}: {error}"
             progress(f"Featured media metadata failed: {media_error}")
         featured = {m["id"]: m for m in media_inventory.records} if media_inventory else {}
-        # Preserve the existing derived figure during a temporary metadata outage.
-        # Only a verified cached record for the same current featured ID is eligible.
-        for record in remote_records:
+        # Preserve cached featured records for targeted renders during an API outage.
+        for key, record in process_records.items():
             media_id = record.get("featured_media")
-            previous = state["records"].get(record_key(record), {})
+            previous = state["records"].get(key, {})
             if media_id and media_id not in featured and previous.get("directory"):
                 cached_path = safe_path(root, previous["directory"] + "/source-featured-media.json")
-                if cached_path.is_file():
+                if cached_path.is_file() and previous.get("featured_media_sha256"):
                     try:
-                        cached = json.loads(cached_path.read_text(encoding="utf-8"))
-                        if cached.get("id") == media_id and digest(json_bytes(cached)) == previous.get("featured_media_sha256"):
+                        raw = cached_path.read_bytes()
+                        cached = json.loads(raw.decode("utf-8"))
+                        if cached.get("id") == media_id and digest(raw) == previous.get("featured_media_sha256"):
                             featured[media_id] = cached
                     except (ValueError, OSError):
                         pass
@@ -765,55 +812,92 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                 api_sources.append(dict(path=relative, url=url, headers=response.headers,
                                         fetched_at=stamp, sha256=digest(response.body), size_bytes=len(response.body)))
         atomic_write(root / "sources/api/manifest.json", json_bytes(api_sources))
-        discovered = {record_key(r): discover_record(r, featured.get(r.get("featured_media"))) for r in remote_records}
-        refresh = {record_key(r) for r in selected
-                   if record_key(r) in fetched_keys or should_refresh(r, state["records"].get(record_key(r)))}
-        for record in selected:
+        for record in process_records.values():
+            if urlsplit(record["link"]).hostname not in ALLOWED_HOSTS:
+                raise ValueError(f"Unexpected article host: {record['link']}")
+        process_records_list = list(process_records.values())
+        retained = [item for key, item in state["records"].items() if key not in process_keys]
+        planned_paths = plan_article_paths(process_records_list, retained, articles_root=articles_root)
+        path_changed_keys = {key for key, path in planned_paths.items()
+                             if key in state["records"] and
+                             state["records"][key].get("path") != path and key not in process_keys}
+        for key in sorted(path_changed_keys):
+            cached_record, body = load_cached_view(root, key, state["records"][key])
+            process_records[key] = cached_record
+            view_bodies[key] = body
+        if path_changed_keys:
+            process_keys.update(path_changed_keys)
+            process_records_list = list(process_records.values())
+            retained = [item for key, item in state["records"].items() if key not in process_keys]
+            planned_paths = plan_article_paths(process_records_list, retained, articles_root=articles_root)
+        progress(f"Inventory complete: {len(census)} records; processing: {len(process_keys)}")
+        for summary in scope_summaries:
+            key = record_key(summary)
+            item = state["records"].get(key)
+            if item is None:
+                continue
+            item.update(modified_at=summary.get("modified"),
+                        modified_at_gmt=summary.get("modified_gmt"),
+                        last_seen_at=stamp, status="active")
+            item.pop("remote_missing_since", None)
+        page_refresh_keys = set(fetched_keys)
+        discovered = {}
+        for record in process_records_list:
             key = record_key(record)
             previous = state["records"].get(key, {})
             directory = record_directory(record)
             featured_record = featured.get(record.get("featured_media"))
             media_hash = digest(json_bytes(featured_record)) if featured_record else None
-            if previous.get("featured_media_sha256") != media_hash:
-                refresh.add(key)
-            if not verified_file(root, previous.get("page", {})):
-                refresh.add(key)
-            source_hash = digest(json_bytes(record))
-            state["records"][key] = dict(previous, key=key, id=record["id"], type=record["type"],
-                title=plain_title(record["title"]), published_at=record["date"],
-                published_at_gmt=record.get("date_gmt"), modified_at=record.get("modified"),
-                modified_at_gmt=record.get("modified_gmt"),
-                url=record["link"], directory=directory, status="active", last_seen_at=stamp,
-                path=planned_paths[key],
-                source_sha256=source_hash,
-                asset_urls=sorted(discovered[key][0]), embed_urls=sorted(discovered[key][2]),
-                categories=record.get("categories", []), tags=record.get("tags", []),
-                category_names=[names["categories"].get(n, f"ID:{n}") for n in record.get("categories", [])],
-                tag_names=[names["tags"].get(n, f"ID:{n}") for n in record.get("tags", [])],
-                featured_media_sha256=media_hash,
-                featured_media_error=media_error if record.get("featured_media") in failed_media_ids else None,
-                warnings=conversion_warnings(record["content"]["rendered"]))
-            if record["type"] == "post":
-                source_changed = (previous.get("source_sha256") is not None and
-                                  previous["source_sha256"] != source_hash)
-                featured_changed = (previous.get("featured_media_sha256") is not None and
-                                    media_hash is not None and
-                                    previous["featured_media_sha256"] != media_hash)
-                state["records"][key]["tagging_pending"] = bool(
-                    previous.get("tagging_pending") or not previous or source_changed or featured_changed)
+            newly_fetched = key in fetched_keys
+            if newly_fetched:
+                source_hash = digest(json_bytes(record))
+                item = dict(previous, key=key, id=record["id"], type=record["type"],
+                    title=plain_title(record["title"]), published_at=record["date"],
+                    published_at_gmt=record.get("date_gmt"), modified_at=record.get("modified"),
+                    modified_at_gmt=record.get("modified_gmt"), url=record["link"],
+                    directory=directory, status="active", last_seen_at=stamp,
+                    source_sha256=source_hash, categories=record.get("categories", []),
+                    tags=record.get("tags", []),
+                    category_names=[names["categories"].get(n, f"ID:{n}") for n in record.get("categories", [])],
+                    tag_names=[names["tags"].get(n, f"ID:{n}") for n in record.get("tags", [])],
+                    featured_media_sha256=media_hash,
+                    featured_media_error=media_error if record.get("featured_media") in failed_media_ids else None,
+                    protected_content=bool(record.get("content", {}).get("protected")),
+                    warnings=conversion_warnings(record["content"]["rendered"]))
+                if record["type"] == "post":
+                    source_changed = (previous.get("source_sha256") is not None and
+                                      previous["source_sha256"] != source_hash)
+                    featured_changed = (previous.get("featured_media_sha256") is not None and
+                                        media_hash is not None and
+                                        previous["featured_media_sha256"] != media_hash)
+                    item["tagging_pending"] = bool(
+                        previous.get("tagging_pending") or not previous or source_changed or featured_changed)
+                else:
+                    item.pop("tagging_pending", None)
+                item.pop("remote_missing_since", None)
+                atomic_write(root / directory / "source.json", json_bytes(record))
+                atomic_write(root / directory / "source.html", record["content"]["rendered"].encode("utf-8"))
+                if featured_record:
+                    atomic_write(root / directory / "source-featured-media.json", json_bytes(featured_record))
             else:
-                state["records"][key].pop("tagging_pending", None)
-            state["records"][key].pop("remote_missing_since", None)
-            atomic_write(root / directory / "source.json", json_bytes(record))
-            atomic_write(root / directory / "source.html", record["content"]["rendered"].encode("utf-8"))
-            if featured_record:
-                atomic_write(root / directory / "source-featured-media.json", json_bytes(featured_record))
-        progress(f"Public page refresh: {len(refresh)}")
+                item = dict(previous)
+                if taxonomies:
+                    item["category_names"] = [names["categories"].get(n, f"ID:{n}")
+                                              for n in item.get("categories", [])]
+                    item["tag_names"] = [names["tags"].get(n, f"ID:{n}")
+                                         for n in item.get("tags", [])]
+            item["path"] = planned_paths[key]
+            state["records"][key] = item
+            if newly_fetched:
+                discovered[key] = discover_record(record, featured_record)
+                item["asset_urls"] = sorted(discovered[key][0])
+                item["embed_urls"] = sorted(discovered[key][2])
+        progress(f"Public page refresh: {len(page_refresh_keys)}")
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {}
-            for record in selected:
+            for record in process_records_list:
                 key = record_key(record)
-                if key in refresh:
+                if key in page_refresh_keys:
                     item = state["records"][key]
                     futures[pool.submit(fetch_file, client, record["link"], root,
                         item["directory"] + "/source-page.html", item.get("page", {}),
@@ -823,14 +907,14 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                 state["records"][key]["page"] = future.result()
                 if n % 25 == 0 or n == len(futures):
                     progress(f"Public pages: {n}/{len(futures)}")
-        view_bodies = {}
-        for record in selected:
+        for record in process_records_list:
             key = record_key(record)
             item = state["records"][key]
-            body = record["content"]["rendered"]
-            item["derived_source"] = "api_content"
-            item["derived_view_available"] = True
-            if record["type"] == "page" and not body.strip():
+            body = view_bodies.get(key, record["content"]["rendered"])
+            if key in fetched_keys:
+                item["derived_source"] = "api_content"
+                item["derived_view_available"] = True
+            if key in fetched_keys and record["type"] == "page" and not body.strip():
                 page_path = safe_path(root, item["directory"] + "/source-page.html")
                 extracted = extract_public_content(page_path.read_bytes(), record) if page_path.is_file() else None
                 if extracted is None:
@@ -847,14 +931,18 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                     item["asset_urls"] = sorted(discovered[key][0])
                     item["embed_urls"] = sorted(discovered[key][2])
             view_bodies[key] = body
-            # Exact intermediate used for the AI/readable derivatives.
-            atomic_write(root / item["directory"] / "view-source.html", body.encode("utf-8"))
-        stats = host_statistics(remote_records, discovered)
-        all_assets = {u for record in selected for u in discovered[record_key(record)][0]}
-        assets_refresh = {u for record in selected if record_key(record) in refresh
-                          for u in discovered[record_key(record)][0]}
+            if key in fetched_keys:
+                atomic_write(root / item["directory"] / "view-source.html", body.encode("utf-8"))
+        all_assets = {url for key in scope_keys for url in state["records"].get(key, {}).get("asset_urls", [])}
+        assets_refresh = {url for key in fetched_keys if key in discovered for url in discovered[key][0]}
         jobs = {}
         previous_asset_hashes = {url: state["assets"].get(url, {}).get("sha256") for url in all_assets}
+        previously_available = {
+            url: state["assets"].get(url, {}).get("status") == "downloaded" and
+                 bool(state["assets"].get(url, {}).get("path")) and
+                 safe_path(articles_root, state["assets"][url]["path"]).is_file()
+            for url in all_assets
+        }
         # Avoid racing Windows path resolution with creation of the shared parent.
         safe_path(articles_root, "assets").mkdir(exist_ok=True)
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
@@ -863,8 +951,9 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                 if urlsplit(url).hostname not in ALLOWED_HOSTS:
                     state["assets"][url] = dict(status="external_reference", url=url)
                     continue
-                valid = verified_file(articles_root, previous)
-                if url in assets_refresh or not valid or previous.get("status") != "downloaded":
+                asset_path = previous.get("path") or asset_filename(url)
+                present = safe_path(articles_root, asset_path).is_file()
+                if url in assets_refresh or not present or previous.get("status") != "downloaded":
                     jobs[pool.submit(fetch_file, client, url, articles_root, asset_filename(url),
                         previous, stamp, max_bytes=max_asset_bytes, expected_media=True)] = url
             progress(f"Media refresh: {len(jobs)}; external references: {sum(urlsplit(u).hostname not in ALLOWED_HOSTS for u in all_assets)}")
@@ -880,22 +969,73 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             and state["assets"].get(url, {}).get("sha256") is not None
             and previous_asset_hashes[url] != state["assets"][url]["sha256"]
         }
+        remote_targets = {
+            url: state["assets"][url]["path"]
+            for url in all_assets
+            if not previously_available[url] and
+            state["assets"].get(url, {}).get("status") == "downloaded" and
+            state["assets"].get(url, {}).get("path")
+        }
+        article_targets = {}
+        for key in fetched_keys - prior_records.keys():
+            item = state["records"][key]
+            for alias in internal_aliases(item["url"]):
+                article_targets[alias] = item["path"]
+                article_targets[alias.rstrip("/") + "/embed/"] = item["path"]
+        remote_targets.update(article_targets)
         if changed_asset_urls:
             for key, item in state["records"].items():
                 if item.get("type") == "post" and changed_asset_urls.intersection(item.get("asset_urls", [])):
                     item["tagging_pending"] = True
         for key, item in state["records"].items():
-            if key not in selected_keys:
+            if key in planned_paths:
                 item["path"] = planned_paths[key]
-        render_records = list(selected)
-        for key, item in state["records"].items():
-            if key not in selected_keys:
-                cached_record, body = load_cached_view(root, key, item)
-                render_records.append(cached_record)
-                view_bodies[key] = body
-        reassigned_preserved = render_views(root, articles_root, state, render_records, view_bodies, featured,
-            prior_records=prior_records, previous_articles_root=previous_articles_root)
-        remote_keys = {record_key(r) for r in remote_records}
+        for key in scope_keys:
+            item = state["records"].get(key)
+            if not item:
+                continue
+            urls = item.get("asset_urls", [])
+            failures_for_record = [url for url in urls
+                                   if state.get("assets", {}).get(url, {}).get("status") == "failed"]
+            item["failed_assets"] = failures_for_record
+            item["external_assets"] = [url for url in urls
+                                       if state.get("assets", {}).get(url, {}).get("status") == "external_reference"]
+            item["acquisition_status"] = "incomplete" if (
+                failures_for_record or item.get("page", {}).get("status") != "downloaded" or
+                item.get("protected_content") or item.get("featured_media_error") or
+                not item.get("derived_view_available", True)) else "complete"
+        render_keys = process_keys
+        render_records = [process_records[key] for key in render_keys]
+        reassigned_preserved = (render_views(root, articles_root, state, render_records, view_bodies, featured,
+            prior_records=prior_records, previous_articles_root=previous_articles_root) if render_records else [])
+        path_moves = {previous["path"]: state["records"][key]["path"]
+                      for key, previous in prior_records.items()
+                      if key in state["records"] and previous.get("path") and
+                      previous["path"] != state["records"][key].get("path")}
+        rendered_keys = set(render_keys)
+        links_repaired = exclusion_links_repaired
+        if path_moves or deleted_targets or remote_targets:
+            for key, item in state["records"].items():
+                if key in rendered_keys or not item.get("path"):
+                    continue
+                if (not path_moves and not deleted_targets and not article_targets and
+                        remote_targets.keys().isdisjoint(item.get("asset_urls", []))):
+                    continue
+                path = safe_path(articles_root, item["path"])
+                if not path.is_file():
+                    continue
+                original = path.read_bytes()
+                text = original.decode("utf-8")
+                repaired = repair_markdown_links(text, item["path"], path_moves,
+                    remote_targets=remote_targets, deleted_targets=deleted_targets)
+                if repaired == text:
+                    continue
+                atomic_write(path, repaired.encode("utf-8"))
+                links_repaired += 1
+                old_hash = digest(original)
+                if item.get("markdown_sha256") == old_hash:
+                    item["markdown_sha256"] = digest(repaired.encode("utf-8"))
+        remote_keys = set(summaries)
         if sample_ids is None:
             for key, item in state["records"].items():
                 if key not in remote_keys:
@@ -912,16 +1052,19 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             mode="sample" if sample_ids is not None else "full_inventory_sync",
             excluded_records=excluded,
             remote_posts=len(inventories[0].records), remote_pages=len(inventories[1].records),
-            selected_records=len(selected), refreshed_pages=len(refresh), refreshed_assets=len(jobs),
+            selected_records=len(scope_keys), processed_records=len(process_keys),
+            rendered_records=len(render_keys), links_repaired=links_repaired,
+            refreshed_pages=len(page_refresh_keys), refreshed_assets=len(jobs),
             tagging_pending_count=sum(item.get("type") == "post" and item.get("tagging_pending", False)
                                       for item in state["records"].values()),
-            full_records_fetched=len(fetched_keys), cached_records_reused=len(remote_records) - len(fetched_keys),
+            full_records_fetched=len(fetched_keys), cached_records_reused=len(scope_keys) - len(fetched_keys),
             content_check="modified_timestamps",
             api_response_count=len(api_sources), api_response_bytes=sum(r["size_bytes"] for r in api_sources),
             remote_missing=sum(r["status"] == "remote_missing" for r in state["records"].values()),
-            incomplete_records=sum(state["records"][record_key(r)]["acquisition_status"] != "complete" for r in selected),
+            incomplete_records=sum(state["records"][key]["acquisition_status"] != "complete"
+                                   for key in scope_keys if key in state["records"]),
             asset_failures=failures, page_failures={record_key(r):state["records"][record_key(r)].get("page", {}).get("error")
-                for r in selected if state["records"][record_key(r)].get("page", {}).get("status") != "downloaded"},
+                for r in scope_summaries if state["records"].get(record_key(r), {}).get("page", {}).get("status") != "downloaded"},
             media_hosts=stats)
         report["featured_media_error"] = media_error
         report["reassigned_locally_modified_files_preserved"] = reassigned_preserved
@@ -933,7 +1076,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                 if item.get("path") and item["path"] not in current_paths and item.get("markdown_sha256"):
                     pending[item["path"]] = item["markdown_sha256"]
         state["obsolete_markdown"] = pending
-        publish_indexes(root, state, stats, report, articles_root)
+        publish_indexes(root, state, stats, report, articles_root, update_media_sources=False)
         preserved = []
         for relative, expected in list(pending.items()):
             if relative in current_paths:
@@ -950,7 +1093,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
         report["obsolete_locally_modified_files_preserved"] = preserved
         atomic_write(root / "state.json", json_bytes(state))
         atomic_write(articles_root / "last-report.json", json_bytes(report))
-        progress(f"Done: {len(selected)} records; incomplete: {report['incomplete_records']}; missing remotely: {report['remote_missing']}")
+        progress(f"Done: {len(scope_keys)} records; rendered: {len(render_keys)}; incomplete: {report['incomplete_records']}; missing remotely: {report['remote_missing']}")
         return report
 
 

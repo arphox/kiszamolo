@@ -52,7 +52,7 @@ A program előbb frissíti az `articles/` és a `raw_source/content-mirror/` map
 
 A címkézésre váró cikkeket a letöltő cikknyilvántartása tartja számon. Az AI a cikkek tartalmi besorolását végzi.
 
-A letöltő a WordPress módosítási időbélyege alapján frissít. Letölti az új és módosult cikkeket, pótolja a hiányzó vagy sérült helyi tartalmakat, és újrapróbálja a sikertelen letöltéseket.
+A letöltő a WordPress módosítási időbélyege alapján frissít. A helyi feldolgozás az új és módosult cikkekre korlátozódik. Pótolja a hiányzó helyi fájlokat, és újrapróbálja a sikertelen letöltéseket. Átnevezéskor külön javítja a rá mutató helyi hivatkozásokat.
 
 A bizonytalan vagy hibás címkézés nem állítja le a többi cikk feldolgozását; a korábbi tagek megmaradnak. Az elutasított újracímkézések és a hibák következő futáskor ismét sorra kerülnek. Új tagról és kizárásról továbbra is a felhasználó dönt.
 
@@ -72,6 +72,8 @@ A további kapcsolókat, a hibakódokat és a hálózat nélküli újragenerál�
 
 ## Tesztek
 
+Az automata tesztek nem érhetnek el külső hálózatot és nem hívhatnak valódi AI-szolgáltatást. A külső szolgáltatásokat mockok helyettesítik; helyi HTTP-tesztkiszolgáló használható.
+
 A jelenlegi letöltő tesztjei:
 
 ```powershell
@@ -81,9 +83,9 @@ A jelenlegi letöltő tesztjei:
 .\.venv\Scripts\python.exe -B -m unittest discover -s automation -p "test_update.py"
 ```
 
-A tesztek nem kapcsolódnak a bloghoz és nem hívnak AI-modellt; egy részük helyi HTTP-kiszolgálót használ.
+## Dokumentáció és nyelvhasználat
 
-## Nyelvhasználat
+Minden szabályt és információt egy helyen dokumentálunk. Más dokumentumokból hivatkozunk rá, az ismétlés helyett.
 
 - **Angol:** az `AGENTS.md`, a Githez kapcsolódó szövegek (például commitüzenetek, branch- és tagnevek), a forráskód és a kódkommentek.
 - **Magyar:** a szöveges dokumentumok (például a README-k), a cikkek és a többi szöveges tartalom.
