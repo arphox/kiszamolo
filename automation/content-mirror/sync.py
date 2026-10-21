@@ -670,7 +670,7 @@ def publish_indexes(root, state, stats, report, articles_root=None, *, update_me
         md.append("")
     atomic_write(articles_root / "INDEX.md", ("\n".join(md) + "\n").encode("utf-8"))
     if update_media_sources:
-        smd = ["# Médiaforrások", "", "Az aktuális teljes ID-leltárhoz tartozó, legutóbb letöltött cikk- és oldaltörzsekben, valamint elérhető kiemelt képekben felismert URL-ek. A srcset-változatok külön URL-nek számítanak; ez nem különálló ábrák száma.",
+        smd = ["# Médiaforrások", "", "A statisztika a legutóbbi `--rebuild` során feldolgozott helyi cikk- és oldaltörzsekben, valamint elérhető kiemelt képekben felismert URL-eket mutatja. A normál frissítés nem frissíti ezt a statisztikát. A srcset-változatok külön URL-nek számítanak; ez nem különálló ábrák száma.",
                "", "| Host | Egyedi média-/fájl-URL | Érintett tartalom | Kép-URL | Képes tartalom | Embed-URL | Letölthető |",
                "|---|---:|---:|---:|---:|---:|---:|"]
         for host, item in sorted(stats.items(), key=lambda x: (-x[1]["images"], x[0])):
