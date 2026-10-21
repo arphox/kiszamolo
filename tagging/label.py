@@ -297,13 +297,16 @@ def assignment_lock(path):
                 fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def save_assignment(root, article_id, evidence, vocabulary):
+def save_assignment(root, article_id, evidence, vocabulary, *, force=False, expected_record=None):
     path = root / "tagging/assignments.json"
     with assignment_lock(path):
         if load_json(root / "tagging/tags.json") != vocabulary:
             raise LabelError("A fogalomtár közben megváltozott; indíts új futást.")
         records = validate_assignments(load_json(path), {tag["id"] for tag in vocabulary["tags"]})
-        if article_id in records:
+        current_record = records.get(article_id)
+        if force and current_record != expected_record:
+            raise LabelError("A cikk összerendelése közben megváltozott; az új címkék mentése elmaradt.")
+        if article_id in records and not force:
             return {"tags": records[article_id]["tags"], "evidence": {}, "saved": False}
         records[article_id] = {"tags": sorted(evidence)}
         rows = [f'    "{aid}": ' + json.dumps(records[aid], ensure_ascii=False, separators=(",", ":"))
@@ -322,7 +325,7 @@ def save_assignment(root, article_id, evidence, vocabulary):
     return {"tags": sorted(evidence), "evidence": evidence, "saved": True}
 
 
-def label_article(article_id, root=None, transport=None):
+def label_article(article_id, root=None, transport=None, *, force=False):
     root = Path(root or ROOT)
     article_id = str(article_id)
     if not re.fullmatch(r"[1-9][0-9]*", article_id):
@@ -331,8 +334,11 @@ def label_article(article_id, root=None, transport=None):
     vocabulary = load_json(root / "tagging/tags.json")
     allowed = {tag["id"] for tag in vocabulary["tags"]}
     records = validate_assignments(load_json(root / "tagging/assignments.json"), allowed)
-    if article_id in records:
+    if article_id in records and not force:
         return {"tags": records[article_id]["tags"], "evidence": {}, "saved": False}
+    expected_record = records.get(article_id)
+    if row.get("acquisition_status") == "incomplete":
+        raise ReviewRequired("A cikk letöltése hiányos; humán ellenőrzés szükséges.")
     if row.get("derived_view_available") is False:
         raise ReviewRequired("A cikk teljes helyi szövege nem érhető el.")
     if row.get("featured_media_error"):
@@ -347,15 +353,17 @@ def label_article(article_id, root=None, transport=None):
         raise ReviewRequired("A cikknek nincs értékelhető helyi tartalma.")
     request = make_request(row["title"], body, images, vocabulary)
     evidence = validate_result((transport or codex_exec)(request), allowed)
-    return save_assignment(root, article_id, evidence, vocabulary)
+    return save_assignment(root, article_id, evidence, vocabulary,
+                           force=force, expected_record=expected_record)
 
 
 def main(argv=None, root=None, transport=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("article_id", help="A már helyben letöltött cikk WordPress-azonosítója")
+    parser.add_argument("--force", action="store_true", help="Címkézd újra a cikket a meglévő összerendelés helyett")
     args = parser.parse_args(argv)
     try:
-        result = label_article(args.article_id, root=root, transport=transport)
+        result = label_article(args.article_id, root=root, transport=transport, force=args.force)
         print(f"{'Mentve' if result['saved'] else 'Már címkézve'}: {args.article_id}")
         for tag in result["tags"]:
             print(f"- {tag}" + (f": {result['evidence'][tag]}" if tag in result["evidence"] else ""))

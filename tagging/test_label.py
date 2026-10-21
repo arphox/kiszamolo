@@ -51,8 +51,8 @@ class LabelTests(unittest.TestCase):
     def body(self, text):
         (self.root / "articles/2026/10/20.md").write_text(text, encoding="utf-8")
 
-    def run_article(self, aid=20):
-        return label.label_article(aid, root=self.root, transport=self.transport)
+    def run_article(self, aid=20, *, force=False):
+        return label.label_article(aid, root=self.root, transport=self.transport, force=force)
 
     def test_saves_only_requested_article_with_canonical_format(self):
         result = self.run_article()
@@ -72,6 +72,62 @@ class LabelTests(unittest.TestCase):
         result = self.run_article(10)
         self.assertFalse(result["saved"])
         self.assertEqual(result["tags"], ["investing"])
+        self.transport.assert_not_called()
+        self.assertEqual(self.path.read_bytes(), self.before)
+
+    def test_force_relabels_existing_assignment(self):
+        result = self.run_article(10, force=True)
+        self.assertTrue(result["saved"])
+        self.assertEqual(result["tags"], ["bank-deposit", "costs"])
+        records = json.loads(self.path.read_bytes())["articles"]
+        self.assertEqual(records["10"], {"tags": ["bank-deposit", "costs"]})
+        self.assertEqual(records["30"], {"tags": ["costs"]})
+        self.transport.assert_called_once()
+
+    def test_force_model_and_review_failures_preserve_existing_tags(self):
+        self.transport.side_effect = label.LabelError("Model failure")
+        with self.assertRaises(label.LabelError):
+            self.run_article(10, force=True)
+        self.assertEqual(self.path.read_bytes(), self.before)
+
+        self.transport.side_effect = None
+        self.transport.return_value = dict(self.response, review_reason="Humán döntés szükséges.")
+        with self.assertRaises(label.ReviewRequired):
+            self.run_article(10, force=True)
+        self.assertEqual(self.path.read_bytes(), self.before)
+
+    def test_force_blocks_concurrent_same_article_change(self):
+        def transport(request):
+            current = json.loads(self.path.read_bytes())
+            current["articles"]["10"] = {"tags": ["costs"]}
+            self.write_json("tagging/assignments.json", current)
+            return self.response
+        self.transport.side_effect = transport
+        with self.assertRaisesRegex(label.LabelError, "közben megváltozott"):
+            self.run_article(10, force=True)
+        self.assertEqual(json.loads(self.path.read_bytes())["articles"]["10"], {"tags": ["costs"]})
+
+    def test_force_preserves_other_article_changes(self):
+        def transport(request):
+            current = json.loads(self.path.read_bytes())
+            current["articles"]["30"] = {"tags": ["investing"]}
+            current["articles"]["40"] = {"tags": ["bank-deposit"]}
+            self.write_json("tagging/assignments.json", current)
+            return self.response
+        self.transport.side_effect = transport
+        self.run_article(10, force=True)
+        records = json.loads(self.path.read_bytes())["articles"]
+        self.assertEqual(records["10"], {"tags": ["bank-deposit", "costs"]})
+        self.assertEqual(records["30"], {"tags": ["investing"]})
+        self.assertEqual(records["40"], {"tags": ["bank-deposit"]})
+
+    def test_incomplete_article_needs_review_before_model(self):
+        self.rows[0]["acquisition_status"] = "incomplete"
+        self.rows[1]["acquisition_status"] = "incomplete"
+        self.write_index()
+        for force in (False, True):
+            with self.subTest(force=force), self.assertRaises(label.ReviewRequired):
+                self.run_article(20 if not force else 10, force=force)
         self.transport.assert_not_called()
         self.assertEqual(self.path.read_bytes(), self.before)
 
@@ -316,6 +372,14 @@ class LabelTests(unittest.TestCase):
         with redirect_stderr(io.StringIO()):
             self.assertEqual(label.main(["999"], root=self.root, transport=self.transport), 1)
         self.assertEqual(self.path.read_bytes(), self.before)
+
+    def test_cli_force_relabels_existing_assignment(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = label.main(["10", "--force"], root=self.root, transport=self.transport)
+        self.assertEqual(code, 0)
+        self.assertIn("Mentve: 10", out.getvalue())
+        self.transport.assert_called_once()
 
     def test_codex_receives_one_isolated_request_and_local_image_copy(self):
         image = self.root / "articles/assets/chart,full.png"

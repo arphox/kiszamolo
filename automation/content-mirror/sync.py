@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 from contextlib import ExitStack, contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import hashlib
 import html
 import json
@@ -395,14 +395,9 @@ def load_cached_view(root, key, item):
     return record, body
 
 
-def recent_cutoff(state, started):
-    previous = state.get("last_completed_sync_at")
-    return (datetime.fromisoformat(previous) if previous else started) - timedelta(days=7)
-
-
-def should_refresh(record, previous, cutoff, full=False):
+def should_refresh(record, previous):
     """Refresh article sources independently of failed asset downloads."""
-    if full or not previous or previous.get("status") != "active":
+    if record is None or not previous or previous.get("status") != "active":
         return True
     if previous.get("source_sha256") != digest(json_bytes(record)):
         return True
@@ -412,18 +407,14 @@ def should_refresh(record, previous, cutoff, full=False):
         return True
     if record.get("content", {}).get("protected"):
         return True
-    published = record.get("date_gmt")
-    if published:
-        return datetime.fromisoformat(published).replace(tzinfo=timezone.utc) >= cutoff
-    # Explicit fallback for missing GMT metadata: refresh instead of guessing timezone.
-    return True
+    return False
 
 
-def hydrate_inventory(root, census, state, client, cutoff, *, full, record_loader, progress):
+def hydrate_inventory(root, census, state, client, *, full, record_loader, progress):
     """Reuse hash-verified full sources; fetch only records due for refresh."""
     records = {}
     requested = {"posts": [], "pages": []}
-    for summary in census:
+    for number, summary in enumerate(census, 1):
         key = record_key(summary)
         previous = state["records"].get(key, {})
         cached = None
@@ -437,9 +428,9 @@ def hydrate_inventory(root, census, state, client, cutoff, *, full, record_loade
                         raise ValueError(f"Cached source identity mismatch: {key}")
                     cached = candidate
         changed = cached is None or any(summary.get(field) != cached.get(field)
-                                       for field in ("modified", "modified_gmt", "date_gmt"))
+                                       for field in ("modified", "modified_gmt"))
         needs_refresh = cached is None or full or changed
-        if cached is not None and should_refresh(cached, previous, cutoff):
+        if should_refresh(cached, previous):
             needs_refresh = True
         if not verified_file(root, previous.get("page", {})):
             needs_refresh = True
@@ -451,6 +442,8 @@ def hydrate_inventory(root, census, state, client, cutoff, *, full, record_loade
             requested[summary["type"] + "s"].append(summary["id"])
         else:
             records[key] = cached
+        if number % 250 == 0 or number == len(census):
+            progress(f"Local sources checked: {number}/{len(census)}")
     summaries = {record_key(r): r for r in census}
     detail_inventories = {}
     fetched_keys = set()
@@ -557,8 +550,8 @@ def confirm_missing(client, state, remote_records):
         raise ValueError(f"Remote absence could not be confirmed for {key} (HTTP {response.status}); rerun inventory")
 
 
-def publish_indexes(root, state, stats, report, articles_root=None):
-    articles_root = articles_root or root
+def publish_article_index(articles_root, state):
+    """Publish the machine-readable article registry derived from mirror state."""
     records = sorted(state["records"].values(), key=lambda r: (r["published_at"], r["key"]))
     entries = []
     for record in records:
@@ -571,6 +564,12 @@ def publish_indexes(root, state, stats, report, articles_root=None):
         entries.append(entry)
     lines = [json.dumps(r, ensure_ascii=False, sort_keys=True) + "\n" for r in entries]
     atomic_write(articles_root / "index.jsonl", "".join(lines).encode("utf-8"))
+
+
+def publish_indexes(root, state, stats, report, articles_root=None):
+    articles_root = articles_root or root
+    records = sorted(state["records"].values(), key=lambda r: (r["published_at"], r["key"]))
+    publish_article_index(articles_root, state)
     md = ["# Kiszámoló helyi tartalomarchívum", "", "Az eltűnt távoli tartalmak is szerepelnek; státuszuk `remote_missing`.",
           "", "[Médiaforrások statisztikája](MEDIA-SOURCES.md)", ""]
     year = None
@@ -700,7 +699,6 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
         migrate_assets(root, articles_root, state)
         prune_excluded(root, articles_root, state)
         prior_records = {key: dict(item) for key, item in state["records"].items()}
-        cutoff = recent_cutoff(state, started)
         inventories = [inventory_loader(client, kind, progress=progress) for kind in ("posts", "pages")]
         census = [record for inv in inventories for record in inv.records]
         if len({record["id"] for record in census}) != len(census):
@@ -713,7 +711,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
         if sample_ids is not None and not set(sample_ids).issubset({r["id"] for r in census}):
             raise ValueError("Sample includes IDs absent from the complete public inventory")
         remote_records, detail_inventories, fetched_keys = hydrate_inventory(
-            root, census, state, client, cutoff, full=full, record_loader=record_loader, progress=progress)
+            root, census, state, client, full=full, record_loader=record_loader, progress=progress)
         progress(f"Full records fetched: {len(fetched_keys)}; cached sources reused: {len(remote_records) - len(fetched_keys)}")
         for record in remote_records:
             if urlsplit(record["link"]).hostname not in ALLOWED_HOSTS:
@@ -769,7 +767,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
         atomic_write(root / "sources/api/manifest.json", json_bytes(api_sources))
         discovered = {record_key(r): discover_record(r, featured.get(r.get("featured_media"))) for r in remote_records}
         refresh = {record_key(r) for r in selected
-                   if record_key(r) in fetched_keys or should_refresh(r, state["records"].get(record_key(r)), cutoff, full)}
+                   if record_key(r) in fetched_keys or should_refresh(r, state["records"].get(record_key(r)))}
         for record in selected:
             key = record_key(record)
             previous = state["records"].get(key, {})
@@ -780,13 +778,14 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
                 refresh.add(key)
             if not verified_file(root, previous.get("page", {})):
                 refresh.add(key)
+            source_hash = digest(json_bytes(record))
             state["records"][key] = dict(previous, key=key, id=record["id"], type=record["type"],
                 title=plain_title(record["title"]), published_at=record["date"],
                 published_at_gmt=record.get("date_gmt"), modified_at=record.get("modified"),
                 modified_at_gmt=record.get("modified_gmt"),
                 url=record["link"], directory=directory, status="active", last_seen_at=stamp,
                 path=planned_paths[key],
-                source_sha256=digest(json_bytes(record)),
+                source_sha256=source_hash,
                 asset_urls=sorted(discovered[key][0]), embed_urls=sorted(discovered[key][2]),
                 categories=record.get("categories", []), tags=record.get("tags", []),
                 category_names=[names["categories"].get(n, f"ID:{n}") for n in record.get("categories", [])],
@@ -794,12 +793,22 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
                 featured_media_sha256=media_hash,
                 featured_media_error=media_error if record.get("featured_media") in failed_media_ids else None,
                 warnings=conversion_warnings(record["content"]["rendered"]))
+            if record["type"] == "post":
+                source_changed = (previous.get("source_sha256") is not None and
+                                  previous["source_sha256"] != source_hash)
+                featured_changed = (previous.get("featured_media_sha256") is not None and
+                                    media_hash is not None and
+                                    previous["featured_media_sha256"] != media_hash)
+                state["records"][key]["tagging_pending"] = bool(
+                    previous.get("tagging_pending") or not previous or source_changed or featured_changed)
+            else:
+                state["records"][key].pop("tagging_pending", None)
             state["records"][key].pop("remote_missing_since", None)
             atomic_write(root / directory / "source.json", json_bytes(record))
             atomic_write(root / directory / "source.html", record["content"]["rendered"].encode("utf-8"))
             if featured_record:
                 atomic_write(root / directory / "source-featured-media.json", json_bytes(featured_record))
-        progress(f"Public page refresh: {len(refresh)}; overlap starts {cutoff.isoformat()}")
+        progress(f"Public page refresh: {len(refresh)}")
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {}
             for record in selected:
@@ -845,6 +854,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
         assets_refresh = {u for record in selected if record_key(record) in refresh
                           for u in discovered[record_key(record)][0]}
         jobs = {}
+        previous_asset_hashes = {url: state["assets"].get(url, {}).get("sha256") for url in all_assets}
         # Avoid racing Windows path resolution with creation of the shared parent.
         safe_path(articles_root, "assets").mkdir(exist_ok=True)
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
@@ -863,6 +873,17 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
                 state["assets"][url] = dict(future.result(), url=url)
                 if n % 50 == 0 or n == len(jobs):
                     progress(f"Media: {n}/{len(jobs)}")
+        changed_asset_urls = {
+            url for url in all_assets
+            if previous_asset_hashes.get(url) is not None
+            and state["assets"].get(url, {}).get("status") == "downloaded"
+            and state["assets"].get(url, {}).get("sha256") is not None
+            and previous_asset_hashes[url] != state["assets"][url]["sha256"]
+        }
+        if changed_asset_urls:
+            for key, item in state["records"].items():
+                if item.get("type") == "post" and changed_asset_urls.intersection(item.get("asset_urls", [])):
+                    item["tagging_pending"] = True
         for key, item in state["records"].items():
             if key not in selected_keys:
                 item["path"] = planned_paths[key]
@@ -880,7 +901,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
                 if key not in remote_keys:
                     item["status"] = "remote_missing"
                     item.setdefault("remote_missing_since", stamp)
-            # A completed traversal advances the overlap even with explicitly recorded
+            # A completed traversal advances the watermark even with explicitly recorded
             # acquisition errors. Such errors remain retry targets on the next run.
             state["last_completed_sync_at"] = utc_now().isoformat()
         state["last_inventory_at"] = stamp
@@ -892,6 +913,8 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
             excluded_records=excluded,
             remote_posts=len(inventories[0].records), remote_pages=len(inventories[1].records),
             selected_records=len(selected), refreshed_pages=len(refresh), refreshed_assets=len(jobs),
+            tagging_pending_count=sum(item.get("type") == "post" and item.get("tagging_pending", False)
+                                      for item in state["records"].values()),
             full_records_fetched=len(fetched_keys), cached_records_reused=len(remote_records) - len(fetched_keys),
             content_check="full" if full else "modified_timestamps",
             api_response_count=len(api_sources), api_response_bytes=sum(r["size_bytes"] for r in api_sources),
@@ -899,7 +922,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
             incomplete_records=sum(state["records"][record_key(r)]["acquisition_status"] != "complete" for r in selected),
             asset_failures=failures, page_failures={record_key(r):state["records"][record_key(r)].get("page", {}).get("error")
                 for r in selected if state["records"][record_key(r)].get("page", {}).get("status") != "downloaded"},
-            media_hosts=stats, overlap_cutoff=cutoff.isoformat())
+            media_hosts=stats)
         report["featured_media_error"] = media_error
         report["reassigned_locally_modified_files_preserved"] = reassigned_preserved
         # Commit new locations before pruning a previous generated filename.

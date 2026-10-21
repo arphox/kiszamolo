@@ -1,6 +1,5 @@
 """Deterministic sync lifecycle tests with no remote network access."""
 
-from datetime import datetime, timezone
 import hashlib
 import errno
 import json
@@ -129,6 +128,13 @@ class SyncTests(unittest.TestCase):
     def state(self):
         return json.loads((self.root / "state.json").read_text(encoding="utf-8"))
 
+    def clear_tagging_pending(self, *keys):
+        state = self.state()
+        for key in keys or tuple(state["records"]):
+            if state["records"].get(key, {}).get("type") == "post":
+                state["records"][key]["tagging_pending"] = False
+        (self.root / "state.json").write_bytes(sync.json_bytes(state))
+
     def article_file(self, number, kind="post"):
         return self.articles / self.state()["records"][f"{kind}:{number}"]["path"]
 
@@ -245,12 +251,63 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(report["full_records_fetched"], 2)
         self.assertIn("Changed without modified timestamp", self.article_file(1).read_text())
 
-    def test_recent_window_is_relative_to_last_completed_run(self):
-        cutoff = sync.recent_cutoff({"last_completed_sync_at": "2026-10-01T00:00:00+00:00"}, datetime(2026, 10, 8, tzinfo=timezone.utc))
-        self.assertEqual(cutoff.isoformat(), "2026-09-24T00:00:00+00:00")
-        p = post(date="2026-09-25T00:00:00")
-        previous = {"status": "active", "source_sha256": sync.digest(sync.json_bytes(p)), "page": {"status": "downloaded"}}
-        self.assertTrue(sync.should_refresh(p, previous, cutoff))
+    def test_new_posts_are_pending_and_index_exposes_registry_flag(self):
+        self.run_sync()
+        state = self.state()
+        self.assertTrue(state["records"]["post:1"]["tagging_pending"])
+        entries = [json.loads(line) for line in (self.articles / "index.jsonl").read_text().splitlines()]
+        self.assertTrue(next(item for item in entries if item["key"] == "post:1")["tagging_pending"])
+
+    def test_changed_post_sets_pending_and_unchanged_or_full_refresh_does_not(self):
+        self.run_sync()
+        self.clear_tagging_pending()
+        self.records[0] = post(modified="2026-10-08T12:00:00", body="<p>Changed</p>")
+        self.run_sync()
+        self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+        self.clear_tagging_pending()
+        self.run_sync()
+        self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
+        self.clear_tagging_pending()
+        self.run_sync(full=True)
+        self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
+
+    def test_pending_survives_failed_asset_retry_and_offline_rebuild(self):
+        self.run_sync()
+        self.records[0] = post(modified="2026-10-08T12:00:00", body="<p>Changed</p><img src='/a.png'>")
+        self.client.fail.add("https://kiszamolo.hu/a.png")
+        self.run_sync()
+        self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+        self.run_sync()
+        self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+        sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
+        self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+        entries = [json.loads(line) for line in (self.articles / "index.jsonl").read_text().splitlines()]
+        self.assertTrue(next(item for item in entries if item["key"] == "post:1")["tagging_pending"])
+
+    def test_existing_legacy_record_without_pending_flag_is_not_mass_queued(self):
+        self.run_sync()
+        state = self.state()
+        for item in state["records"].values():
+            item.pop("tagging_pending", None)
+        (self.root / "state.json").write_bytes(sync.json_bytes(state))
+        self.run_sync()
+        self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
+
+    def test_changed_asset_bytes_set_pending_but_same_bytes_do_not(self):
+        self.run_sync()
+        self.clear_tagging_pending()
+        self.run_sync(full=True)
+        self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
+        self.clear_tagging_pending()
+        self.client.payloads["https://kiszamolo.hu/a.png"] = b"new image bytes"
+        self.run_sync(full=True)
+        self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+
+    def test_published_date_does_not_refresh_unchanged_record(self):
+        p = post(date="2099-01-01T00:00:00")
+        previous = {"status": "active", "source_sha256": sync.digest(sync.json_bytes(p)),
+                    "page": {"status": "downloaded"}}
+        self.assertFalse(sync.should_refresh(p, previous))
 
     def test_failed_asset_is_explicit_and_retried(self):
         self.records[0]["content"]["rendered"] += '<img src="/healthy.png">'
@@ -489,6 +546,8 @@ class SyncTests(unittest.TestCase):
         self.records[1]["title"]["rendered"] = "Changed title?"
         self.records[1]["date"] = "2020-03-04T12:34:56"
         self.records[1]["date_gmt"] = "2020-03-04T11:34:56"
+        self.records[1]["modified"] = "2020-03-04T12:34:56"
+        self.records[1]["modified_gmt"] = "2020-03-04T11:34:56"
         self.run_sync()
         new = self.article_file(2)
         self.assertEqual(new.relative_to(self.articles).as_posix(), "2020/03/2020-03-04 12.34 Changed title.md")
@@ -552,12 +611,19 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(report["cached_records_reused"], 1)
         self.assertIn("Changed", self.article_file(1).read_text())
 
-    def test_recent_record_full_source_is_refetched_despite_unchanged_timestamp(self):
+    def test_recent_unchanged_record_reuses_source_and_does_not_redownload_page_or_media(self):
         self.records[0] = post(date="2099-01-01T00:00:00")
         self.run_sync()
         self.detail_calls.clear()
+        self.client.calls.clear()
         self.run_sync()
-        self.assertEqual(self.detail_calls, [("posts", [1])])
+        self.assertEqual(self.detail_calls, [])
+        self.assertEqual(self.client.calls, [])
+        report = self.run_sync(full=True)
+        self.assertEqual(report["full_records_fetched"], 2)
+        self.assertEqual(self.detail_calls, [("posts", [1, 2])])
+        self.assertTrue(any(url == "https://kiszamolo.hu/p1/" for url, _ in self.client.calls))
+        self.assertTrue(any(url == "https://kiszamolo.hu/a.png" for url, _ in self.client.calls))
 
     def test_corrupt_full_source_is_refetched(self):
         self.run_sync()

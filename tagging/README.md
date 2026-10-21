@@ -90,6 +90,12 @@ ilyenkor az összerendeléseket változatlanul hagyja.
 
 Siker esetén menti a besorolást, és kiírja a tageket a tartalmi indoklásukkal.
 
+Egy már címkézett cikk kifejezett újraértékeléséhez a `--force` kapcsoló
+használható: `python -B tagging/label.py 128100 --force`. A korábbi tagok csak
+sikeres besorolás után cserélődnek le. Hiányos letöltésnél nincs modellhívás.
+
+A letöltést és a címkézést együtt a [közös frissítő](../README.md#telepítés-és-frissítés) végzi.
+
 A címkéző és a nyilvántartás modellhívás nélküli tesztjei:
 
 ```powershell
