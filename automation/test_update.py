@@ -180,11 +180,6 @@ class UpdateTests(unittest.TestCase):
         self.model.assert_not_called()
         self.confirm.assert_not_called()
 
-    def test_full_option_is_forwarded(self):
-        self.prepare()
-        update.run_update(self.root, full=True, progress=self.output.append)
-        self.assertTrue(self.sync_mock.call_args.kwargs["full"])
-
     def test_cli_exit_codes(self):
         self.add_post(1)
         self.prepare()

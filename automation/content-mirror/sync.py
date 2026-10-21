@@ -410,7 +410,7 @@ def should_refresh(record, previous):
     return False
 
 
-def hydrate_inventory(root, census, state, client, *, full, record_loader, progress):
+def hydrate_inventory(root, census, state, client, *, record_loader, progress):
     """Reuse hash-verified full sources; fetch only records due for refresh."""
     records = {}
     requested = {"posts": [], "pages": []}
@@ -429,7 +429,7 @@ def hydrate_inventory(root, census, state, client, *, full, record_loader, progr
                     cached = candidate
         changed = cached is None or any(summary.get(field) != cached.get(field)
                                        for field in ("modified", "modified_gmt"))
-        needs_refresh = cached is None or full or changed
+        needs_refresh = changed
         if should_refresh(cached, previous):
             needs_refresh = True
         if not verified_file(root, previous.get("page", {})):
@@ -684,7 +684,7 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
     return reassigned_preserved
 
 
-def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=False, workers=4,
+def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=4,
              max_asset_bytes=None, progress=print, inventory_loader=fetch_census,
              metadata_loader=fetch_metadata, record_loader=fetch_records):
     started = utc_now()
@@ -711,7 +711,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
         if sample_ids is not None and not set(sample_ids).issubset({r["id"] for r in census}):
             raise ValueError("Sample includes IDs absent from the complete public inventory")
         remote_records, detail_inventories, fetched_keys = hydrate_inventory(
-            root, census, state, client, full=full, record_loader=record_loader, progress=progress)
+            root, census, state, client, record_loader=record_loader, progress=progress)
         progress(f"Full records fetched: {len(fetched_keys)}; cached sources reused: {len(remote_records) - len(fetched_keys)}")
         for record in remote_records:
             if urlsplit(record["link"]).hostname not in ALLOWED_HOSTS:
@@ -724,7 +724,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
         planned_paths = plan_article_paths(selected, retained, articles_root=articles_root)
         progress(f"Inventory complete: {len(remote_records)} records; selected: {len(selected)}")
         taxonomies = {kind: metadata_loader(client, kind, progress=progress,
-                                           fields=None if full else ("id", "name"))
+                                           fields=("id", "name"))
                       for kind in ("categories", "tags")}
         names = {kind: {term["id"]: plain_title(term["name"]) for term in inv.records}
                  for kind, inv in taxonomies.items()}
@@ -916,7 +916,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, full=Fal
             tagging_pending_count=sum(item.get("type") == "post" and item.get("tagging_pending", False)
                                       for item in state["records"].values()),
             full_records_fetched=len(fetched_keys), cached_records_reused=len(remote_records) - len(fetched_keys),
-            content_check="full" if full else "modified_timestamps",
+            content_check="modified_timestamps",
             api_response_count=len(api_sources), api_response_bytes=sum(r["size_bytes"] for r in api_sources),
             remote_missing=sum(r["status"] == "remote_missing" for r in state["records"].values()),
             incomplete_records=sum(state["records"][record_key(r)]["acquisition_status"] != "complete" for r in selected),
@@ -1017,7 +1017,6 @@ def main():
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--source-output", type=Path, default=DEFAULT_SOURCE_OUTPUT)
     parser.add_argument("--sample", type=int, nargs="+", metavar="ID", help="Partial prototype; never marks remote_missing or advances sync watermark")
-    parser.add_argument("--full", action="store_true", help="Refresh every public page and all same-host assets")
     parser.add_argument("--rebuild", action="store_true", help="Regenerate Markdown and indexes from verified local files only")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--max-asset-mib", type=float, help="Optional per-asset limit; over-limit assets are explicitly failed")
@@ -1036,8 +1035,8 @@ def main():
         parser.error("workers must be between 1 and 8")
     if args.max_asset_mib is not None and args.max_asset_mib <= 0:
         parser.error("max-asset-mib must be positive")
-    if args.rebuild and (args.sample or args.full or args.max_asset_mib is not None):
-        parser.error("--rebuild cannot be combined with --sample, --full, or --max-asset-mib")
+    if args.rebuild and (args.sample or args.max_asset_mib is not None):
+        parser.error("--rebuild cannot be combined with --sample or --max-asset-mib")
     if args.sample and (output == DEFAULT_OUTPUT.resolve() or source_output == DEFAULT_SOURCE_OUTPUT.resolve()):
         parser.error("Sample requires separate --output and --source-output directories")
     try:
@@ -1045,7 +1044,7 @@ def main():
             offline_rebuild(source_output, output)
             return 0
         report = run_sync(source_output, articles_root=output, sample_ids=set(args.sample) if args.sample else None,
-            full=args.full, workers=args.workers,
+            workers=args.workers,
             max_asset_bytes=int(args.max_asset_mib * 1024 * 1024) if args.max_asset_mib else None)
         return 2 if report["incomplete_records"] else 0
     except KeyboardInterrupt:

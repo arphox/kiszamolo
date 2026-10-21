@@ -211,8 +211,6 @@ class SyncTests(unittest.TestCase):
                 self.assertNotIn("Title 104048", (self.articles / "INDEX.md").read_text(encoding="utf-8"))
                 self.assertEqual(self.client.calls, [])
                 self.assertEqual(self.detail_calls, [])
-                self.run_sync(full=True)
-                self.assertEqual(set(self.state()["records"]), {"post:1"})
 
     def test_excluded_source_directory_is_validated_before_deleting_any_files(self):
         self.records.append(post(104048))
@@ -236,7 +234,7 @@ class SyncTests(unittest.TestCase):
         self.run_sync()
         self.assertNotIn('headline-38-120338', self.article_file(2).read_text(encoding="utf-8"))
 
-    def test_unchanged_timestamp_reuses_cache_and_full_detects_content_change(self):
+    def test_unchanged_timestamp_reuses_cache_and_timestamp_less_change_is_ignored(self):
         self.run_sync()
         self.client.calls.clear()
         self.detail_calls.clear()
@@ -247,8 +245,9 @@ class SyncTests(unittest.TestCase):
         self.run_sync()
         self.assertEqual(self.detail_calls, [])
         self.assertNotIn("Changed without modified timestamp", self.article_file(1).read_text())
-        report = self.run_sync(full=True)
-        self.assertEqual(report["full_records_fetched"], 2)
+        self.records[0]["modified"] = self.records[0]["modified_gmt"] = "2026-10-19T00:00:00"
+        report = self.run_sync()
+        self.assertEqual(report["full_records_fetched"], 1)
         self.assertIn("Changed without modified timestamp", self.article_file(1).read_text())
 
     def test_new_posts_are_pending_and_index_exposes_registry_flag(self):
@@ -258,7 +257,7 @@ class SyncTests(unittest.TestCase):
         entries = [json.loads(line) for line in (self.articles / "index.jsonl").read_text().splitlines()]
         self.assertTrue(next(item for item in entries if item["key"] == "post:1")["tagging_pending"])
 
-    def test_changed_post_sets_pending_and_unchanged_or_full_refresh_does_not(self):
+    def test_changed_post_sets_pending_and_unchanged_refresh_does_not(self):
         self.run_sync()
         self.clear_tagging_pending()
         self.records[0] = post(modified="2026-10-08T12:00:00", body="<p>Changed</p>")
@@ -266,9 +265,6 @@ class SyncTests(unittest.TestCase):
         self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
         self.clear_tagging_pending()
         self.run_sync()
-        self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
-        self.clear_tagging_pending()
-        self.run_sync(full=True)
         self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
 
     def test_pending_survives_failed_asset_retry_and_offline_rebuild(self):
@@ -296,11 +292,14 @@ class SyncTests(unittest.TestCase):
     def test_changed_asset_bytes_set_pending_but_same_bytes_do_not(self):
         self.run_sync()
         self.clear_tagging_pending()
-        self.run_sync(full=True)
+        asset_path = self.articles / self.state()["assets"]["https://kiszamolo.hu/a.png"]["path"]
+        asset_path.unlink()
+        self.run_sync()
         self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
         self.clear_tagging_pending()
         self.client.payloads["https://kiszamolo.hu/a.png"] = b"new image bytes"
-        self.run_sync(full=True)
+        asset_path.unlink()
+        self.run_sync()
         self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
 
     def test_published_date_does_not_refresh_unchanged_record(self):
@@ -403,14 +402,14 @@ class SyncTests(unittest.TestCase):
         self.assertIn('category_names: ["Finance"]', text)
         self.assertIn("Hero", text)
         self.assertIn("Caption", text)
-        before = self.article_file(1).read_bytes()
         def failed_metadata(client, kind, **kwargs):
             if kind == "media":
                 raise OSError("Temporary media API outage")
             return metadata(client, kind, **kwargs)
+        self.records[0]["modified"] = self.records[0]["modified_gmt"] = "2026-10-19T00:00:00"
         sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
-                      record_loader=self.details, full=True, metadata_loader=failed_metadata, progress=lambda _: None)
-        self.assertEqual(self.article_file(1).read_bytes(), before)
+                      record_loader=self.details, metadata_loader=failed_metadata, progress=lambda _: None)
+        self.assertIn(b"Hero", self.article_file(1).read_bytes())
         self.assertIn("https://kiszamolo.hu/hero.png", self.state()["records"]["post:1"]["asset_urls"])
         self.assertEqual(self.state()["records"]["post:1"]["acquisition_status"], "incomplete")
         self.detail_calls.clear()
@@ -619,11 +618,8 @@ class SyncTests(unittest.TestCase):
         self.run_sync()
         self.assertEqual(self.detail_calls, [])
         self.assertEqual(self.client.calls, [])
-        report = self.run_sync(full=True)
-        self.assertEqual(report["full_records_fetched"], 2)
-        self.assertEqual(self.detail_calls, [("posts", [1, 2])])
-        self.assertTrue(any(url == "https://kiszamolo.hu/p1/" for url, _ in self.client.calls))
-        self.assertTrue(any(url == "https://kiszamolo.hu/a.png" for url, _ in self.client.calls))
+        self.assertEqual(self.state()["records"]["post:1"]["source_sha256"],
+                         sync.digest(sync.json_bytes(self.records[0])))
 
     def test_corrupt_full_source_is_refetched(self):
         self.run_sync()
@@ -824,7 +820,8 @@ class SyncTests(unittest.TestCase):
     def test_offline_rebuild_preserves_failed_asset_with_valid_cached_copy(self):
         self.run_sync()
         self.client.fail.add("https://kiszamolo.hu/a.png")
-        self.run_sync(full=True)
+        self.records[0]["modified"] = self.records[0]["modified_gmt"] = "2026-10-19T00:00:00"
+        self.run_sync()
         before = self.legacy_asset_layout()
         sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
         after = self.state()

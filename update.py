@@ -26,12 +26,12 @@ def confirm_retagging(count):
         return False
 
 
-def run_update(root=ROOT, *, full=False, progress=print, confirm=None):
+def run_update(root=ROOT, *, progress=print, confirm=None):
     root = Path(root).resolve()
     source_root = root / "raw_source/content-mirror"
     articles_root = root / "articles"
     progress("Cikkgyűjtemény frissítése…")
-    sync_report = sync.run_sync(source_root, articles_root=articles_root, full=full, progress=progress)
+    sync_report = sync.run_sync(source_root, articles_root=articles_root, progress=progress)
 
     # Hold the mirror's own locks while reading article inputs and acknowledging work.
     # A standalone sync cannot change those inputs during a model call or approval.
@@ -102,10 +102,9 @@ def run_update(root=ROOT, *, full=False, progress=print, confirm=None):
 
 def main(argv=None, *, root=ROOT):
     parser = argparse.ArgumentParser(description="A helyi cikkgyűjtemény frissítése és címkézése.")
-    parser.add_argument("--full", action="store_true", help="Az összes távoli cikk és helyi média újraellenőrzése")
-    args = parser.parse_args(argv)
+    parser.parse_args(argv)
     try:
-        report = run_update(root, full=args.full)
+        report = run_update(root)
         return 2 if (report["pending_article_ids"] or report["incomplete_downloads"]
                      or report["review_required"] or report["errors"]) else 0
     except KeyboardInterrupt:
