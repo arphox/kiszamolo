@@ -3416,6 +3416,8 @@
     "128012": {"tags":["costs","financial-course"]},
     "128017": {"tags":["business","flat-rate-tax","kata","public-administration","taxation"]},
     "128024": {"tags":["costs","driving","heating","shopping","used-goods"]},
-    "128037": {"tags":["publishing","volunteering"]}
+    "128037": {"tags":["publishing","volunteering"]},
+    "128045": {"tags":["bank-card","fraud","payment-wallets","shopping"]},
+    "128082": {"tags":["debt","home-construction","home-purchase","housing-savings","mortgage-loans","public-finances","real-estate-market","renovation","taxation"]}
   }
 }
