@@ -28,7 +28,7 @@ Az összerendelések Gitben követhető szöveges adatok. A blog saját kategór
 | `articles/assets/` | A letöltött képek és mellékletek. |
 | `raw_source/content-mirror/` | Az eredeti webes források és a frissítés folytatásához szükséges adatok. |
 | `automation/content-mirror/` | A jelenleg használt letöltő és feldolgozó, a tesztjeivel együtt. |
-| `tagging/` | Cikk–tag összerendelések, tagdefiníciók és a megőrzött címkézőkód. |
+| `tagging/` | Cikk–tag összerendelések, tagdefiníciók és a címkéző. |
 
 ## Telepítés és frissítés
 

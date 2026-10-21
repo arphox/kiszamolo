@@ -70,20 +70,27 @@ megkaphatja, de más cikk szövege vagy korábbi elemzése nem kerülhet bele.
 
 ## Címkézőprogram
 
-A `label.py` a cikkszöveget címkézi. Kimenete külön futási fájlba kerül, és
-nem frissíti az `assignments.json` nyilvántartást. A cikk témái mellett a cikk
-jellege is szerepelhet (magyarázat, tanács, hír/közlemény, vélemény); ez a
-jelleg nem része az összerendeléseknek.
-
-A `--split pilot` és `--split holdout` a `samples.json` próbakészleteit,
-a `--split all` a teljes helyi cikkgyűjteményt dolgozza fel. A `--run` nélkül
-csak előnézetet készít, modellhívás nélkül. A kapcsolók leírása:
+A `label.py` egy már helyben letöltött cikket címkéz a WordPress-azonosítója
+alapján, és frissíti az `assignments.json` fájlt. A projekt Python-függőségei
+mellett a Codex CLI és ChatGPT-előfizetéssel történő bejelentkezés szükséges.
+A parancsot a projekt gyökeréből futtasd, a címkézendő cikk azonosítójával:
 
 ```powershell
-python -B tagging/label.py --help
+python -B tagging/label.py 128100
 ```
 
-A címkéző modellhívás nélküli tesztjei:
+A program minden cikkhez friss sessiont indít, és a helyi képeket is
+figyelembe veszi. Hiányzó vagy nem feldolgozható tartalomnál humán ellenőrzést
+kér.
+
+Ha a cikk nincs a helyi cikklistában vagy hiányzik a fájlja, a program leáll;
+a letöltést külön kell elindítani. A már címkézett cikk tagjait modellhívás
+nélkül kiírja. Új tag, kizárás vagy más humán döntés szükségességét jelzi,
+ilyenkor az összerendeléseket változatlanul hagyja.
+
+Siker esetén menti a besorolást, és kiírja a tageket a tartalmi indoklásukkal.
+
+A címkéző és a nyilvántartás modellhívás nélküli tesztjei:
 
 ```powershell
 python -B -m unittest discover -s tagging -p "test_*.py"
