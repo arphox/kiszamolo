@@ -682,6 +682,18 @@ def publish_indexes(root, state, stats, report, articles_root=None, *, update_me
     atomic_write(root / "state.json", json_bytes(state))
 
 
+def update_acquisition_status(item, assets, *, protected_content, derived_view_available):
+    """Refresh acquisition bookkeeping without changing the caller's source flags."""
+    urls = item.get("asset_urls", [])
+    failures = [url for url in urls if assets.get(url, {}).get("status") == "failed"]
+    item["failed_assets"] = failures
+    item["external_assets"] = [url for url in urls
+                               if assets.get(url, {}).get("status") == "external_reference"]
+    item["acquisition_status"] = "incomplete" if (
+        failures or item.get("page", {}).get("status") not in {"downloaded", "unavailable"} or
+        protected_content or item.get("featured_media_error") or not derived_view_available) else "complete"
+
+
 def render_views(root, articles_root, state, render_records, view_bodies, featured, *,
                  prior_records=None, previous_articles_root=None, update_status=True):
     """Render shared Markdown views and preserve locally edited reassigned paths."""
@@ -764,12 +776,9 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
         atomic_write(output_path, markdown)
         item["markdown_sha256"] = digest(markdown)
         if update_status:
-            failures = [u for u in item.get("asset_urls", [])
-                        if state.get("assets", {}).get(u, {}).get("status") == "failed"]
-            item["failed_assets"] = failures
-            item["external_assets"] = [u for u in item.get("asset_urls", [])
-                                       if state.get("assets", {}).get(u, {}).get("status") == "external_reference"]
-            item["acquisition_status"] = "incomplete" if failures or item.get("page", {}).get("status") not in {"downloaded", "unavailable"} or record["content"].get("protected") or item.get("featured_media_error") or not item.get("derived_view_available") else "complete"
+            update_acquisition_status(item, state.get("assets", {}),
+                protected_content=record["content"].get("protected"),
+                derived_view_available=item.get("derived_view_available"))
             if record["content"].get("protected"):
                 item.setdefault("warnings", []).append("Protected content is not available through the public API.")
     return reassigned_preserved
@@ -1096,16 +1105,9 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             item = state["records"].get(key)
             if not item:
                 continue
-            urls = item.get("asset_urls", [])
-            failures_for_record = [url for url in urls
-                                   if state.get("assets", {}).get(url, {}).get("status") == "failed"]
-            item["failed_assets"] = failures_for_record
-            item["external_assets"] = [url for url in urls
-                                       if state.get("assets", {}).get(url, {}).get("status") == "external_reference"]
-            item["acquisition_status"] = "incomplete" if (
-                failures_for_record or item.get("page", {}).get("status") not in {"downloaded", "unavailable"} or
-                item.get("protected_content") or item.get("featured_media_error") or
-                not item.get("derived_view_available", True)) else "complete"
+            update_acquisition_status(item, state.get("assets", {}),
+                protected_content=item.get("protected_content"),
+                derived_view_available=item.get("derived_view_available", True))
         render_keys = process_keys
         render_records = [process_records[key] for key in render_keys]
         reassigned_preserved = (render_views(root, articles_root, state, render_records, view_bodies, featured,
