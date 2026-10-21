@@ -3,6 +3,7 @@
 import unittest
 
 from article_links import repair_markdown_links
+from render import make_markdown
 
 
 class RepairMarkdownLinksTests(unittest.TestCase):
@@ -168,6 +169,59 @@ class RepairMarkdownLinksTests(unittest.TestCase):
         markdown = "- top\n  - middle\n    - [nested](../../2024/old.md)\n"
         result = repair_markdown_links(markdown, source, {"2024/old.md": "2026/new.md"})
         self.assertEqual(result, "- top\n  - middle\n    - [nested](../../2026/new.md)\n")
+
+    def test_repairs_generated_nested_list_paragraphs_preserving_code(self):
+        for tag in ("ul", "ol"):
+            with self.subTest(tag=tag):
+                markdown = make_markdown({"title": "Test"},
+                    f'<{tag}><li>Top<{tag}><li>Nested'
+                    '<pre><code>[example](../../2024/old.md)</code></pre>'
+                    '<p>Continued <a href="../../2024/old.md">target</a></p>'
+                    f'</li></{tag}></li></{tag}>')
+                result = repair_markdown_links(markdown, "2025/01/ref.md",
+                                               {"2024/old.md": "2026/new.md"})
+                self.assertEqual(result, markdown.replace(
+                    "[target](../../2024/old.md)", "[target](../../2026/new.md)"))
+
+    def test_repairs_list_paragraph_after_indented_code(self):
+        markdown = ("- top\n  - nested\n\n"
+                    "        [example](../../2024/old.md)\n\n"
+                    "    Continued [real](../../2024/old.md)\n")
+        result = repair_markdown_links(markdown, "2025/01/ref.md",
+                                       {"2024/old.md": "2026/new.md"})
+        self.assertEqual(result, markdown.replace(
+            "[real](../../2024/old.md)", "[real](../../2026/new.md)"))
+
+    def test_preserves_parent_list_code_after_leaving_nested_list(self):
+        for indent in (2, 3):
+            with self.subTest(indent=indent):
+                markdown = ("- top\n  - nested\n\n"
+                            + " " * indent + "Parent again\n\n"
+                            "      [example](../../2024/old.md)\n\n"
+                            "  [real](../../2024/old.md)\n")
+                result = repair_markdown_links(markdown, "2025/01/ref.md",
+                                               {"2024/old.md": "2026/new.md"})
+                self.assertEqual(result, markdown.replace(
+                    "[real](../../2024/old.md)", "[real](../../2026/new.md)"))
+
+    def test_preserves_fenced_code_in_nested_list(self):
+        for fence in ("```", "~~~"):
+            with self.subTest(fence=fence):
+                markdown = (f"- top\n  - nested\n\n    {fence}markdown\n"
+                            f"    [example](../../2024/old.md)\n    {fence}{fence[0]}\n\n"
+                            "    Continued [real](../../2024/old.md)\n")
+                result = repair_markdown_links(markdown, "2025/01/ref.md",
+                                               {"2024/old.md": "2026/new.md"})
+                self.assertEqual(result, markdown.replace(
+                    "[real](../../2024/old.md)", "[real](../../2026/new.md)"))
+
+    def test_preserves_code_after_list_marker_with_excess_padding(self):
+        markdown = ("-     example\n\n      [example](../../2024/old.md)\n\n"
+                    "  [real](../../2024/old.md)\n")
+        result = repair_markdown_links(markdown, "2025/01/ref.md",
+                                       {"2024/old.md": "2026/new.md"})
+        self.assertEqual(result, markdown.replace(
+            "[real](../../2024/old.md)", "[real](../../2026/new.md)"))
 
     def test_preserves_multiline_inline_code_with_exact_backtick_run(self):
         source = "2025/04/ref.md"

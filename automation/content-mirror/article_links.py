@@ -9,7 +9,7 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
-_LIST_ITEM = re.compile(r"^( *)(?:[-+*]|[0-9]+[.)])[ \t]+")
+_LIST_ITEM = re.compile(r"^( *)(?:[-+*]|[0-9]+[.)])([ \t]+)")
 _MARKDOWN_LINK = re.compile(
     r"\]\([ \t]*(?P<destination><[^>\n]*>|[^\s)]+)"
 )
@@ -32,20 +32,27 @@ def _protected_blocks(markdown: str) -> list[tuple[int, int]]:
     fence = None
     fence_start = 0
     indented_start = None
-    prior_list_indent = None
+    list_indents = []
     for line in markdown.splitlines(keepends=True):
         end = offset + len(line)
-        text = line.rstrip("\r\n")
+        text = line.rstrip("\r\n").expandtabs(4)
+        indent = len(text) - len(text.lstrip(" "))
+        if not fence and text.strip():
+            while list_indents and indent < list_indents[-1]:
+                list_indents.pop()
+        content_indent = list_indents[-1] if list_indents else 0
+        code_indent = content_indent + 4
+        fence_text = text[content_indent:]
         if fence:
-            close = re.match(r"^ {0,3}([`~]+)[ \t]*$", text)
+            close = re.match(r"^ {0,3}([`~]+)[ \t]*$", fence_text)
             if close and close.group(1)[0] == fence[0] and len(close.group(1)) >= len(fence):
                 spans.append((fence_start, end))
                 fence = None
             offset = end
             continue
 
-        opening = _FENCE.match(text)
-        if opening and (opening.group(1)[0] != "`" or "`" not in text[opening.end():]):
+        opening = _FENCE.match(fence_text)
+        if opening and (opening.group(1)[0] != "`" or "`" not in fence_text[opening.end():]):
             if indented_start is not None:
                 spans.append((indented_start, offset))
                 indented_start = None
@@ -56,23 +63,21 @@ def _protected_blocks(markdown: str) -> list[tuple[int, int]]:
 
         list_item = _LIST_ITEM.match(text)
         if indented_start is not None:
-            if not text.strip() or re.match(r"^( {4,}|\t+)", text):
+            if not text.strip() or indent >= code_indent:
                 offset = end
                 continue
             spans.append((indented_start, offset))
             indented_start = None
 
-        if list_item:
-            indent = len(list_item.group(1))
-            if indent < 4 or (prior_list_indent is not None and indent >= prior_list_indent):
-                prior_list_indent = indent
-                offset = end
-                continue
+        if list_item and indent < code_indent:
+            # Excess marker padding belongs to code, not to the list marker.
+            padding = len(list_item.group(2))
+            list_indents.append(list_item.end() - (padding - 1 if padding > 4 else 0))
+            offset = end
+            continue
 
-        if re.match(r"^( {4,}|\t+)", text):
+        if text.strip() and indent >= code_indent:
             indented_start = offset
-        elif text.strip() and not list_item:
-            prior_list_indent = None
         offset = end
 
     if fence:
