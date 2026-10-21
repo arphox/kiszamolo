@@ -509,6 +509,23 @@ class LabelTests(unittest.TestCase):
             self.assertNotIn(key, kwargs["env"])
         self.assertFalse(Path(kwargs["cwd"]).exists())
 
+    def test_cli_failure_includes_bounded_stderr_details(self):
+        request = label.make_request("Title", "BODY", [], self.vocabulary)
+        message = "A Codex hívás sikertelen (kilépési kód: 1)."
+        for stderr, expected in (
+            ("ERROR: Session expired; please log in.", "ERROR: Session expired; please log in."),
+            ("  ERROR:\n  Session expired.\t ", "ERROR: Session expired."),
+            ("  \n\t", ""),
+            ("x" * 1500 + " Session expired.", "x" * 983 + " Session expired."),
+        ):
+            with self.subTest(stderr=stderr):
+                process = SimpleNamespace(returncode=1, stdout="", stderr=stderr)
+                with mock.patch.object(label.subprocess, "run", return_value=process):
+                    with self.assertRaises(label.LabelError) as error:
+                        label.codex_exec(request, executable="codex")
+                self.assertEqual(str(error.exception), message + (f" {expected}" if expected else ""))
+                self.assertEqual(self.path.read_bytes(), self.before)
+
     def test_cli_failure_or_tool_use_never_returns_a_result(self):
         request = label.make_request("Title", "BODY", [], self.vocabulary)
         for failure in ("timeout", "exit", "tool", "missing", "invalid-json"):

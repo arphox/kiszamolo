@@ -310,7 +310,9 @@ def codex_exec(request, executable=None, timeout=600):
         except subprocess.TimeoutExpired:
             raise LabelError("A modellhívás időtúllépés miatt megállt; nincs automatikus újrapróbálkozás.") from None
         if process.returncode:
-            raise LabelError(f"A Codex hívás sikertelen (kilépési kód: {process.returncode}).")
+            details = " ".join(process.stderr.split())[-1000:]
+            message = f"A Codex hívás sikertelen (kilépési kód: {process.returncode})."
+            raise LabelError(f"{message} {details}" if details else message)
         for line in process.stdout.splitlines():
             event = json.loads(line)
             kind = event.get("type", "")

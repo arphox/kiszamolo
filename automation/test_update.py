@@ -27,6 +27,7 @@ class UpdateTests(unittest.TestCase):
         sync_patch = mock.patch.object(update.sync, "run_sync", return_value={"incomplete_records": 0})
         self.addCleanup(sync_patch.stop)
         self.sync_mock = sync_patch.start()
+        self.codex_exec = update.label.codex_exec
         model_patch = mock.patch.object(update.label, "codex_exec", return_value={
             "tags": [{"id": "topic", "evidence": "The article covers this topic."}], "review_reason": None})
         self.addCleanup(model_patch.stop)
@@ -137,6 +138,19 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(self.stored_assignments()["1"], {"tags": ["old"]})
         self.assertEqual(self.stored_assignments()["2"], {"tags": ["old"]})
         self.assertTrue(any("Need a human decision" in line for line in self.output))
+
+    def test_codex_error_details_reach_console_and_saved_report(self):
+        self.add_post(1, assigned=True, pending=True)
+        details = "ERROR: Session expired; please log in."
+        self.model.side_effect = lambda request: self.codex_exec(request, executable="codex")
+        process = mock.Mock(returncode=1, stdout="", stderr=details)
+        with mock.patch.object(update.label.subprocess, "run", return_value=process):
+            report = self.run_update()
+        saved = json.loads((self.articles / "update-report.json").read_text(encoding="utf-8"))
+        self.assertIn(details, saved["errors"][0]["reason"])
+        self.assertTrue(any(details in line for line in self.output))
+        self.assertEqual(report["pending_article_ids"], [1])
+        self.assertEqual(self.stored_assignments()["1"], {"tags": ["old"]})
 
     def test_incomplete_article_never_reaches_model_but_complete_articles_continue(self):
         self.add_post(1, pending=True, incomplete=True)
