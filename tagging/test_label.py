@@ -440,6 +440,43 @@ class LabelTests(unittest.TestCase):
         self.assertIn("Mentve: 10", out.getvalue())
         self.transport.assert_called_once()
 
+    def test_cli_locks_inputs_before_reading_and_during_model_call(self):
+        roots = (self.root / "raw_source/content-mirror", self.root / "articles")
+        def check_locks():
+            for root in roots:
+                with self.assertRaises(OSError), label.exclusive_run(root):
+                    self.fail("A competing sync obtained the lock")
+        original_article_row = label.article_row
+        def read_article(*args):
+            check_locks()
+            return original_article_row(*args)
+        def transport(request):
+            check_locks()
+            return self.response
+        with mock.patch.object(label, "article_row", side_effect=read_article), redirect_stdout(io.StringIO()):
+            self.assertEqual(label.main(["20"], root=self.root, transport=transport), 0)
+        for root in roots:
+            with label.exclusive_run(root):
+                pass
+
+    def test_cli_busy_mirror_stops_before_reading_or_model_call(self):
+        for root in (self.root / "raw_source/content-mirror", self.root / "articles"):
+            with self.subTest(root=root), label.exclusive_run(root), mock.patch.object(label, "article_row") as read:
+                with redirect_stderr(io.StringIO()):
+                    self.assertEqual(label.main(["20"], root=self.root, transport=self.transport), 1)
+                read.assert_not_called()
+                self.transport.assert_not_called()
+                self.assertEqual(self.path.read_bytes(), self.before)
+
+    def test_cli_releases_mirror_locks_after_model_failure(self):
+        self.transport.side_effect = label.LabelError("Model failure")
+        with redirect_stderr(io.StringIO()):
+            self.assertEqual(label.main(["20"], root=self.root, transport=self.transport), 1)
+        self.assertEqual(self.path.read_bytes(), self.before)
+        for root in (self.root / "raw_source/content-mirror", self.root / "articles"):
+            with label.exclusive_run(root):
+                pass
+
     def test_codex_receives_one_isolated_request_and_local_image_copy(self):
         image = self.root / "articles/assets/chart,full.png"
         image.write_bytes(b"image-data")

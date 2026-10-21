@@ -79,6 +79,10 @@ A parancsot a projekt gyökeréből futtasd, a címkézendő cikk azonosítójá
 python -B tagging/label.py 128100
 ```
 
+A parancs a címkézés idejére a letöltő meglévő zárolásával védi a helyi
+cikkeket és forrásokat. Ha már fut letöltés vagy címkézés, hibával leáll;
+a másik futás befejezése után újraindítható.
+
 A program minden cikkhez friss sessiont indít, és a helyi képeket is
 figyelembe veszi. Hiányzó vagy nem feldolgozható tartalomnál humán ellenőrzést
 kér.

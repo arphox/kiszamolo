@@ -15,6 +15,10 @@ from urllib.parse import unquote, urljoin, urlsplit
 from bs4 import BeautifulSoup
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "automation/content-mirror"))
+
+from sync import exclusive_run
+
 MODEL = "gpt-6.1-sol"
 REASONING = "medium"
 MAX_REQUEST_BYTES = 200_000
@@ -369,6 +373,7 @@ def save_assignment(root, article_id, evidence, vocabulary, *, force=False, expe
 
 
 def label_article(article_id, root=None, transport=None, *, force=False):
+    """Label one article; the caller holds mirror locks against concurrent sync."""
     root = Path(root or ROOT)
     article_id = str(article_id)
     if not re.fullmatch(r"[1-9][0-9]*", article_id):
@@ -408,8 +413,10 @@ def main(argv=None, root=None, transport=None):
     parser.add_argument("article_id", help="A már helyben letöltött cikk WordPress-azonosítója")
     parser.add_argument("--force", action="store_true", help="Címkézd újra a cikket a meglévő összerendelés helyett")
     args = parser.parse_args(argv)
+    root = Path(root or ROOT).resolve()
     try:
-        result = label_article(args.article_id, root=root, transport=transport, force=args.force)
+        with exclusive_run(root / "raw_source/content-mirror"), exclusive_run(root / "articles"):
+            result = label_article(args.article_id, root=root, transport=transport, force=args.force)
         print(f"{'Mentve' if result['saved'] else 'Már címkézve'}: {args.article_id}")
         for tag in result["tags"]:
             print(f"- {tag}" + (f": {result['evidence'][tag]}" if tag in result["evidence"] else ""))
