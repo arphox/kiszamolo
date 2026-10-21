@@ -139,11 +139,11 @@ class SyncTests(unittest.TestCase):
     def state(self):
         return json.loads((self.root / "state.json").read_text(encoding="utf-8"))
 
-    def clear_tagging_pending(self, *keys):
+    def clear_classification_pending(self, *keys):
         state = self.state()
         for key in keys or tuple(state["records"]):
             if state["records"].get(key, {}).get("type") == "post":
-                state["records"][key]["tagging_pending"] = False
+                state["records"][key]["classification_pending"] = False
         (self.root / "state.json").write_bytes(sync.json_bytes(state))
 
     def article_file(self, number, kind="post"):
@@ -339,32 +339,32 @@ class SyncTests(unittest.TestCase):
     def test_new_posts_are_pending_and_index_exposes_registry_flag(self):
         self.run_sync()
         state = self.state()
-        self.assertTrue(state["records"]["post:1"]["tagging_pending"])
+        self.assertTrue(state["records"]["post:1"]["classification_pending"])
         entries = [json.loads(line) for line in (self.articles / "index.jsonl").read_text().splitlines()]
-        self.assertTrue(next(item for item in entries if item["key"] == "post:1")["tagging_pending"])
+        self.assertTrue(next(item for item in entries if item["key"] == "post:1")["classification_pending"])
 
     def test_changed_post_sets_pending_and_unchanged_refresh_does_not(self):
         self.run_sync()
-        self.clear_tagging_pending()
+        self.clear_classification_pending()
         self.records[0] = post(modified="2026-10-08T12:00:00", body="<p>Changed</p>")
         self.run_sync()
-        self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
-        self.clear_tagging_pending()
+        self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
+        self.clear_classification_pending()
         self.run_sync()
-        self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
+        self.assertFalse(self.state()["records"]["post:1"]["classification_pending"])
 
     def test_metadata_only_refresh_does_not_queue_post(self):
         self.run_sync()
-        self.clear_tagging_pending()
+        self.clear_classification_pending()
         record = self.records[0]
         record.update(modified="2026-10-08T12:00:00", modified_gmt="2026-10-08T12:00:00",
                       date="2012-01-01T00:00:00", date_gmt="2012-01-01T00:00:00",
                       link="https://kiszamolo.hu/renamed-link/", excerpt={"rendered": "New excerpt"},
                       categories=[12], tags=[34], yoast_head_json={"title": "New SEO title"})
         self.run_sync()
-        self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
+        self.assertFalse(self.state()["records"]["post:1"]["classification_pending"])
 
-    def test_tagging_content_fields_queue_post(self):
+    def test_classification_content_fields_queue_post(self):
         changes = (
             (0, lambda record: record["title"].update(rendered="Changed title")),
             (0, lambda record: record["content"].update(rendered="<p>Changed body</p>")),
@@ -385,20 +385,20 @@ class SyncTests(unittest.TestCase):
                     self.pages = []
                     self.detail_calls = []
                     self.run_sync()
-                    self.clear_tagging_pending()
+                    self.clear_classification_pending()
                     record = self.records[0]
                     change(record)
                     record["modified"] = record["modified_gmt"] = "2026-10-08T12:00:00"
                     self.run_sync()
-                    self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+                    self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
 
     def test_missing_valid_previous_source_conservatively_queues_post(self):
         self.run_sync()
-        self.clear_tagging_pending()
+        self.clear_classification_pending()
         (self.root / "records/posts/1/source.json").write_text("{}", encoding="utf-8")
         self.records[0]["modified"] = self.records[0]["modified_gmt"] = "2026-10-08T12:00:00"
         self.run_sync()
-        self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+        self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
 
     def test_featured_metadata_only_queues_when_rendered_fields_change(self):
         self.records[0]["featured_media"] = 100
@@ -410,47 +410,47 @@ class SyncTests(unittest.TestCase):
             return Inventory([json.loads(json.dumps(current))] if kind == "media" else [], [])
 
         self.run_sync(metadata_loader=metadata)
-        self.clear_tagging_pending()
+        self.clear_classification_pending()
         for field, value in (("modified", "2021-01-01"), ("description", "Updated SEO"),
                              ("title", {"rendered": "Updated attachment title"}),
                              ("sizes", {"full": {"width": 2}})):
             current[field] = value
         self.records[0]["modified"] = self.records[0]["modified_gmt"] = "2026-10-08T12:00:00"
         self.run_sync(metadata_loader=metadata)
-        self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
+        self.assertFalse(self.state()["records"]["post:1"]["classification_pending"])
 
         for index, (field, value) in enumerate((("source_url", "https://kiszamolo.hu/updated.png"),
                                                 ("alt_text", "Updated alt"),
                                                 ("caption", {"rendered": "Updated caption"}),
                                                 ("media_type", "video")), 9):
             with self.subTest(field=field):
-                self.clear_tagging_pending()
+                self.clear_classification_pending()
                 current[field] = value
                 self.records[0]["modified"] = self.records[0]["modified_gmt"] = f"2026-10-{index:02}T12:00:00"
                 self.run_sync(metadata_loader=metadata)
-                self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+                self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
 
     def test_pending_survives_failed_asset_retry_and_offline_rebuild(self):
         self.run_sync()
         self.records[0] = post(modified="2026-10-08T12:00:00", body="<p>Changed</p><img src='/a.png'>")
         self.client.fail.add("https://kiszamolo.hu/a.png")
         self.run_sync()
-        self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+        self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
         self.run_sync()
-        self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+        self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
         sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
-        self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+        self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
         entries = [json.loads(line) for line in (self.articles / "index.jsonl").read_text().splitlines()]
-        self.assertTrue(next(item for item in entries if item["key"] == "post:1")["tagging_pending"])
+        self.assertTrue(next(item for item in entries if item["key"] == "post:1")["classification_pending"])
 
     def test_existing_legacy_record_without_pending_flag_is_not_mass_queued(self):
         self.run_sync()
         state = self.state()
         for item in state["records"].values():
-            item.pop("tagging_pending", None)
+            item.pop("classification_pending", None)
         (self.root / "state.json").write_bytes(sync.json_bytes(state))
         self.run_sync()
-        self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
+        self.assertFalse(self.state()["records"]["post:1"]["classification_pending"])
 
     def test_legacy_protected_record_remains_incomplete_and_is_retried(self):
         self.records = [post()]
@@ -468,16 +468,16 @@ class SyncTests(unittest.TestCase):
 
     def test_changed_asset_bytes_set_pending_but_same_bytes_do_not(self):
         self.run_sync()
-        self.clear_tagging_pending()
+        self.clear_classification_pending()
         asset_path = self.articles / self.state()["assets"]["https://kiszamolo.hu/a.png"]["path"]
         asset_path.unlink()
         self.run_sync()
-        self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
-        self.clear_tagging_pending()
+        self.assertFalse(self.state()["records"]["post:1"]["classification_pending"])
+        self.clear_classification_pending()
         self.client.payloads["https://kiszamolo.hu/a.png"] = b"new image bytes"
         asset_path.unlink()
         self.run_sync()
-        self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+        self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
 
     def test_failed_asset_is_explicit_and_retried(self):
         self.records[0]["content"]["rendered"] += '<img src="/healthy.png">'

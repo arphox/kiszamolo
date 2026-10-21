@@ -20,16 +20,16 @@ class UpdateTests(unittest.TestCase):
         self.articles = self.root / "articles"
         self.source.mkdir(parents=True)
         self.articles.mkdir()
-        (self.root / "tagging").mkdir()
+        (self.root / "topics").mkdir()
         self.records = {}
         self.assignments = {}
-        self.write_json(self.root / "tagging/tags.json", {"tags": [{"id": "topic"}, {"id": "old"}]})
+        self.write_json(self.root / "topics/topics.json", {"topics": [{"id": "topic"}, {"id": "old"}]})
         sync_patch = mock.patch.object(update.sync, "run_sync", return_value={"incomplete_records": 0})
         self.addCleanup(sync_patch.stop)
         self.sync_mock = sync_patch.start()
-        self.codex_exec = update.label.codex_exec
-        model_patch = mock.patch.object(update.label, "codex_exec", return_value={
-            "tags": [{"id": "topic", "evidence": "The article covers this topic."}], "review_reason": None})
+        self.codex_exec = update.classify.codex_exec
+        model_patch = mock.patch.object(update.classify, "codex_exec", return_value={
+            "topics": [{"id": "topic", "evidence": "The article covers this topic."}], "review_reason": None})
         self.addCleanup(model_patch.stop)
         self.model = model_patch.start()
         self.confirm = mock.Mock(return_value=True)
@@ -41,15 +41,15 @@ class UpdateTests(unittest.TestCase):
     def add_post(self, aid, *, assigned=False, pending=False, incomplete=False):
         self.records[f"post:{aid}"] = dict(id=aid, key=f"post:{aid}", type="post", title=f"Title {aid}",
             directory=f"records/posts/{aid}", path=f"{aid}.md", status="active", published_at="2026-10-21",
-            acquisition_status="incomplete" if incomplete else "complete", tagging_pending=pending)
+            acquisition_status="incomplete" if incomplete else "complete", classification_pending=pending)
         (self.articles / f"{aid}.md").write_text(f"# Title {aid}\n\nFull content for article {aid}.", encoding="utf-8")
         if assigned:
-            self.assignments[str(aid)] = {"tags": ["old"]}
+            self.assignments[str(aid)] = {"topics": ["old"]}
 
     def prepare(self):
         state = {"schema_version": 1, "records": self.records, "assets": {}, "articles_root": str(self.articles)}
         self.write_json(self.source / "state.json", state)
-        self.write_json(self.root / "tagging/assignments.json", {"articles": self.assignments})
+        self.write_json(self.root / "topics/assignments.json", {"articles": self.assignments})
         update.sync.publish_article_index(self.articles, state)
 
     def run_update(self):
@@ -60,7 +60,7 @@ class UpdateTests(unittest.TestCase):
         return json.loads((self.source / "state.json").read_text(encoding="utf-8"))
 
     def stored_assignments(self):
-        return json.loads((self.root / "tagging/assignments.json").read_text(encoding="utf-8"))["articles"]
+        return json.loads((self.root / "topics/assignments.json").read_text(encoding="utf-8"))["articles"]
 
     def test_no_changes_use_no_ai_and_do_not_request_approval(self):
         self.add_post(1, assigned=True)
@@ -70,16 +70,16 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(report["pending_article_ids"], [])
         self.assertEqual(self.stored_assignments(), self.assignments)
 
-    def test_five_changed_articles_are_retagged_automatically(self):
+    def test_five_changed_articles_are_reclassified_automatically(self):
         for aid in range(1, 6):
             self.add_post(aid, assigned=True, pending=True)
         report = self.run_update()
-        self.assertEqual(report["retagged"], list(range(1, 6)))
+        self.assertEqual(report["reclassified"], list(range(1, 6)))
         self.assertEqual(self.model.call_count, 5)
         self.confirm.assert_not_called()
-        self.assertFalse(any(item.get("tagging_pending") for item in self.stored_state()["records"].values()))
+        self.assertFalse(any(item.get("classification_pending") for item in self.stored_state()["records"].values()))
         index = [json.loads(line) for line in (self.articles / "index.jsonl").read_text(encoding="utf-8").splitlines()]
-        self.assertFalse(any(item.get("tagging_pending") for item in index))
+        self.assertFalse(any(item.get("classification_pending") for item in index))
 
     def test_six_changed_articles_require_approval_after_new_articles_are_done(self):
         for aid in range(1, 7):
@@ -88,55 +88,55 @@ class UpdateTests(unittest.TestCase):
 
         def approve(count):
             self.assertEqual(count, 6)
-            self.assertEqual(self.stored_assignments()["7"]["tags"], ["topic"])
+            self.assertEqual(self.stored_assignments()["7"]["topics"], ["topic"])
             self.assertEqual(self.model.call_count, 1)
             return True
 
         self.confirm.side_effect = approve
         report = self.run_update()
         self.confirm.assert_called_once_with(6)
-        self.assertEqual(report["labeled"], [7])
-        self.assertEqual(report["retagged"], list(range(1, 7)))
+        self.assertEqual(report["classified"], [7])
+        self.assertEqual(report["reclassified"], list(range(1, 7)))
         self.assertEqual(report["pending_article_ids"], [])
 
-    def test_refused_retagging_survives_next_run_and_new_articles_are_always_labeled(self):
+    def test_refused_reclassification_survives_next_run_and_new_articles_are_always_classified(self):
         for aid in range(1, 7):
             self.add_post(aid, assigned=True, pending=True)
-        # More than five new articles must never trigger the retagging limit.
+        # More than five new articles must never trigger the reclassification limit.
         for aid in range(7, 14):
             self.add_post(aid, pending=True)
         self.confirm.return_value = False
         report = self.run_update()
-        self.assertEqual(report["labeled"], list(range(7, 14)))
-        self.assertEqual(report["retagged"], [])
+        self.assertEqual(report["classified"], list(range(7, 14)))
+        self.assertEqual(report["reclassified"], [])
         self.assertEqual(report["pending_article_ids"], list(range(1, 7)))
         self.assertEqual(self.model.call_count, 7)
-        self.assertEqual(self.stored_assignments()["1"], {"tags": ["old"]})
+        self.assertEqual(self.stored_assignments()["1"], {"topics": ["old"]})
         self.confirm.return_value = True
         self.model.reset_mock()
         report = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
-        self.assertEqual(report["retagged"], list(range(1, 7)))
-        self.assertEqual(report["labeled"], [])
+        self.assertEqual(report["reclassified"], list(range(1, 7)))
+        self.assertEqual(report["classified"], [])
         self.assertEqual(self.model.call_count, 6)
 
-    def test_preexisting_unassigned_article_is_also_labeled_without_pending_flag(self):
+    def test_preexisting_unassigned_article_is_also_classified_without_pending_flag(self):
         self.add_post(1)
         report = self.run_update()
-        self.assertEqual(report["labeled"], [1])
+        self.assertEqual(report["classified"], [1])
         self.model.assert_called_once()
 
-    def test_review_and_model_failure_preserve_old_tags_and_do_not_stop_other_articles(self):
+    def test_review_and_model_failure_preserve_old_topics_and_do_not_stop_other_articles(self):
         for aid in range(1, 4):
             self.add_post(aid, assigned=True, pending=True)
-        self.model.side_effect = [dict(tags=[], review_reason="Need a human decision."),
-                                  update.label.LabelError("Model unavailable"), self.model.return_value]
+        self.model.side_effect = [dict(topics=[], review_reason="Need a human decision."),
+                                  update.classify.ClassificationError("Model unavailable"), self.model.return_value]
         report = self.run_update()
-        self.assertEqual(report["retagged"], [3])
+        self.assertEqual(report["reclassified"], [3])
         self.assertEqual(report["pending_article_ids"], [1, 2])
         self.assertEqual(report["review_required"][0]["id"], 1)
         self.assertEqual(report["errors"][0]["id"], 2)
-        self.assertEqual(self.stored_assignments()["1"], {"tags": ["old"]})
-        self.assertEqual(self.stored_assignments()["2"], {"tags": ["old"]})
+        self.assertEqual(self.stored_assignments()["1"], {"topics": ["old"]})
+        self.assertEqual(self.stored_assignments()["2"], {"topics": ["old"]})
         self.assertTrue(any("Need a human decision" in line for line in self.output))
 
     def test_codex_error_details_reach_console_and_saved_report(self):
@@ -144,20 +144,20 @@ class UpdateTests(unittest.TestCase):
         details = "ERROR: Session expired; please log in."
         self.model.side_effect = lambda request: self.codex_exec(request, executable="codex")
         process = mock.Mock(returncode=1, stdout="", stderr=details)
-        with mock.patch.object(update.label.subprocess, "run", return_value=process):
+        with mock.patch.object(update.classify.subprocess, "run", return_value=process):
             report = self.run_update()
         saved = json.loads((self.articles / "update-report.json").read_text(encoding="utf-8"))
         self.assertIn(details, saved["errors"][0]["reason"])
         self.assertTrue(any(details in line for line in self.output))
         self.assertEqual(report["pending_article_ids"], [1])
-        self.assertEqual(self.stored_assignments()["1"], {"tags": ["old"]})
+        self.assertEqual(self.stored_assignments()["1"], {"topics": ["old"]})
 
     def test_incomplete_article_never_reaches_model_but_complete_articles_continue(self):
         self.add_post(1, pending=True, incomplete=True)
         self.add_post(2, pending=True)
         self.sync_mock.return_value["incomplete_records"] = 1
         report = self.run_update()
-        self.assertEqual(report["labeled"], [2])
+        self.assertEqual(report["classified"], [2])
         self.assertEqual(report["pending_article_ids"], [1])
         self.assertEqual(report["incomplete_downloads"], 1)
         self.model.assert_called_once()
@@ -168,13 +168,13 @@ class UpdateTests(unittest.TestCase):
         self.model.side_effect = [self.model.return_value, KeyboardInterrupt()]
         with self.assertRaises(KeyboardInterrupt):
             self.run_update()
-        self.assertFalse(self.stored_state()["records"]["post:1"].get("tagging_pending"))
-        self.assertTrue(self.stored_state()["records"]["post:2"]["tagging_pending"])
+        self.assertFalse(self.stored_state()["records"]["post:1"].get("classification_pending"))
+        self.assertTrue(self.stored_state()["records"]["post:2"]["classification_pending"])
         self.model.side_effect = None
         report = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
-        self.assertEqual(report["retagged"], [2])
+        self.assertEqual(report["reclassified"], [2])
 
-    def test_source_and_article_locks_block_sync_during_labeling(self):
+    def test_source_and_article_locks_block_sync_during_classification(self):
         self.add_post(1)
         response = self.model.return_value
 
@@ -213,7 +213,7 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(update.main([], root=self.root), 2)
         self.model.assert_not_called()
 
-    def test_real_sync_and_labeling_integrate_without_network_or_ai(self):
+    def test_real_sync_and_classification_integrate_without_network_or_ai(self):
         from test_sync import FakeClient, post
         from remote import Inventory
 
@@ -232,10 +232,10 @@ class UpdateTests(unittest.TestCase):
             return REAL_SYNC(source_root, client=client, inventory_loader=inventory,
                              record_loader=details, metadata_loader=lambda *a, **k: Inventory([], []), **kwargs)
 
-        self.write_json(self.root / "tagging/assignments.json", {"articles": {}})
+        self.write_json(self.root / "topics/assignments.json", {"articles": {}})
         self.sync_mock.side_effect = sync_runner
         first = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
-        self.assertEqual(first["labeled"], [1])
+        self.assertEqual(first["classified"], [1])
         client.calls.clear()
         self.model.reset_mock()
         second = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
@@ -244,12 +244,12 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(client.calls, [])
         records[0].update(modified="2026-10-21T10:00:00", modified_gmt="2026-10-21T10:00:00")
         third = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
-        self.assertEqual(third["retagged"], [])
+        self.assertEqual(third["reclassified"], [])
         self.model.assert_not_called()
         records[0].update(modified="2026-10-21T11:00:00", modified_gmt="2026-10-21T11:00:00",
                           content={"rendered": "<p>Changed body.</p>", "protected": False})
         fourth = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
-        self.assertEqual(fourth["retagged"], [1])
+        self.assertEqual(fourth["reclassified"], [1])
         self.model.assert_called_once()
         self.confirm.assert_not_called()
 
@@ -261,7 +261,7 @@ class ApprovalTests(unittest.TestCase):
     def test_piped_yes_is_not_human_approval(self):
         with mock.patch.object(update.sys, "stdin", StringIO("igen\n")), \
                 mock.patch("builtins.input") as prompt, redirect_stdout(StringIO()):
-            self.assertFalse(update.confirm_retagging(6))
+            self.assertFalse(update.confirm_reclassification(6))
         prompt.assert_not_called()
 
     def test_only_explicit_yes_from_interactive_terminal_approves(self):
@@ -269,13 +269,13 @@ class ApprovalTests(unittest.TestCase):
             with self.subTest(answer=answer), mock.patch.object(update.sys, "stdin") as terminal, \
                     mock.patch("builtins.input", return_value=answer), redirect_stdout(StringIO()):
                 terminal.isatty.return_value = True
-                self.assertEqual(update.confirm_retagging(6), expected)
+                self.assertEqual(update.confirm_reclassification(6), expected)
 
     def test_closed_interactive_input_declines(self):
         with mock.patch.object(update.sys, "stdin") as terminal, \
                 mock.patch("builtins.input", side_effect=EOFError), redirect_stdout(StringIO()):
             terminal.isatty.return_value = True
-            self.assertFalse(update.confirm_retagging(6))
+            self.assertFalse(update.confirm_reclassification(6))
 
 
 if __name__ == "__main__":

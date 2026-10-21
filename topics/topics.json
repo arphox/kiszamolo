@@ -1,5 +1,5 @@
 {
-  "tags": [
+  "topics": [
     {
       "id": "unit-linked",
       "name": "Unit-linked biztosítás",
@@ -33,7 +33,7 @@
     {
       "id": "government-bonds",
       "name": "Állampapír",
-      "rule": "Állampapír vásárlása, kibocsátása, hozama vagy piaca, beleértve a prémium sorozatokat. Nem jár automatikusan minden államadósság-említéshez; a Babakötvény külön terméktag.",
+      "rule": "Állampapír vásárlása, kibocsátása, hozama vagy piaca, beleértve a prémium sorozatokat. Nem jár automatikusan minden államadósság-említéshez; a Babakötvény külön terméktémakör.",
       "synonyms": [],
       "broader": [
         "investing"
@@ -42,7 +42,7 @@
     {
       "id": "investment-funds",
       "name": "Befektetési alap",
-      "rule": "Befektetési alap működése, választása vagy más termékkel való érdemi összehasonlítása. Az ETF-fel együtt is megadható; minden szülőtag ráírása nem kötelező.",
+      "rule": "Befektetési alap működése, választása vagy más termékkel való érdemi összehasonlítása. Az ETF-fel együtt is megadható; minden tágabb témakör ráírása nem kötelező.",
       "synonyms": [],
       "broader": [
         "investing"
@@ -51,13 +51,13 @@
     {
       "id": "investing",
       "name": "Befektetés",
-      "rule": "Pénz vagy vagyon befektetése hozam elérése érdekében, befektetési döntések, termékek és szolgáltatások, valamint befektetési szerződések megszüntetése. Ide tartozik a személyes célok, vagyon, időtáv és kockázattűrés szerinti befektetésválasztás, továbbá a gyűjtői eszközök várható értékének és értéknövekedési esélyének mérlegelése is. A keresés a konkrét befektetési altémákat is lefedi; ezek cikkeire nem kell külön ezt a tág taget felírni. Nem minden megtakarítás, lakásvásárlás vagy megtérülési számítás befektetési téma.",
+      "rule": "Pénz vagy vagyon befektetése hozam elérése érdekében, befektetési döntések, termékek és szolgáltatások, valamint befektetési szerződések megszüntetése. Ide tartozik a személyes célok, vagyon, időtáv és kockázattűrés szerinti befektetésválasztás, továbbá a gyűjtői eszközök várható értékének és értéknövekedési esélyének mérlegelése is. A keresés a konkrét befektetési altémákat is lefedi; ezek cikkeire nem kell külön ezt a tág témakört felírni. Nem minden megtakarítás, lakásvásárlás vagy megtérülési számítás befektetési téma.",
       "synonyms": []
     },
     {
       "id": "bank-account",
       "name": "Bankszámla",
-      "rule": "Bankszámla vagy számlacsomag választása, használata, díjai, feltételei és megszüntetése. A vállalkozói használatot a Vállalkozás taggal lehet jelezni, ha érdemi.",
+      "rule": "Bankszámla vagy számlacsomag választása, használata, díjai, feltételei és megszüntetése. A vállalkozói használatot a Vállalkozás témakörrel lehet jelezni, ha érdemi.",
       "synonyms": []
     },
     {
@@ -81,7 +81,7 @@
     {
       "id": "taxation",
       "name": "Adózás",
-      "rule": "Adókötelezettség, adómentesség, adókedvezmény, adó-visszatérítés vagy adópolitikai változás érdemi tárgyalása. A tárgyát külön tag jelöli, ahol van hozzá érdemi tartalom; egy adókulcs puszta költségelemként nem elég.",
+      "rule": "Adókötelezettség, adómentesség, adókedvezmény, adó-visszatérítés vagy adópolitikai változás érdemi tárgyalása. A tárgyát külön témakör jelöli, ahol van hozzá érdemi tartalom; egy adókulcs puszta költségelemként nem elég.",
       "synonyms": []
     },
     {
@@ -105,7 +105,7 @@
     {
       "id": "inheritance",
       "name": "Öröklés",
-      "rule": "Öröklési jogosultságok, törvényes sorrend, kötelesrész, kitagadás, hagyatéki eljárás vagy örökölt tartozás érdemi tárgyalása. Ezek eltérő jogi fogalmak; a tag közösen teszi kereshetővé őket. A végrendelet önálló tag is lehet.",
+      "rule": "Öröklési jogosultságok, törvényes sorrend, kötelesrész, kitagadás, hagyatéki eljárás vagy örökölt tartozás érdemi tárgyalása. Ezek eltérő jogi fogalmak; a témakör közösen teszi kereshetővé őket. A végrendelet önálló témakör is lehet.",
       "synonyms": []
     },
     {
@@ -122,7 +122,7 @@
     {
       "id": "crypto",
       "name": "Kriptoeszközök",
-      "rule": "Kriptopénzek működése, használata, szabályozási vagy befektetési kérdései. A Bitcoin külön tag; a Kriptoeszközök is megadható mellette, minden szülőtag ráírása nem kötelező.",
+      "rule": "Kriptopénzek működése, használata, szabályozási vagy befektetési kérdései. A Bitcoin külön témakör; a Kriptoeszközök is megadható mellette, minden tágabb témakör ráírása nem kötelező.",
       "synonyms": [],
       "broader": [
         "investing"
@@ -160,7 +160,7 @@
     {
       "id": "solar",
       "name": "Napelem",
-      "rule": "Napelemes rendszer kiválasztása, telepítése, üzemeltetése, hálózati csatlakozása, elszámolása vagy megtérülése. A megtérülés a tárgy témáján belül marad, külön tag nélkül.",
+      "rule": "Napelemes rendszer kiválasztása, telepítése, üzemeltetése, hálózati csatlakozása, elszámolása vagy megtérülése. A megtérülés a tárgy témáján belül marad, külön témakör nélkül.",
       "synonyms": []
     },
     {
@@ -172,7 +172,7 @@
     {
       "id": "online-advertising",
       "name": "Internetes hirdetés",
-      "rule": "Internetes hirdetések működése, elszámolása, bevételi modellje vagy a hirdetési hálózatok feltételei. Egy cikkben lévő reklám nem ad ilyen taget.",
+      "rule": "Internetes hirdetések működése, elszámolása, bevételi modellje vagy a hirdetési hálózatok feltételei. Egy cikkben lévő reklám nem ad ilyen témakört.",
       "synonyms": []
     },
     {
@@ -236,7 +236,7 @@
     {
       "id": "insurance",
       "name": "Biztosítás",
-      "rule": "Biztosítások működése, fedezete, díja vagy ügyfélteendői, beleértve a szerződés megszüntetését, az ügyfél által kezdeményezett biztosítóváltást és a biztosítási állomány átvételét. Konkrét biztosítástípussal együtt is megadható; például Biztosítás + Életbiztosítás + Unit-linked biztosítás. Minden szülőtag ráírása nem kötelező. Más témájú reklámbanner nem tartalom.",
+      "rule": "Biztosítások működése, fedezete, díja vagy ügyfélteendői, beleértve a szerződés megszüntetését, az ügyfél által kezdeményezett biztosítóváltást és a biztosítási állomány átvételét. Konkrét biztosítástípussal együtt is megadható; például Biztosítás + Életbiztosítás + Unit-linked biztosítás. Minden tágabb témakör ráírása nem kötelező. Más témájú reklámbanner nem tartalom.",
       "synonyms": []
     },
     {
@@ -266,7 +266,7 @@
     {
       "id": "bank-transfer",
       "name": "Átutalás",
-      "rule": "Banki átutalás működése, díja, jóváírása vagy fennakadása; belföldi és nemzetközi használat is. Az átváltás csak érdemi tárgyalásnál kap külön Devizaváltás taget.",
+      "rule": "Banki átutalás működése, díja, jóváírása vagy fennakadása; belföldi és nemzetközi használat is. Az átváltás csak érdemi tárgyalásnál kap külön Devizaváltás témakört.",
       "synonyms": []
     },
     {
@@ -322,7 +322,7 @@
     {
       "id": "saving",
       "name": "Megtakarítás",
-      "rule": "Rendszeres félretétel, célhoz kötött gyűjtés vagy megtakarítási szokások kialakítása. Nem automatikus tag minden befektetési termékre.",
+      "rule": "Rendszeres félretétel, célhoz kötött gyűjtés vagy megtakarítási szokások kialakítása. Nem automatikus témakör minden befektetési termékre.",
       "synonyms": []
     },
     {
@@ -346,7 +346,7 @@
     {
       "id": "public-finances",
       "name": "Állami pénzügyek",
-      "rule": "Állami bevételek, kiadások, költségvetési politika vagy újraelosztás érdemi tárgyalása. Nem automatikus tag minden adóról vagy állampapírról szóló cikkre.",
+      "rule": "Állami bevételek, kiadások, költségvetési politika vagy újraelosztás érdemi tárgyalása. Nem automatikus témakör minden adóról vagy állampapírról szóló cikkre.",
       "synonyms": []
     },
     {
@@ -390,7 +390,7 @@
     {
       "id": "debt",
       "name": "Hitelek és tartozások",
-      "rule": "Hitelek és más tartozások felvétele, fennállása, visszafizetése vagy rendezése; lakossági, vállalkozási és állami eladósodás. Ide tartoznak a hitelfelvételi és törlesztési korlátok, a hitelkiváltás, az adósságrendezés, a hitelből vásárláshoz szükséges önerő és a hitelszerződések banki elszámolása miatti visszatérítések, tőke- és kamatkorrekciók is; ezekhez nem kell külön tag. Konkrét hiteltípusok és adósságtémák, például az Előtörlesztés saját tagjei is megadhatók. Az állampapír befektetői szempontú tárgyalása önmagában nem eladósodási téma.",
+      "rule": "Hitelek és más tartozások felvétele, fennállása, visszafizetése vagy rendezése; lakossági, vállalkozási és állami eladósodás. Ide tartoznak a hitelfelvételi és törlesztési korlátok, a hitelkiváltás, az adósságrendezés, a hitelből vásárláshoz szükséges önerő és a hitelszerződések banki elszámolása miatti visszatérítések, tőke- és kamatkorrekciók is; ezekhez nem kell külön témakör. Konkrét hiteltípusok és adósságtémák, például az Előtörlesztés saját témakörei is megadhatók. Az állampapír befektetői szempontú tárgyalása önmagában nem eladósodási téma.",
       "synonyms": [
         "Adósság",
         "Hitel",
@@ -410,7 +410,7 @@
     {
       "id": "garden-pool",
       "name": "Kerti medence",
-      "rule": "Medence választása, telepítése, fenntartása, vízkezelése vagy fűtése és ezek költségei. A részletes kezelési módok nem külön tagek.",
+      "rule": "Medence választása, telepítése, fenntartása, vízkezelése vagy fűtése és ezek költségei. A részletes kezelési módok nem külön témakörök.",
       "synonyms": []
     },
     {
@@ -463,7 +463,7 @@
     {
       "id": "investment-advice",
       "name": "Befektetési tanácsadás",
-      "rule": "Befektetési tanácsadás működése, értéke vagy jogi feltételei. A cikk végi tanácsadási ajánló nem ad taget.",
+      "rule": "Befektetési tanácsadás működése, értéke vagy jogi feltételei. A cikk végi tanácsadási ajánló nem ad témakört.",
       "synonyms": [],
       "broader": [
         "investing"
@@ -472,7 +472,7 @@
     {
       "id": "life-insurance",
       "name": "Életbiztosítás",
-      "rule": "Életbiztosítás fedezete, működése, díjfizetése, kedvezményezettje, megszüntetése vagy ügyfélteendői; a csoportos konstrukció is ide tartozhat. Unit-linked biztosítással és Biztosítással együtt is megadható; minden szülőtag ráírása nem kötelező.",
+      "rule": "Életbiztosítás fedezete, működése, díjfizetése, kedvezményezettje, megszüntetése vagy ügyfélteendői; a csoportos konstrukció is ide tartozhat. Unit-linked biztosítással és Biztosítással együtt is megadható; minden tágabb témakör ráírása nem kötelező.",
       "synonyms": [],
       "broader": [
         "insurance"
@@ -565,7 +565,7 @@
     {
       "id": "heating",
       "name": "Fűtés",
-      "rule": "Fűtési rendszerek választása, korszerűsítése, használata és költségei; például kazán, hőszivattyú vagy elektromos fűtés. A konkrét technológiákhoz nem kell külön tag. Lakásfelújítás és Költségek is megadható mellette, ha a cikk ezeket érdemben tárgyalja.",
+      "rule": "Fűtési rendszerek választása, korszerűsítése, használata és költségei; például kazán, hőszivattyú vagy elektromos fűtés. A konkrét technológiákhoz nem kell külön témakör. Lakásfelújítás és Költségek is megadható mellette, ha a cikk ezeket érdemben tárgyalja.",
       "synonyms": []
     },
     {
@@ -577,7 +577,7 @@
     {
       "id": "financial-complaints",
       "name": "Pénzügyi panaszkezelés",
-      "rule": "Pénzügyi szolgáltatónál tett panasz, panaszkezelési eljárás és pénzügyi vitarendezés működése vagy ügyfélteendői; ide tartozik a Pénzügyi Békéltető Testület eljárása is. Az érintett termék tagje akkor társul, ha a cikk annak saját feltételeit vagy működését is érdemben tárgyalja.",
+      "rule": "Pénzügyi szolgáltatónál tett panasz, panaszkezelési eljárás és pénzügyi vitarendezés működése vagy ügyfélteendői; ide tartozik a Pénzügyi Békéltető Testület eljárása is. Az érintett termék témaköre akkor társul, ha a cikk annak saját feltételeit vagy működését is érdemben tárgyalja.",
       "synonyms": [
         "Pénzügyi Békéltető Testület",
         "PBT"
@@ -586,13 +586,13 @@
     {
       "id": "shopping",
       "name": "Vásárlás",
-      "rule": "Termékek és fogyasztói szolgáltatások vásárlásának döntési szempontjai, feltételei, akciói és vásárlói jogai. Egy termék megvásárlásának puszta említése nem elég; pénzügyi termék vásárlása önmagában nem ilyen téma. Online vásárlás tag esetén mindig add meg a Vásárlás taget is.",
+      "rule": "Termékek és fogyasztói szolgáltatások vásárlásának döntési szempontjai, feltételei, akciói és vásárlói jogai. Egy termék megvásárlásának puszta említése nem elég; pénzügyi termék vásárlása önmagában nem ilyen téma. Online vásárlás témakör esetén mindig add meg a Vásárlás témakört is.",
       "synonyms": []
     },
     {
       "id": "online-shopping",
       "name": "Online vásárlás",
-      "rule": "Webáruházas vásárlás feltételei, akciói, vásárlói tagságai, rendelése, szállítása vagy elállási lehetőségei. A konkrét szolgáltatókhoz, például Amazonhoz vagy Prime-hoz nem kell külön tag. Mindig add meg mellette a Vásárlás taget is.",
+      "rule": "Webáruházas vásárlás feltételei, akciói, vásárlói tagságai, rendelése, szállítása vagy elállási lehetőségei. A konkrét szolgáltatókhoz, például Amazonhoz vagy Prime-hoz nem kell külön témakör. Mindig add meg mellette a Vásárlás témakört is.",
       "synonyms": [
         "Internetes vásárlás"
       ],
@@ -745,7 +745,7 @@
     {
       "id": "bonds",
       "name": "Kötvény",
-      "rule": "Állami, banki vagy vállalati kötvény vásárlása, kibocsátása, kamata, hozama, kockázata vagy piaca, illetve a kötvénybefektetés általános működése. Érdemi állampapír-téma esetén ezt az Állampapír mellett is add meg; a Babakötvény önmagában nem elég a Kötvény taghez.",
+      "rule": "Állami, banki vagy vállalati kötvény vásárlása, kibocsátása, kamata, hozama, kockázata vagy piaca, illetve a kötvénybefektetés általános működése. Érdemi állampapír-téma esetén ezt az Állampapír mellett is add meg; a Babakötvény önmagában nem elég a Kötvény témakörhöz.",
       "synonyms": [
         "kötvénybefektetés",
         "Kötvények",
@@ -950,7 +950,7 @@
     {
       "id": "used-goods",
       "name": "Használt tárgyak adásvétele",
-      "rule": "Használt tárgyak vásárlása vagy értékesítése vevői vagy eladói szempontból, beleértve a garázsvásárt és továbbértékesítést. Az eladás önmagában nem indokolja a Vásárlás taget.",
+      "rule": "Használt tárgyak vásárlása vagy értékesítése vevői vagy eladói szempontból, beleértve a garázsvásárt és továbbértékesítést. Az eladás önmagában nem indokolja a Vásárlás témakört.",
       "synonyms": [
         "használt tárgyak",
         "használt cikkek",
@@ -1042,7 +1042,7 @@
     {
       "id": "self-help-fund",
       "name": "Önsegélyező pénztár",
-      "rule": "Önsegélyező pénztári tagság, befizetés, felhasználás, szolgáltatás, költség, adó-visszatérítés vagy hozzáférési feltétel érdemi tárgyalása. Az Egészségpénztár és az Önkéntes nyugdíjpénztár külön termékek; közös adózási keretük önmagában nem indokolja mindhárom taget.",
+      "rule": "Önsegélyező pénztári tagság, befizetés, felhasználás, szolgáltatás, költség, adó-visszatérítés vagy hozzáférési feltétel érdemi tárgyalása. Az Egészségpénztár és az Önkéntes nyugdíjpénztár külön termékek; közös adózási keretük önmagában nem indokolja mindhárom témakört.",
       "synonyms": [
         "önsegélyező pénztárak",
         "önsegélyező pénztári szolgáltatások"
@@ -1061,7 +1061,7 @@
     {
       "id": "financial-certificates",
       "name": "Tanúsítványok",
-      "rule": "Pénzügyi certifikátok, azaz értékpapírosított származékos termékek működése, kiválasztása, vásárlása, költsége, kockázata vagy fedezeti és befektetési használata. A mögöttes eszköz puszta említése nem elég. Ez a tag pénzügyi termékeket jelöl; oklevelekre, illetve műszaki vagy digitális tanúsítványokra nem használható.",
+      "rule": "Pénzügyi certifikátok, azaz értékpapírosított származékos termékek működése, kiválasztása, vásárlása, költsége, kockázata vagy fedezeti és befektetési használata. A mögöttes eszköz puszta említése nem elég. Ez a témakör pénzügyi termékeket jelöl; oklevelekre, illetve műszaki vagy digitális tanúsítványokra nem használható.",
       "synonyms": [
         "certifikát",
         "certifikátok",
@@ -1313,7 +1313,7 @@
     {
       "id": "network-marketing",
       "name": "Hálózati értékesítés (MLM)",
-      "rule": "Többszintű értékesítői és jutalékhálózatok (MLM) működése, termékértékesítése, toborzási és díjazási feltételei vagy értékelése érdemi témaként. MLM puszta említése nem elég; az MLM önmagában nem jelent csalást, a Csalás taghoz külön tartalmi alap szükséges.",
+      "rule": "Többszintű értékesítői és jutalékhálózatok (MLM) működése, termékértékesítése, toborzási és díjazási feltételei vagy értékelése érdemi témaként. MLM puszta említése nem elég; az MLM önmagában nem jelent csalást, a Csalás témakörhöz külön tartalmi alap szükséges.",
       "synonyms": [
         "MLM",
         "hálózati értékesítés",
@@ -1370,7 +1370,7 @@
     {
       "id": "crowdfunding",
       "name": "Közösségi finanszírozás",
-      "rule": "Projektek, termékek vagy célok sok résztvevő bevonásával, közösségi kampányban történő finanszírozása, kampánytervezése, platformválasztása, feltételei vagy kockázatai érdemi témaként. Ide tartozhat jutalom, előrendelés, adomány vagy befektetés alapú kampány is. Egy kampány vagy platform puszta említése nem elég; vásárlói csoport, MLM vagy adományozás önmagában nem teszi automatikussá ezt a taget.",
+      "rule": "Projektek, termékek vagy célok sok résztvevő bevonásával, közösségi kampányban történő finanszírozása, kampánytervezése, platformválasztása, feltételei vagy kockázatai érdemi témaként. Ide tartozhat jutalom, előrendelés, adomány vagy befektetés alapú kampány is. Egy kampány vagy platform puszta említése nem elég; vásárlói csoport, MLM vagy adományozás önmagában nem teszi automatikussá ezt a témakört.",
       "synonyms": [
         "crowdfunding",
         "közösségi finanszírozási kampány",

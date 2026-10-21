@@ -353,8 +353,8 @@ def record_directory(record):
     return f"records/{record['type']}s/{record['id']}"
 
 
-def tagging_content(record):
-    """Fields whose changes can affect a post's tag assignment."""
+def classification_content(record):
+    """Fields whose changes can affect a post's topic assignment."""
     content = record.get("content") or {}
     return (plain_title(record.get("title", "")), content.get("rendered", ""),
             bool(content.get("protected")), record.get("featured_media") or 0)
@@ -390,8 +390,8 @@ def load_saved_featured_media(root, previous):
     return None
 
 
-def featured_tagging_content(media):
-    """Only metadata rendered into the article can affect its tag assignment."""
+def featured_classification_content(media):
+    """Only metadata rendered into the article can affect its topic assignment."""
     if media is None:
         return None
     return (media.get("id"), media.get("source_url"), media.get("media_type"),
@@ -828,7 +828,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
         prior_records = {key: dict(item) for key, item in state["records"].items()}
         for item in state["records"].values():
             if item.get("type") == "post":
-                item.setdefault("tagging_pending", False)
+                item.setdefault("classification_pending", False)
         inventories = [inventory_loader(client, kind, progress=progress) for kind in ("posts", "pages")]
         census = [record for inv in inventories for record in inv.records]
         if len({record["id"] for record in census}) != len(census):
@@ -965,15 +965,15 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                 if record["type"] == "post":
                     old_record = load_saved_record(root, key, previous)
                     source_changed = bool(previous) and (
-                        old_record is None or tagging_content(old_record) != tagging_content(record))
+                        old_record is None or classification_content(old_record) != classification_content(record))
                     old_featured = load_saved_featured_media(root, previous)
                     featured_changed = bool(record.get("featured_media") and featured_record) and (
                         old_featured is None or
-                        featured_tagging_content(old_featured) != featured_tagging_content(featured_record))
-                    item["tagging_pending"] = bool(
-                        previous.get("tagging_pending") or not previous or source_changed or featured_changed)
+                        featured_classification_content(old_featured) != featured_classification_content(featured_record))
+                    item["classification_pending"] = bool(
+                        previous.get("classification_pending") or not previous or source_changed or featured_changed)
                 else:
-                    item.pop("tagging_pending", None)
+                    item.pop("classification_pending", None)
                 item.pop("remote_missing_since", None)
                 atomic_write(root / directory / "source.json", json_bytes(record))
                 atomic_write(root / directory / "source.html", record["content"]["rendered"].encode("utf-8"))
@@ -1097,7 +1097,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
         if changed_asset_urls:
             for key, item in state["records"].items():
                 if item.get("type") == "post" and changed_asset_urls.intersection(item.get("asset_urls", [])):
-                    item["tagging_pending"] = True
+                    item["classification_pending"] = True
         for key, item in state["records"].items():
             if key in planned_paths:
                 item["path"] = planned_paths[key]
@@ -1161,7 +1161,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             selected_records=len(scope_keys), processed_records=len(process_keys),
             rendered_records=len(render_keys), links_repaired=links_repaired,
             refreshed_pages=len(page_refresh_keys), refreshed_assets=len(jobs),
-            tagging_pending_count=sum(item.get("type") == "post" and item.get("tagging_pending", False)
+            classification_pending_count=sum(item.get("type") == "post" and item.get("classification_pending", False)
                                       for item in state["records"].values()),
             full_records_fetched=len(fetched_keys), cached_records_reused=len(scope_keys) - len(fetched_keys),
             content_check="modified_timestamps",

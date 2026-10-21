@@ -1,4 +1,4 @@
-"""Offline checks for article labeling and canonical assignment updates."""
+"""Offline checks for article classification and canonical assignment updates."""
 
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
@@ -13,30 +13,30 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from tagging import label
+from topics import classify
 
 
-class LabelTests(unittest.TestCase):
+class ClassificationTests(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory(dir=os.environ.get("TAGGING_TEST_TMP"))
+        temporary = tempfile.TemporaryDirectory(dir=os.environ.get("CLASSIFICATION_TEST_TMP"))
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        (self.root / "tagging").mkdir()
+        (self.root / "topics").mkdir()
         (self.root / "articles/2026/10").mkdir(parents=True)
         (self.root / "articles/assets").mkdir()
-        self.vocabulary = {"tags": [dict(id=tid, name=tid, rule="Meaningful topic")
-                                     for tid in ("bank-deposit", "costs", "investing")]}
-        self.write_json("tagging/tags.json", self.vocabulary)
+        self.vocabulary = {"topics": [dict(id=topic_id, name=topic_id, rule="Meaningful topic")
+                                     for topic_id in ("bank-deposit", "costs", "investing")]}
+        self.write_json("topics/topics.json", self.vocabulary)
         self.rows = [dict(id=aid, type="post", title=f"Article {aid}", path=f"2026/10/{aid}.md")
                      for aid in (10, 20, 30, 40)]
         self.write_index()
         for row in self.rows:
             (self.root / "articles" / row["path"]).write_text(
                 f"# {row['title']}\n\nBODY_ONLY_FOR_{row['id']}", encoding="utf-8")
-        self.path = self.root / "tagging/assignments.json"
-        self.path.write_bytes(b'{\n  "articles": {\n    "10": {"tags":["investing"]},\n    "30": {"tags":["costs"]}\n  }\n}\n')
+        self.path = self.root / "topics/assignments.json"
+        self.path.write_bytes(b'{\n  "articles": {\n    "10": {"topics":["investing"]},\n    "30": {"topics":["costs"]}\n  }\n}\n')
         self.before = self.path.read_bytes()
-        self.response = {"tags": [{"id": "costs", "evidence": "A konkrét költségeket magyarázza."},
+        self.response = {"topics": [{"id": "costs", "evidence": "A konkrét költségeket magyarázza."},
                                   {"id": "bank-deposit", "evidence": "A bankbetét működését ismerteti."}],
                          "review_reason": None}
         self.transport = mock.Mock(return_value=self.response)
@@ -52,13 +52,13 @@ class LabelTests(unittest.TestCase):
         (self.root / "articles/2026/10/20.md").write_text(text, encoding="utf-8")
 
     def run_article(self, aid=20, *, force=False):
-        return label.label_article(aid, root=self.root, transport=self.transport, force=force)
+        return classify.classify_article(aid, root=self.root, transport=self.transport, force=force)
 
     def test_saves_only_requested_article_with_canonical_format(self):
         result = self.run_article()
         self.assertTrue(result["saved"])
-        self.assertEqual(result["tags"], ["bank-deposit", "costs"])
-        expected = self.before.replace(b'    "30":', b'    "20": {"tags":["bank-deposit","costs"]},\n    "30":')
+        self.assertEqual(result["topics"], ["bank-deposit", "costs"])
+        expected = self.before.replace(b'    "30":', b'    "20": {"topics":["bank-deposit","costs"]},\n    "30":')
         self.assertEqual(self.path.read_bytes(), expected)
         self.transport.assert_called_once()
         request = self.transport.call_args.args[0]
@@ -66,67 +66,67 @@ class LabelTests(unittest.TestCase):
         self.assertNotIn("BODY_ONLY_FOR_10", request["prompt"])
         self.assertNotIn("BODY_ONLY_FOR_30", request["prompt"])
         self.assertEqual(request["images"], [])
-        self.assertEqual(set(request["schema"]["properties"]), {"tags", "review_reason"})
+        self.assertEqual(set(request["schema"]["properties"]), {"topics", "review_reason"})
 
     def test_existing_assignment_skips_model_and_write(self):
         result = self.run_article(10)
         self.assertFalse(result["saved"])
-        self.assertEqual(result["tags"], ["investing"])
+        self.assertEqual(result["topics"], ["investing"])
         self.transport.assert_not_called()
         self.assertEqual(self.path.read_bytes(), self.before)
 
-    def test_force_relabels_existing_assignment(self):
+    def test_force_reclassifies_existing_assignment(self):
         result = self.run_article(10, force=True)
         self.assertTrue(result["saved"])
-        self.assertEqual(result["tags"], ["bank-deposit", "costs"])
+        self.assertEqual(result["topics"], ["bank-deposit", "costs"])
         records = json.loads(self.path.read_bytes())["articles"]
-        self.assertEqual(records["10"], {"tags": ["bank-deposit", "costs"]})
-        self.assertEqual(records["30"], {"tags": ["costs"]})
+        self.assertEqual(records["10"], {"topics": ["bank-deposit", "costs"]})
+        self.assertEqual(records["30"], {"topics": ["costs"]})
         self.transport.assert_called_once()
 
-    def test_force_model_and_review_failures_preserve_existing_tags(self):
-        self.transport.side_effect = label.LabelError("Model failure")
-        with self.assertRaises(label.LabelError):
+    def test_force_model_and_review_failures_preserve_existing_topics(self):
+        self.transport.side_effect = classify.ClassificationError("Model failure")
+        with self.assertRaises(classify.ClassificationError):
             self.run_article(10, force=True)
         self.assertEqual(self.path.read_bytes(), self.before)
 
         self.transport.side_effect = None
         self.transport.return_value = dict(self.response, review_reason="Humán döntés szükséges.")
-        with self.assertRaises(label.ReviewRequired):
+        with self.assertRaises(classify.ReviewRequired):
             self.run_article(10, force=True)
         self.assertEqual(self.path.read_bytes(), self.before)
 
     def test_force_blocks_concurrent_same_article_change(self):
         def transport(request):
             current = json.loads(self.path.read_bytes())
-            current["articles"]["10"] = {"tags": ["costs"]}
-            self.write_json("tagging/assignments.json", current)
+            current["articles"]["10"] = {"topics": ["costs"]}
+            self.write_json("topics/assignments.json", current)
             return self.response
         self.transport.side_effect = transport
-        with self.assertRaisesRegex(label.LabelError, "közben megváltozott"):
+        with self.assertRaisesRegex(classify.ClassificationError, "közben megváltozott"):
             self.run_article(10, force=True)
-        self.assertEqual(json.loads(self.path.read_bytes())["articles"]["10"], {"tags": ["costs"]})
+        self.assertEqual(json.loads(self.path.read_bytes())["articles"]["10"], {"topics": ["costs"]})
 
     def test_force_preserves_other_article_changes(self):
         def transport(request):
             current = json.loads(self.path.read_bytes())
-            current["articles"]["30"] = {"tags": ["investing"]}
-            current["articles"]["40"] = {"tags": ["bank-deposit"]}
-            self.write_json("tagging/assignments.json", current)
+            current["articles"]["30"] = {"topics": ["investing"]}
+            current["articles"]["40"] = {"topics": ["bank-deposit"]}
+            self.write_json("topics/assignments.json", current)
             return self.response
         self.transport.side_effect = transport
         self.run_article(10, force=True)
         records = json.loads(self.path.read_bytes())["articles"]
-        self.assertEqual(records["10"], {"tags": ["bank-deposit", "costs"]})
-        self.assertEqual(records["30"], {"tags": ["investing"]})
-        self.assertEqual(records["40"], {"tags": ["bank-deposit"]})
+        self.assertEqual(records["10"], {"topics": ["bank-deposit", "costs"]})
+        self.assertEqual(records["30"], {"topics": ["investing"]})
+        self.assertEqual(records["40"], {"topics": ["bank-deposit"]})
 
     def test_incomplete_article_needs_review_before_model(self):
         self.rows[0]["acquisition_status"] = "incomplete"
         self.rows[1]["acquisition_status"] = "incomplete"
         self.write_index()
         for force in (False, True):
-            with self.subTest(force=force), self.assertRaises(label.ReviewRequired):
+            with self.subTest(force=force), self.assertRaises(classify.ReviewRequired):
                 self.run_article(20 if not force else 10, force=force)
         self.transport.assert_not_called()
         self.assertEqual(self.path.read_bytes(), self.before)
@@ -136,7 +136,7 @@ class LabelTests(unittest.TestCase):
             with self.subTest(aid=aid):
                 if aid == 20:
                     (self.root / "articles/2026/10/20.md").unlink()
-                with self.assertRaises(label.LabelError):
+                with self.assertRaises(classify.ClassificationError):
                     self.run_article(aid)
                 self.transport.assert_not_called()
                 self.assertEqual(self.path.read_bytes(), self.before)
@@ -147,50 +147,50 @@ class LabelTests(unittest.TestCase):
             with self.subTest(rows=rows):
                 self.rows = rows
                 self.write_index()
-                with self.assertRaises(label.LabelError):
+                with self.assertRaises(classify.ClassificationError):
                     self.run_article()
                 self.transport.assert_not_called()
                 self.assertEqual(self.path.read_bytes(), self.before)
 
     def test_empty_and_unavailable_content_need_review(self):
         self.body("---\nmetadata: value\n---\n# Article 20\n")
-        with self.assertRaises(label.ReviewRequired):
+        with self.assertRaises(classify.ReviewRequired):
             self.run_article()
         self.rows[1]["derived_view_available"] = False
         self.write_index()
-        with self.assertRaises(label.ReviewRequired):
+        with self.assertRaises(classify.ReviewRequired):
             self.run_article()
         self.transport.assert_not_called()
         self.assertEqual(self.path.read_bytes(), self.before)
 
     def test_bad_model_results_do_not_change_assignments(self):
-        invalid = [None, {}, {"tags": [], "review_reason": None},
-                   {"tags": [{"id": "unknown", "evidence": "Reason"}], "review_reason": None},
-                   {"tags": [{"id": "costs", "evidence": " "}], "review_reason": None},
-                   {"tags": [self.response["tags"][0]] * 2, "review_reason": None},
+        invalid = [None, {}, {"topics": [], "review_reason": None},
+                   {"topics": [{"id": "unknown", "evidence": "Reason"}], "review_reason": None},
+                   {"topics": [{"id": "costs", "evidence": " "}], "review_reason": None},
+                   {"topics": [self.response["topics"][0]] * 2, "review_reason": None},
                    dict(self.response, review_reason=" "), dict(self.response, extra="unwanted")]
         for response in invalid:
             with self.subTest(response=response):
                 self.transport.return_value = response
-                with self.assertRaises(label.LabelError):
+                with self.assertRaises(classify.ClassificationError):
                     self.run_article()
                 self.assertEqual(self.path.read_bytes(), self.before)
 
-    def test_review_reason_blocks_even_nonempty_tags(self):
+    def test_review_reason_blocks_even_nonempty_topics(self):
         self.transport.return_value = dict(self.response, review_reason="A fogalomtár bővítése szükséges.")
-        with self.assertRaisesRegex(label.ReviewRequired, "fogalomtár"):
+        with self.assertRaisesRegex(classify.ReviewRequired, "fogalomtár"):
             self.run_article()
         self.assertEqual(self.path.read_bytes(), self.before)
 
     def test_model_failure_is_not_retried(self):
-        self.transport.side_effect = label.LabelError("Failure")
-        with self.assertRaises(label.LabelError):
+        self.transport.side_effect = classify.ClassificationError("Failure")
+        with self.assertRaises(classify.ClassificationError):
             self.run_article()
         self.transport.assert_called_once()
         self.assertEqual(self.path.read_bytes(), self.before)
 
     def test_oversized_input_stops_without_truncating_or_calling(self):
-        with mock.patch.object(label, "MAX_REQUEST_BYTES", 1), self.assertRaises(label.ReviewRequired):
+        with mock.patch.object(classify, "MAX_REQUEST_BYTES", 1), self.assertRaises(classify.ReviewRequired):
             self.run_article()
         self.transport.assert_not_called()
         self.assertEqual(self.path.read_bytes(), self.before)
@@ -212,7 +212,7 @@ class LabelTests(unittest.TestCase):
 
     def test_bracketed_alt_text_cannot_hide_missing_image(self):
         self.body('Article body\n\n![Chart [2026]](../../assets/missing.png)')
-        with self.assertRaisesRegex(label.ReviewRequired, "Hiányzó helyi kép"):
+        with self.assertRaisesRegex(classify.ReviewRequired, "Hiányzó helyi kép"):
             self.run_article()
         self.transport.assert_not_called()
         self.assertEqual(self.path.read_bytes(), self.before)
@@ -240,7 +240,7 @@ class LabelTests(unittest.TestCase):
     def test_failed_featured_image_requires_review_even_without_markdown_image(self):
         self.rows[1]["featured_media_error"] = "HTTP 503"
         self.write_index()
-        with self.assertRaisesRegex(label.ReviewRequired, "kiemelt kép"):
+        with self.assertRaisesRegex(classify.ReviewRequired, "kiemelt kép"):
             self.run_article()
         self.transport.assert_not_called()
         self.assertEqual(self.path.read_bytes(), self.before)
@@ -299,7 +299,7 @@ class LabelTests(unittest.TestCase):
                       f'[{smile}](https://example.test/chart.png)'):
             with self.subTest(image=image):
                 self.body(f"BODY\n{smile}\n{image}")
-                with self.assertRaises(label.ReviewRequired):
+                with self.assertRaises(classify.ReviewRequired):
                     self.run_article()
                 self.assertEqual(self.path.read_bytes(), self.before)
         self.transport.assert_not_called()
@@ -313,7 +313,7 @@ class LabelTests(unittest.TestCase):
         for body in cases:
             with self.subTest(body=body):
                 self.body(body)
-                with self.assertRaises(label.ReviewRequired):
+                with self.assertRaises(classify.ReviewRequired):
                     self.run_article()
                 self.assertEqual(self.path.read_bytes(), self.before)
         self.transport.assert_not_called()
@@ -321,7 +321,7 @@ class LabelTests(unittest.TestCase):
     def test_unknown_external_embed_from_index_needs_review(self):
         self.rows[1]["embed_urls"] = ["https://example.test/player"]
         self.write_index()
-        with self.assertRaises(label.ReviewRequired):
+        with self.assertRaises(classify.ReviewRequired):
             self.run_article()
         self.transport.assert_not_called()
 
@@ -336,7 +336,7 @@ class LabelTests(unittest.TestCase):
 
     def test_image_names_never_bypass_media_checks(self):
         self.body('BODY\n\n![Chart](../../assets/Biztositas.png)')
-        with self.assertRaisesRegex(label.ReviewRequired, "Hiányzó helyi kép"):
+        with self.assertRaisesRegex(classify.ReviewRequired, "Hiányzó helyi kép"):
             self.run_article()
         image = self.root / "articles/assets/Biztositas.png"
         image.write_bytes(b"image")
@@ -350,50 +350,50 @@ class LabelTests(unittest.TestCase):
             '<img src="../../assets/small.png" srcset="../../assets/small.png 100w, ../../assets/chart,full.png 1200w">',
             '<picture><source srcset="../../assets/chart,full.png 2x"><img src="../../assets/small.png"></picture>'):
             with self.subTest(markup=markup):
-                images = label.article_images(markup, self.root / "articles/2026/10/20.md", self.root / "articles")
+                images = classify.article_images(markup, self.root / "articles/2026/10/20.md", self.root / "articles")
                 self.assertEqual(images, [self.root / "articles/assets/chart,full.png"])
 
     def test_reloads_assignments_and_preserves_other_changes(self):
         def transport(request):
             current = json.loads(self.path.read_bytes())
-            current["articles"]["30"] = {"tags": ["investing"]}
-            current["articles"]["40"] = {"tags": ["bank-deposit"]}
-            self.write_json("tagging/assignments.json", current)
+            current["articles"]["30"] = {"topics": ["investing"]}
+            current["articles"]["40"] = {"topics": ["bank-deposit"]}
+            self.write_json("topics/assignments.json", current)
             return self.response
         self.transport.side_effect = transport
         self.run_article()
         result = json.loads(self.path.read_bytes())["articles"]
-        self.assertEqual(result["30"], {"tags": ["investing"]})
-        self.assertEqual(result["40"], {"tags": ["bank-deposit"]})
-        self.assertEqual(result["20"]["tags"], ["bank-deposit", "costs"])
+        self.assertEqual(result["30"], {"topics": ["investing"]})
+        self.assertEqual(result["40"], {"topics": ["bank-deposit"]})
+        self.assertEqual(result["20"]["topics"], ["bank-deposit", "costs"])
 
     def test_an_assignment_created_during_model_call_wins(self):
         def transport(request):
             current = json.loads(self.path.read_bytes())
-            current["articles"]["20"] = {"tags": ["investing"]}
-            self.write_json("tagging/assignments.json", current)
+            current["articles"]["20"] = {"topics": ["investing"]}
+            self.write_json("topics/assignments.json", current)
             return self.response
         self.transport.side_effect = transport
         result = self.run_article()
         self.assertFalse(result["saved"])
-        self.assertEqual(result["tags"], ["investing"])
+        self.assertEqual(result["topics"], ["investing"])
 
     def test_changed_vocabulary_prevents_save(self):
         def transport(request):
-            self.vocabulary["tags"][0]["rule"] = "Changed meaning"
-            self.write_json("tagging/tags.json", self.vocabulary)
+            self.vocabulary["topics"][0]["rule"] = "Changed meaning"
+            self.write_json("topics/topics.json", self.vocabulary)
             return self.response
         self.transport.side_effect = transport
-        with self.assertRaisesRegex(label.LabelError, "fogalomtár"):
+        with self.assertRaisesRegex(classify.ClassificationError, "fogalomtár"):
             self.run_article()
         self.assertEqual(self.path.read_bytes(), self.before)
 
     def test_failed_atomic_replace_preserves_file_and_releases_lock(self):
-        with mock.patch.object(label.os, "replace", side_effect=PermissionError("Denied")):
+        with mock.patch.object(classify.os, "replace", side_effect=PermissionError("Denied")):
             with self.assertRaises(PermissionError):
                 self.run_article()
         self.assertEqual(self.path.read_bytes(), self.before)
-        self.assertEqual(list((self.root / "tagging").glob("*.tmp")), [])
+        self.assertEqual(list((self.root / "topics").glob("*.tmp")), [])
         self.assertTrue(self.run_article()["saved"])
 
     def test_two_simultaneous_writers_preserve_both_articles(self):
@@ -402,18 +402,18 @@ class LabelTests(unittest.TestCase):
             barrier.wait(timeout=5)
             return self.response
         with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = [pool.submit(label.label_article, aid, self.root, transport) for aid in (20, 40)]
+            futures = [pool.submit(classify.classify_article, aid, self.root, transport) for aid in (20, 40)]
             for future in futures:
                 self.assertTrue(future.result(timeout=15)["saved"])
         self.assertEqual(set(json.loads(self.path.read_bytes())["articles"]), {"10", "20", "30", "40"})
 
     def test_corrupt_canonical_file_is_not_overwritten(self):
-        for text in ('{"articles":{"10":{"tags":[]}}}',
-                     '{"articles":{"10":{"tags":["unknown"]}}}',
+        for text in ('{"articles":{"10":{"topics":[]}}}',
+                     '{"articles":{"10":{"topics":["unknown"]}}}',
                      '{"articles":{},"articles":{}}'):
             with self.subTest(text=text):
                 self.path.write_text(text, encoding="utf-8")
-                with self.assertRaises(label.LabelError):
+                with self.assertRaises(classify.ClassificationError):
                     self.run_article()
                 self.assertEqual(self.path.read_text(encoding="utf-8"), text)
         self.transport.assert_not_called()
@@ -424,18 +424,18 @@ class LabelTests(unittest.TestCase):
             self.transport.return_value = response
             out, err = io.StringIO(), io.StringIO()
             with redirect_stdout(out), redirect_stderr(err):
-                code = label.main(["20"], root=self.root, transport=self.transport)
+                code = classify.main(["20"], root=self.root, transport=self.transport)
             self.assertEqual(code, expected)
             self.assertIn("Mentve" if code == 0 else "nem mentettem", out.getvalue() + err.getvalue())
         self.path.write_bytes(self.before)
         with redirect_stderr(io.StringIO()):
-            self.assertEqual(label.main(["999"], root=self.root, transport=self.transport), 1)
+            self.assertEqual(classify.main(["999"], root=self.root, transport=self.transport), 1)
         self.assertEqual(self.path.read_bytes(), self.before)
 
-    def test_cli_force_relabels_existing_assignment(self):
+    def test_cli_force_reclassifies_existing_assignment(self):
         out = io.StringIO()
         with redirect_stdout(out):
-            code = label.main(["10", "--force"], root=self.root, transport=self.transport)
+            code = classify.main(["10", "--force"], root=self.root, transport=self.transport)
         self.assertEqual(code, 0)
         self.assertIn("Mentve: 10", out.getvalue())
         self.transport.assert_called_once()
@@ -444,43 +444,43 @@ class LabelTests(unittest.TestCase):
         roots = (self.root / "raw_source/content-mirror", self.root / "articles")
         def check_locks():
             for root in roots:
-                with self.assertRaises(OSError), label.exclusive_run(root):
+                with self.assertRaises(OSError), classify.exclusive_run(root):
                     self.fail("A competing sync obtained the lock")
-        original_article_row = label.article_row
+        original_article_row = classify.article_row
         def read_article(*args):
             check_locks()
             return original_article_row(*args)
         def transport(request):
             check_locks()
             return self.response
-        with mock.patch.object(label, "article_row", side_effect=read_article), redirect_stdout(io.StringIO()):
-            self.assertEqual(label.main(["20"], root=self.root, transport=transport), 0)
+        with mock.patch.object(classify, "article_row", side_effect=read_article), redirect_stdout(io.StringIO()):
+            self.assertEqual(classify.main(["20"], root=self.root, transport=transport), 0)
         for root in roots:
-            with label.exclusive_run(root):
+            with classify.exclusive_run(root):
                 pass
 
     def test_cli_busy_mirror_stops_before_reading_or_model_call(self):
         for root in (self.root / "raw_source/content-mirror", self.root / "articles"):
-            with self.subTest(root=root), label.exclusive_run(root), mock.patch.object(label, "article_row") as read:
+            with self.subTest(root=root), classify.exclusive_run(root), mock.patch.object(classify, "article_row") as read:
                 with redirect_stderr(io.StringIO()):
-                    self.assertEqual(label.main(["20"], root=self.root, transport=self.transport), 1)
+                    self.assertEqual(classify.main(["20"], root=self.root, transport=self.transport), 1)
                 read.assert_not_called()
                 self.transport.assert_not_called()
                 self.assertEqual(self.path.read_bytes(), self.before)
 
     def test_cli_releases_mirror_locks_after_model_failure(self):
-        self.transport.side_effect = label.LabelError("Model failure")
+        self.transport.side_effect = classify.ClassificationError("Model failure")
         with redirect_stderr(io.StringIO()):
-            self.assertEqual(label.main(["20"], root=self.root, transport=self.transport), 1)
+            self.assertEqual(classify.main(["20"], root=self.root, transport=self.transport), 1)
         self.assertEqual(self.path.read_bytes(), self.before)
         for root in (self.root / "raw_source/content-mirror", self.root / "articles"):
-            with label.exclusive_run(root):
+            with classify.exclusive_run(root):
                 pass
 
     def test_codex_receives_one_isolated_request_and_local_image_copy(self):
         image = self.root / "articles/assets/chart,full.png"
         image.write_bytes(b"image-data")
-        request = label.make_request("Title", "ONLY_ONE_BODY", [image], self.vocabulary)
+        request = classify.make_request("Title", "ONLY_ONE_BODY", [image], self.vocabulary)
         invocations = []
         def run(command, **kwargs):
             invocations.append((command, kwargs))
@@ -492,9 +492,9 @@ class LabelTests(unittest.TestCase):
             result = Path(command[command.index("--output-last-message") + 1])
             result.write_text(json.dumps(self.response), encoding="utf-8")
             return SimpleNamespace(returncode=0, stdout='{"type":"turn.completed"}', stderr="")
-        with mock.patch.object(label.subprocess, "run", side_effect=run), mock.patch.dict(
+        with mock.patch.object(classify.subprocess, "run", side_effect=run), mock.patch.dict(
                 os.environ, {"OPENAI_API_KEY": "secret", "CODEX_API_KEY": "secret", "CODEX_THREAD_ID": "thread"}):
-            self.assertEqual(label.codex_exec(request, executable="codex"), self.response)
+            self.assertEqual(classify.codex_exec(request, executable="codex"), self.response)
         self.assertEqual(len(invocations), 1)
         command, kwargs = invocations[0]
         self.assertEqual(command[1], "exec")
@@ -510,7 +510,7 @@ class LabelTests(unittest.TestCase):
         self.assertFalse(Path(kwargs["cwd"]).exists())
 
     def test_cli_failure_includes_bounded_stderr_details(self):
-        request = label.make_request("Title", "BODY", [], self.vocabulary)
+        request = classify.make_request("Title", "BODY", [], self.vocabulary)
         message = "A Codex hívás sikertelen (kilépési kód: 1)."
         for stderr, expected in (
             ("ERROR: Session expired; please log in.", "ERROR: Session expired; please log in."),
@@ -520,14 +520,14 @@ class LabelTests(unittest.TestCase):
         ):
             with self.subTest(stderr=stderr):
                 process = SimpleNamespace(returncode=1, stdout="", stderr=stderr)
-                with mock.patch.object(label.subprocess, "run", return_value=process):
-                    with self.assertRaises(label.LabelError) as error:
-                        label.codex_exec(request, executable="codex")
+                with mock.patch.object(classify.subprocess, "run", return_value=process):
+                    with self.assertRaises(classify.ClassificationError) as error:
+                        classify.codex_exec(request, executable="codex")
                 self.assertEqual(str(error.exception), message + (f" {expected}" if expected else ""))
                 self.assertEqual(self.path.read_bytes(), self.before)
 
     def test_cli_failure_or_tool_use_never_returns_a_result(self):
-        request = label.make_request("Title", "BODY", [], self.vocabulary)
+        request = classify.make_request("Title", "BODY", [], self.vocabulary)
         for failure in ("timeout", "exit", "tool", "missing", "invalid-json"):
             with self.subTest(failure=failure):
                 def run(command, **kwargs):
@@ -538,19 +538,19 @@ class LabelTests(unittest.TestCase):
                             "{" if failure == "invalid-json" else json.dumps(self.response), encoding="utf-8")
                     return SimpleNamespace(returncode=1 if failure == "exit" else 0,
                                            stdout='{"type":"item.completed","item":{"type":"command_execution"}}' if failure == "tool" else "", stderr="")
-                with mock.patch.object(label.subprocess, "run", side_effect=run):
-                    with self.assertRaises((label.LabelError, OSError, ValueError)):
-                        label.codex_exec(request, executable="codex")
+                with mock.patch.object(classify.subprocess, "run", side_effect=run):
+                    with self.assertRaises((classify.ClassificationError, OSError, ValueError)):
+                        classify.codex_exec(request, executable="codex")
 
 
 class AssignmentDataTests(unittest.TestCase):
-    def test_every_article_has_nonempty_valid_tags(self):
+    def test_every_article_has_nonempty_valid_topics(self):
         here = Path(__file__).resolve().parent
-        vocabulary = json.loads((here / "tags.json").read_bytes())
-        valid_ids = {tag["id"] for tag in vocabulary["tags"]}
+        vocabulary = json.loads((here / "topics.json").read_bytes())
+        valid_ids = {topic["id"] for topic in vocabulary["topics"]}
         assignments = json.loads((here / "assignments.json").read_bytes())
         self.assertTrue(assignments["articles"])
-        label.validate_assignments(assignments, valid_ids)
+        classify.validate_assignments(assignments, valid_ids)
 
 
 if __name__ == "__main__":

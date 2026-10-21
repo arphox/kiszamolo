@@ -10,4 +10,4 @@ __pycache__/
 venv/
 
 # OS-held lock for canonical assignment updates.
-/tagging/.assignments.lock
+/topics/.assignments.lock
