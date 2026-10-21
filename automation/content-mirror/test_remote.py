@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from remote import (HttpClient, MissingMediaError, Response, fetch_census,
-                    fetch_metadata, fetch_records)
+                    fetch_metadata, fetch_records, TransientDownloadError)
 
 
 class FakeResponse:
@@ -357,7 +357,8 @@ class RemoteTests(unittest.TestCase):
                 client = HttpClient(opener=opener, retries=3, retry_delay=0)
                 target = Path(directory) / "file.bin"
                 target.write_bytes(b"old")
-                with self.assertRaisesRegex(ValueError, "Content-Length mismatch"):
+                expected_error = TransientDownloadError if streaming else ValueError
+                with self.assertRaisesRegex(expected_error, "Content-Length mismatch"):
                     if streaming:
                         client.download("https://example.test/file", target)
                     else:
@@ -395,7 +396,7 @@ class RemoteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "file.bin"
             target.write_bytes(b"old")
-            with self.assertRaises(ValueError):
+            with self.assertRaises(TransientDownloadError):
                 client.download("https://example.test/file", target)
             self.assertEqual(target.read_bytes(), b"old")
             self.assertEqual(list(Path(directory).glob("*.tmp")), [])
@@ -413,7 +414,7 @@ class RemoteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "file.bin"
             target.write_bytes(b"old")
-            with self.assertRaises(URLError):
+            with self.assertRaises(TransientDownloadError):
                 client.download("https://example.test/file", target)
             self.assertEqual(target.read_bytes(), b"old")
             self.assertEqual(list(Path(directory).glob(".*.tmp")), [])

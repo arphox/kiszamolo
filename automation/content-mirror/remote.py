@@ -66,6 +66,14 @@ class _NetworkError(Exception):
         super().__init__(str(original))
 
 
+class TransientDownloadError(Exception):
+    """A download exhausted retries after a remote transport interruption."""
+
+    def __init__(self, original):
+        self.original = original
+        super().__init__(str(original))
+
+
 def _validate_url(url: str) -> None:
     if not isinstance(url, str) or not url:
         raise ValueError("URL must be a non-empty string")
@@ -280,7 +288,7 @@ class HttpClient:
                 self._retry_wait(attempt, _headers(error.headers))
             except _NetworkError as error:
                 if attempt + 1 == self.retries:
-                    raise error.original
+                    raise TransientDownloadError(error.original) from error.original
                 last_error = error
                 self._retry_wait(attempt)
             finally:

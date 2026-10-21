@@ -5,12 +5,13 @@ import errno
 import json
 import os
 from pathlib import Path
+import ssl
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError, URLError
 
-from remote import Download, Inventory, Response
-from urllib.error import HTTPError
+from remote import Download, Inventory, Response, TransientDownloadError
 import sync
 
 
@@ -34,6 +35,9 @@ class FakeClient:
     def __init__(self):
         self.calls = []
         self.fail = set()
+        self.http_failures = {}
+        self.invalid_media = set()
+        self.exceptions = {}
         self.payloads = {}
         self.live_absent_candidate = False
 
@@ -44,8 +48,15 @@ class FakeClient:
 
     def download(self, url, target, conditional_headers=None, **kwargs):
         self.calls.append((url, conditional_headers))
+        if url in self.exceptions:
+            raise self.exceptions[url]
         if url in self.fail:
-            raise OSError("Simulated network failure")
+            raise URLError("Simulated network failure")
+        if url in self.http_failures:
+            status = self.http_failures[url]
+            raise HTTPError(url, status, "Simulated HTTP failure", {}, None)
+        if url in self.invalid_media:
+            raise ValueError("Expected media, received text/html")
         body = self.payloads.get(url, b"data")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(body)
@@ -120,9 +131,9 @@ class SyncTests(unittest.TestCase):
                           if r["id"] in ids and r["type"] + "s" == kind], [])
 
     def run_sync(self, **kwargs):
+        metadata_loader = kwargs.pop("metadata_loader", lambda *a, **k: Inventory([], []))
         return sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
-                             record_loader=self.details,
-                             metadata_loader=lambda *a, **k: Inventory([], []),
+                             record_loader=self.details, metadata_loader=metadata_loader,
                              progress=lambda _: None, **kwargs)
 
     def state(self):
@@ -342,6 +353,83 @@ class SyncTests(unittest.TestCase):
         self.run_sync()
         self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
 
+    def test_metadata_only_refresh_does_not_queue_post(self):
+        self.run_sync()
+        self.clear_tagging_pending()
+        record = self.records[0]
+        record.update(modified="2026-10-08T12:00:00", modified_gmt="2026-10-08T12:00:00",
+                      date="2012-01-01T00:00:00", date_gmt="2012-01-01T00:00:00",
+                      link="https://kiszamolo.hu/renamed-link/", excerpt={"rendered": "New excerpt"},
+                      categories=[12], tags=[34], yoast_head_json={"title": "New SEO title"})
+        self.run_sync()
+        self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
+
+    def test_tagging_content_fields_queue_post(self):
+        changes = (
+            (0, lambda record: record["title"].update(rendered="Changed title")),
+            (0, lambda record: record["content"].update(rendered="<p>Changed body</p>")),
+            (0, lambda record: record["content"].update(protected=True)),
+            (0, lambda record: record.update(featured_media=99)),
+            (99, lambda record: record.update(featured_media=0)),
+            (99, lambda record: record.update(featured_media=100)),
+        )
+        for initial_media, change in changes:
+            with self.subTest(initial_media=initial_media, change=change):
+                with tempfile.TemporaryDirectory() as temporary:
+                    self.root = Path(temporary) / "mirror"
+                    self.articles = Path(temporary) / "articles"
+                    self.client = FakeClient()
+                    self.records = [post()]
+                    if initial_media:
+                        self.records[0]["featured_media"] = initial_media
+                    self.pages = []
+                    self.detail_calls = []
+                    self.run_sync()
+                    self.clear_tagging_pending()
+                    record = self.records[0]
+                    change(record)
+                    record["modified"] = record["modified_gmt"] = "2026-10-08T12:00:00"
+                    self.run_sync()
+                    self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+
+    def test_missing_valid_previous_source_conservatively_queues_post(self):
+        self.run_sync()
+        self.clear_tagging_pending()
+        (self.root / "records/posts/1/source.json").write_text("{}", encoding="utf-8")
+        self.records[0]["modified"] = self.records[0]["modified_gmt"] = "2026-10-08T12:00:00"
+        self.run_sync()
+        self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+
+    def test_featured_metadata_only_queues_when_rendered_fields_change(self):
+        self.records[0]["featured_media"] = 100
+        current = {"id": 100, "media_type": "image", "source_url": "https://kiszamolo.hu/hero.png",
+                   "alt_text": "Hero", "caption": {"rendered": "Caption"},
+                   "modified": "2020-01-01", "description": "SEO", "sizes": {"full": {"width": 1}}}
+
+        def metadata(client, kind, **kwargs):
+            return Inventory([json.loads(json.dumps(current))] if kind == "media" else [], [])
+
+        self.run_sync(metadata_loader=metadata)
+        self.clear_tagging_pending()
+        for field, value in (("modified", "2021-01-01"), ("description", "Updated SEO"),
+                             ("title", {"rendered": "Updated attachment title"}),
+                             ("sizes", {"full": {"width": 2}})):
+            current[field] = value
+        self.records[0]["modified"] = self.records[0]["modified_gmt"] = "2026-10-08T12:00:00"
+        self.run_sync(metadata_loader=metadata)
+        self.assertFalse(self.state()["records"]["post:1"]["tagging_pending"])
+
+        for index, (field, value) in enumerate((("source_url", "https://kiszamolo.hu/updated.png"),
+                                                ("alt_text", "Updated alt"),
+                                                ("caption", {"rendered": "Updated caption"}),
+                                                ("media_type", "video")), 9):
+            with self.subTest(field=field):
+                self.clear_tagging_pending()
+                current[field] = value
+                self.records[0]["modified"] = self.records[0]["modified_gmt"] = f"2026-10-{index:02}T12:00:00"
+                self.run_sync(metadata_loader=metadata)
+                self.assertTrue(self.state()["records"]["post:1"]["tagging_pending"])
+
     def test_pending_survives_failed_asset_retry_and_offline_rebuild(self):
         self.run_sync()
         self.records[0] = post(modified="2026-10-08T12:00:00", body="<p>Changed</p><img src='/a.png'>")
@@ -412,6 +500,142 @@ class SyncTests(unittest.TestCase):
                 self.assertEqual([u for u, _ in self.client.calls], ["https://kiszamolo.hu/a.png"])
                 self.assertEqual(self.state()["records"]["post:1"]["failed_assets"],
                                  ["https://kiszamolo.hu/a.png"] if failing else [])
+
+    def test_permanent_public_page_failure_is_skipped_after_article_change(self):
+        self.records = [post(body="<p>API body</p>")]
+        url = self.records[0]["link"]
+        self.client.http_failures[url] = 404
+        report = self.run_sync()
+        self.assertEqual(self.state()["records"]["post:1"]["page"]["status"], "unavailable")
+        self.assertEqual(report["incomplete_records"], 0)
+        self.assertEqual(report["page_failures"], {})
+
+        self.client.calls.clear()
+        self.run_sync()
+        self.assertNotIn(url, [called_url for called_url, _ in self.client.calls])
+        self.records[0] = post(modified="2011-01-02T00:00:00", body="<p>Changed API body</p>")
+        self.client.calls.clear()
+        report = self.run_sync()
+        self.assertNotIn(url, [called_url for called_url, _ in self.client.calls])
+        self.assertEqual(self.state()["records"]["post:1"]["page"]["status"], "unavailable")
+        self.assertEqual(report["incomplete_records"], 0)
+        self.records[0] = post(modified="2011-01-03T00:00:00", body="<p>New page URL</p>")
+        self.records[0]["link"] = "https://kiszamolo.hu/p1-new/"
+        self.client.calls.clear()
+        self.run_sync()
+        self.assertIn(self.records[0]["link"], [called_url for called_url, _ in self.client.calls])
+        self.assertEqual(self.state()["records"]["post:1"]["page"]["requested_url"], self.records[0]["link"])
+
+    def test_transient_public_page_failure_is_retried(self):
+        self.records = [post(body="<p>API body</p>")]
+        url = self.records[0]["link"]
+        self.client.fail.add(url)
+        self.run_sync()
+        self.assertEqual(self.state()["records"]["post:1"]["page"]["status"], "failed")
+        self.client.fail.clear()
+        self.client.calls.clear()
+        self.run_sync()
+        self.assertIn(url, [called_url for called_url, _ in self.client.calls])
+        self.assertEqual(self.state()["records"]["post:1"]["page"]["status"], "downloaded")
+
+    def test_unavailable_page_does_not_repeat_empty_api_record_fetch(self):
+        self.records = []
+        self.pages = [page(body=" ")]
+        url = self.pages[0]["link"]
+        self.client.http_failures[url] = 404
+        self.run_sync()
+        item = self.state()["records"]["page:1"]
+        self.assertEqual(item["page"]["status"], "unavailable")
+        self.assertFalse(item["derived_view_available"])
+        self.assertEqual(item["acquisition_status"], "incomplete")
+
+        self.detail_calls.clear()
+        self.client.calls.clear()
+        self.run_sync()
+        self.assertEqual(self.detail_calls, [])
+        self.assertEqual(self.client.calls, [])
+
+    def test_permanent_http_failures_are_skipped_even_after_article_changes(self):
+        url = "https://kiszamolo.hu/missing.png"
+        for status in (404, 410, 403):
+            with self.subTest(status=status):
+                self.root = Path(self.temp.name) / f"mirror-{status}"
+                self.articles = Path(self.temp.name) / "articles"
+                self.records = [post(body='<p>First</p><img src="/missing.png">')]
+                self.client = FakeClient()
+                self.client.http_failures[url] = status
+                report = self.run_sync()
+                asset = self.state()["assets"][url]
+                self.assertEqual(asset["status"], "unavailable")
+                self.assertEqual(asset["http_status"], status)
+                self.assertIn("HTTPError", asset["error"])
+                self.assertEqual(report["incomplete_records"], 0)
+                self.assertEqual(report["asset_failures"], {})
+                text = self.article_file(1).read_text(encoding="utf-8")
+                self.assertIn(url, text)
+                self.assertNotIn("../../assets/", text)
+
+                self.records[0] = post(modified="2011-01-02T00:00:00",
+                                       body='<p>Changed</p><img src="/missing.png">')
+                self.client.calls.clear()
+                self.run_sync()
+                self.assertNotIn(url, [called_url for called_url, _ in self.client.calls])
+                self.assertEqual(self.state()["assets"][url]["status"], "unavailable")
+                self.assertIn(url, self.article_file(1).read_text(encoding="utf-8"))
+
+    def test_invalid_media_is_unavailable_without_repeated_attempts(self):
+        url = "https://kiszamolo.hu/bad.png"
+        self.records = [post(body='<img src="/bad.png">')]
+        self.client.invalid_media.add(url)
+        self.run_sync()
+        asset = self.state()["assets"][url]
+        self.assertEqual(asset["status"], "unavailable")
+        self.assertIn("ValueError", asset["error"])
+        self.assertEqual(self.state()["records"]["post:1"]["acquisition_status"], "complete")
+        self.client.calls.clear()
+        self.run_sync()
+        self.assertEqual(self.client.calls, [])
+
+    def test_certificate_failure_inside_transport_wrapper_is_permanent(self):
+        url = "https://kiszamolo.hu/cert.png"
+        self.records = [post(body='<img src="/cert.png">')]
+        self.client.exceptions[url] = TransientDownloadError(
+            URLError(ssl.SSLCertVerificationError("certificate rejected")))
+        self.run_sync()
+        self.assertEqual(self.state()["assets"][url]["status"], "unavailable")
+
+    def test_unavailable_cached_asset_reverts_all_markdown_links_to_source_url(self):
+        url = "https://kiszamolo.hu/a.png"
+        self.run_sync()
+        self.records[0] = post(modified="2011-01-02T00:00:00",
+                               body='<p>Changed</p><img src="/a.png">')
+        self.client.fail.add(url)
+        self.run_sync()
+        self.assertEqual(self.state()["assets"][url]["status"], "failed")
+        self.client.fail.clear()
+        self.client.http_failures[url] = 404
+        self.run_sync()
+        asset = self.state()["assets"][url]
+        self.assertEqual(asset["status"], "unavailable")
+        self.assertTrue(asset["cached_copy"])
+        self.assertTrue((self.articles / asset["path"]).is_file())
+        for number in (1, 2):
+            text = self.article_file(number).read_text(encoding="utf-8")
+            self.assertIn(url, text)
+            self.assertNotIn("../../assets/", text)
+
+    def test_offline_rebuild_ignores_missing_unavailable_cached_copy(self):
+        url = "https://kiszamolo.hu/a.png"
+        self.run_sync()
+        self.records[0] = post(modified="2011-01-02T00:00:00",
+                               body='<p>Changed</p><img src="/a.png">')
+        self.client.http_failures[url] = 404
+        self.run_sync()
+        asset = self.state()["assets"][url]
+        self.assertEqual(asset["status"], "unavailable")
+        (self.articles / asset["path"]).unlink()
+        sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
+        self.assertIn(url, self.article_file(1).read_text(encoding="utf-8"))
 
     def test_missing_remote_retained_and_reactivation(self):
         self.run_sync()

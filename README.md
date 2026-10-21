@@ -52,7 +52,7 @@ A program előbb frissíti az `articles/` és a `raw_source/content-mirror/` map
 
 A címkézésre váró cikkeket a letöltő cikknyilvántartása tartja számon. Az AI a cikkek tartalmi besorolását végzi.
 
-A letöltő a WordPress módosítási időbélyege alapján frissít. A helyi feldolgozás az új és módosult cikkekre korlátozódik. Pótolja a hiányzó helyi fájlokat, és újrapróbálja a sikertelen letöltéseket. Átnevezéskor külön javítja a rá mutató helyi hivatkozásokat.
+A letöltő a WordPress módosítási időbélyege alapján frissít. A helyi feldolgozás az új és módosult cikkekre korlátozódik. Pótolja a hiányzó helyi fájlokat, és csak az átmeneti letöltési hibákat próbálja újra a következő futáskor. Átnevezéskor külön javítja a rá mutató helyi hivatkozásokat.
 
 A bizonytalan vagy hibás címkézés nem állítja le a többi cikk feldolgozását; a korábbi tagek megmaradnak. Az elutasított újracímkézések és a hibák következő futáskor ismét sorra kerülnek. Új tagról és kizárásról továbbra is a felhasználó dönt.
 

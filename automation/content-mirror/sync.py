@@ -8,20 +8,23 @@ from contextlib import ExitStack, contextmanager
 from datetime import datetime, timezone
 import hashlib
 import html
+import http.client
 import json
 import os
 from pathlib import Path
 import re
 import errno
+import ssl
 import shutil
 import sys
 import tempfile
 from urllib.parse import urlsplit, urlunsplit, quote
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 from bs4 import BeautifulSoup
 
-from remote import HttpClient, Inventory, fetch_census, fetch_records, fetch_metadata
+from remote import (HttpClient, Inventory, TRANSIENT_STATUSES, TransientDownloadError,
+                    fetch_census, fetch_records, fetch_metadata)
 from paths import plan_article_paths
 from article_links import repair_markdown_links
 from render import (conversion_warnings, discover_assets, discover_embeds,
@@ -283,8 +286,23 @@ def verified_file(root, info):
     return hasher.hexdigest() == info["sha256"]
 
 
+def _certificate_failure(error):
+    """Find certificate verification failures inside urllib's transport wrappers."""
+    while True:
+        if isinstance(error, (ssl.SSLCertVerificationError, ssl.CertificateError)):
+            return True
+        if isinstance(error, URLError):
+            error = error.reason
+            continue
+        original = getattr(error, "original", None)
+        if original is not None:
+            error = original
+            continue
+        return False
+
+
 def fetch_file(client, url, root, relative, previous, now, *, max_bytes=None, expected_media=False):
-    """Keep old bytes on acquisition failure, but label their currentness explicitly."""
+    """Keep old bytes, retry transient failures later, and remember permanent misses."""
     old_valid = verified_file(root, previous)
     try:
         result = client.download(url, safe_path(root, relative),
@@ -294,7 +312,7 @@ def fetch_file(client, url, root, relative, previous, now, *, max_bytes=None, ex
             raise ValueError("Unexpected 304 without a verified cached file")
         result_info = dict(previous) if result.status == 304 else {}
         result_info.update(path=relative, status="downloaded", checked_at=now,
-                           resolved_url=result.url,
+                           requested_url=url, resolved_url=result.url,
                            sha256=previous["sha256"] if result.status == 304 else result.sha256,
                            size=previous.get("size") if result.status == 304 else result.size)
         for source, target in [("ETag", "etag"), ("Last-Modified", "last_modified"),
@@ -303,12 +321,27 @@ def fetch_file(client, url, root, relative, previous, now, *, max_bytes=None, ex
             if value is not None:
                 result_info[target] = value
         result_info.pop("error", None)
+        result_info.pop("http_status", None)
         return result_info
-    except Exception as error:
-        # Never publish stale bytes as a successful remote check.
+    except HTTPError as error:
+        transient = error.code in TRANSIENT_STATUSES
         result_info = dict(previous) if old_valid else {"path": relative}
-        result_info.update(status="failed", checked_at=now,
+        result_info.update(status="failed" if transient else "unavailable",
+                           checked_at=now, requested_url=url,
+                           error=f"{type(error).__name__}: {error}",
+                           http_status=error.code, cached_copy=old_valid)
+        error.close()
+        return result_info
+    except (TransientDownloadError, URLError, TimeoutError, ConnectionError,
+            http.client.IncompleteRead, ValueError) as error:
+        transient = (isinstance(error, (TransientDownloadError, URLError, TimeoutError,
+                                        ConnectionError, http.client.IncompleteRead))
+                     and not _certificate_failure(error))
+        result_info = dict(previous) if old_valid else {"path": relative}
+        result_info.update(status="failed" if transient else "unavailable",
+                           checked_at=now, requested_url=url,
                            error=f"{type(error).__name__}: {error}", cached_copy=old_valid)
+        result_info.pop("http_status", None)
         return result_info
 
 
@@ -318,6 +351,51 @@ def record_key(record):
 
 def record_directory(record):
     return f"records/{record['type']}s/{record['id']}"
+
+
+def tagging_content(record):
+    """Fields whose changes can affect a post's tag assignment."""
+    content = record.get("content") or {}
+    return (plain_title(record.get("title", "")), content.get("rendered", ""),
+            bool(content.get("protected")), record.get("featured_media") or 0)
+
+
+def load_saved_record(root, key, previous):
+    """Return the prior API record only when its saved bytes match the state hash."""
+    if not previous.get("source_sha256") or not previous.get("directory"):
+        return None
+    path = safe_path(root, previous["directory"] + "/source.json")
+    try:
+        raw = path.read_bytes()
+        record = json.loads(raw.decode("utf-8"))
+        if digest(raw) == previous["source_sha256"] and record_key(record) == key:
+            return record
+    except (OSError, UnicodeError, ValueError):
+        pass
+    return None
+
+
+def load_saved_featured_media(root, previous):
+    """Return verified prior featured-media metadata, if present."""
+    if not previous.get("featured_media_sha256") or not previous.get("directory"):
+        return None
+    relative = previous["directory"] + "/source-featured-media.json"
+    try:
+        raw = safe_path(root, relative).read_bytes()
+        media = json.loads(raw.decode("utf-8"))
+        if digest(raw) == previous["featured_media_sha256"]:
+            return media
+    except (OSError, UnicodeError, ValueError):
+        pass
+    return None
+
+
+def featured_tagging_content(media):
+    """Only metadata rendered into the article can affect its tag assignment."""
+    if media is None:
+        return None
+    return (media.get("id"), media.get("source_url"), media.get("media_type"),
+            media.get("alt_text"), (media.get("caption") or {}).get("rendered", ""))
 
 
 def prune_excluded(root, articles_root, state):
@@ -410,7 +488,12 @@ def hydrate_inventory(root, articles_root, census, state, client, *, sample_ids,
         raw_files_present = all(safe_path(root, f"{directory}/{name}").is_file()
                                 for name in ("source.json", "source.html", "view-source.html"))
         page = previous.get("page", {})
+        page_url_matches = page.get("requested_url") == previous.get("url")
+        page_downloaded = (page.get("status") == "downloaded" and
+                           (page.get("requested_url") is None or page_url_matches))
+        page_unavailable = page.get("status") == "unavailable" and page_url_matches
         page_present = bool(page.get("path") and safe_path(root, page["path"]).is_file())
+        page_settled = page_downloaded or page_unavailable
         featured_path = f"{directory}/source-featured-media.json"
         featured_present = (not previous.get("featured_media_sha256") or
                             safe_path(root, featured_path).is_file())
@@ -421,11 +504,11 @@ def hydrate_inventory(root, articles_root, census, state, client, *, sample_ids,
         legacy_incomplete = ("protected_content" not in previous and
                              previous.get("acquisition_status") == "incomplete")
         needs_refresh = (not previous or previous.get("status") != "active" or modified or
-                         not raw_files_present or page.get("status") != "downloaded" or
-                         not page_present or not featured_present or
+                         not raw_files_present or not page_settled or
+                         (page_downloaded and not page_present) or not featured_present or
                          not previous.get("path") or
                          previous.get("featured_media_error") or
-                         previous.get("derived_view_available") is False or
+                         (previous.get("derived_view_available") is False and not page_unavailable) or
                          legacy_incomplete or
                          previous.get("protected_content", False))
         if needs_refresh:
@@ -637,7 +720,8 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
         for url in item.get("asset_urls", []):
             asset = state["assets"].get(url, {})
             if (asset.get("path") and asset.get("sha256") and
-                    (asset.get("status") == "downloaded" or asset.get("cached_copy"))):
+                    (asset.get("status") == "downloaded" or
+                     (asset.get("status") == "failed" and asset.get("cached_copy")))):
                 asset_paths[url] = relative_url(directory, safe_path(articles_root, asset["path"]))
         body = view_bodies[key]
         featured_record = featured.get(record.get("featured_media"))
@@ -685,7 +769,7 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
             item["failed_assets"] = failures
             item["external_assets"] = [u for u in item.get("asset_urls", [])
                                        if state.get("assets", {}).get(u, {}).get("status") == "external_reference"]
-            item["acquisition_status"] = "incomplete" if failures or item.get("page", {}).get("status") != "downloaded" or record["content"].get("protected") or item.get("featured_media_error") or not item.get("derived_view_available") else "complete"
+            item["acquisition_status"] = "incomplete" if failures or item.get("page", {}).get("status") not in {"downloaded", "unavailable"} or record["content"].get("protected") or item.get("featured_media_error") or not item.get("derived_view_available") else "complete"
             if record["content"].get("protected"):
                 item.setdefault("warnings", []).append("Protected content is not available through the public API.")
     return reassigned_preserved
@@ -840,7 +924,12 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                         modified_at_gmt=summary.get("modified_gmt"),
                         last_seen_at=stamp, status="active")
             item.pop("remote_missing_since", None)
-        page_refresh_keys = set(fetched_keys)
+        page_refresh_keys = {
+            record_key(record) for record in process_records_list
+            if record_key(record) in fetched_keys and not (
+                state["records"].get(record_key(record), {}).get("page", {}).get("status") == "unavailable"
+                and state["records"].get(record_key(record), {}).get("page", {}).get("requested_url") == record["link"])
+        }
         discovered = {}
         for record in process_records_list:
             key = record_key(record)
@@ -865,11 +954,13 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                     protected_content=bool(record.get("content", {}).get("protected")),
                     warnings=conversion_warnings(record["content"]["rendered"]))
                 if record["type"] == "post":
-                    source_changed = (previous.get("source_sha256") is not None and
-                                      previous["source_sha256"] != source_hash)
-                    featured_changed = (previous.get("featured_media_sha256") is not None and
-                                        media_hash is not None and
-                                        previous["featured_media_sha256"] != media_hash)
+                    old_record = load_saved_record(root, key, previous)
+                    source_changed = bool(previous) and (
+                        old_record is None or tagging_content(old_record) != tagging_content(record))
+                    old_featured = load_saved_featured_media(root, previous)
+                    featured_changed = bool(record.get("featured_media") and featured_record) and (
+                        old_featured is None or
+                        featured_tagging_content(old_featured) != featured_tagging_content(featured_record))
                     item["tagging_pending"] = bool(
                         previous.get("tagging_pending") or not previous or source_changed or featured_changed)
                 else:
@@ -937,6 +1028,8 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
         assets_refresh = {url for key in fetched_keys if key in discovered for url in discovered[key][0]}
         jobs = {}
         previous_asset_hashes = {url: state["assets"].get(url, {}).get("sha256") for url in all_assets}
+        previous_asset_statuses = {url: state["assets"].get(url, {}).get("status") for url in all_assets}
+        previous_asset_paths = {url: state["assets"].get(url, {}).get("path") for url in all_assets}
         previously_available = {
             url: state["assets"].get(url, {}).get("status") == "downloaded" and
                  bool(state["assets"].get(url, {}).get("path")) and
@@ -953,6 +1046,8 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                     continue
                 asset_path = previous.get("path") or asset_filename(url)
                 present = safe_path(articles_root, asset_path).is_file()
+                if previous.get("status") == "unavailable":
+                    continue
                 if url in assets_refresh or not present or previous.get("status") != "downloaded":
                     jobs[pool.submit(fetch_file, client, url, articles_root, asset_filename(url),
                         previous, stamp, max_bytes=max_asset_bytes, expected_media=True)] = url
@@ -968,6 +1063,13 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             and state["assets"].get(url, {}).get("status") == "downloaded"
             and state["assets"].get(url, {}).get("sha256") is not None
             and previous_asset_hashes[url] != state["assets"][url]["sha256"]
+        }
+        unavailable_targets = {
+            previous_asset_paths[url]: url
+            for url in all_assets
+            if previous_asset_statuses.get(url) in {"downloaded", "failed"}
+            and state["assets"].get(url, {}).get("status") == "unavailable"
+            and previous_asset_paths.get(url)
         }
         remote_targets = {
             url: state["assets"][url]["path"]
@@ -1001,7 +1103,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             item["external_assets"] = [url for url in urls
                                        if state.get("assets", {}).get(url, {}).get("status") == "external_reference"]
             item["acquisition_status"] = "incomplete" if (
-                failures_for_record or item.get("page", {}).get("status") != "downloaded" or
+                failures_for_record or item.get("page", {}).get("status") not in {"downloaded", "unavailable"} or
                 item.get("protected_content") or item.get("featured_media_error") or
                 not item.get("derived_view_available", True)) else "complete"
         render_keys = process_keys
@@ -1014,11 +1116,12 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                       previous["path"] != state["records"][key].get("path")}
         rendered_keys = set(render_keys)
         links_repaired = exclusion_links_repaired
-        if path_moves or deleted_targets or remote_targets:
+        if path_moves or deleted_targets or remote_targets or unavailable_targets:
             for key, item in state["records"].items():
                 if key in rendered_keys or not item.get("path"):
                     continue
                 if (not path_moves and not deleted_targets and not article_targets and
+                        not unavailable_targets and
                         remote_targets.keys().isdisjoint(item.get("asset_urls", []))):
                     continue
                 path = safe_path(articles_root, item["path"])
@@ -1027,7 +1130,8 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                 original = path.read_bytes()
                 text = original.decode("utf-8")
                 repaired = repair_markdown_links(text, item["path"], path_moves,
-                    remote_targets=remote_targets, deleted_targets=deleted_targets)
+                    remote_targets=remote_targets,
+                    deleted_targets=deleted_targets | unavailable_targets)
                 if repaired == text:
                     continue
                 atomic_write(path, repaired.encode("utf-8"))
@@ -1064,7 +1168,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             incomplete_records=sum(state["records"][key]["acquisition_status"] != "complete"
                                    for key in scope_keys if key in state["records"]),
             asset_failures=failures, page_failures={record_key(r):state["records"][record_key(r)].get("page", {}).get("error")
-                for r in scope_summaries if state["records"].get(record_key(r), {}).get("page", {}).get("status") != "downloaded"},
+                for r in scope_summaries if state["records"].get(record_key(r), {}).get("page", {}).get("status") == "failed"},
             media_hosts=stats)
         report["featured_media_error"] = media_error
         report["reassigned_locally_modified_files_preserved"] = reassigned_preserved
@@ -1138,7 +1242,8 @@ def offline_rebuild(root, articles_root, progress=print):
                 found = found[0] | extra[0], found[1] | extra[1], found[2] | extra[2]
             discovered[key] = found
         for url, asset in state.get("assets", {}).items():
-            if asset.get("status") == "downloaded" or asset.get("cached_copy"):
+            if (asset.get("status") == "downloaded" or
+                    (asset.get("status") == "failed" and asset.get("cached_copy"))):
                 if not verified_file(articles_root, asset):
                     raise ValueError(f"Cached media hash mismatch or missing file: {url}")
         stats = host_statistics(records, discovered)
@@ -1162,7 +1267,7 @@ def main():
     parser.add_argument("--sample", type=int, nargs="+", metavar="ID", help="Partial prototype; never marks remote_missing or advances sync watermark")
     parser.add_argument("--rebuild", action="store_true", help="Regenerate Markdown and indexes from verified local files only")
     parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--max-asset-mib", type=float, help="Optional per-asset limit; over-limit assets are explicitly failed")
+    parser.add_argument("--max-asset-mib", type=float, help="Optional per-asset limit; oversized files are marked unavailable")
     args = parser.parse_args()
     output = args.output.resolve()
     source_output = args.source_output.resolve()

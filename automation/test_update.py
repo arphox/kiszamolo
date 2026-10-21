@@ -230,7 +230,12 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(client.calls, [])
         records[0].update(modified="2026-10-21T10:00:00", modified_gmt="2026-10-21T10:00:00")
         third = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
-        self.assertEqual(third["retagged"], [1])
+        self.assertEqual(third["retagged"], [])
+        self.model.assert_not_called()
+        records[0].update(modified="2026-10-21T11:00:00", modified_gmt="2026-10-21T11:00:00",
+                          content={"rendered": "<p>Changed body.</p>", "protected": False})
+        fourth = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
+        self.assertEqual(fourth["retagged"], [1])
         self.model.assert_called_once()
         self.confirm.assert_not_called()
 
