@@ -11,3 +11,4 @@ venv/
 
 # OS-held lock for canonical assignment updates.
 /topics/.assignments.lock
+/classification/.assignments.lock

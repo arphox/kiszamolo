@@ -509,6 +509,14 @@ class ClassificationTests(unittest.TestCase):
             self.assertNotIn(key, kwargs["env"])
         self.assertFalse(Path(kwargs["cwd"]).exists())
 
+    def test_codex_rejects_tool_events_with_event_details(self):
+        request = classify.make_request("Title", "BODY", [], self.vocabulary)
+        tool_event = '{"type":"item.completed","item":{"type":"command_execution"}}'
+        with mock.patch.object(classify.subprocess, "run", return_value=SimpleNamespace(
+                returncode=0, stdout=tool_event, stderr="")):
+            with self.assertRaisesRegex(classify.ClassificationError, "item.completed/command_execution"):
+                classify.codex_exec(request, executable="codex")
+
     def test_cli_failure_includes_bounded_stderr_details(self):
         request = classify.make_request("Title", "BODY", [], self.vocabulary)
         message = "A Codex hívás sikertelen (kilépési kód: 1)."
@@ -525,6 +533,101 @@ class ClassificationTests(unittest.TestCase):
                         classify.codex_exec(request, executable="codex")
                 self.assertEqual(str(error.exception), message + (f" {expected}" if expected else ""))
                 self.assertEqual(self.path.read_bytes(), self.before)
+
+    def test_cli_failure_extracts_usage_limit_from_stdout_error_events(self):
+        request = classify.make_request("Title", "BODY", [], self.vocabulary)
+        events = (
+            '{"type":"error","message":"usage limit reached"}',
+            '{"type":"turn.failed","error":{"message":"model is not supported"}}',
+        )
+        for event, expected in zip(events, ("usage limit reached", "model is not supported")):
+            with self.subTest(event=event):
+                process = SimpleNamespace(returncode=1, stdout=event, stderr="")
+                with mock.patch.object(classify.subprocess, "run", return_value=process):
+                    with self.assertRaises(classify.ClassificationError) as error:
+                        classify.codex_exec(request, executable="codex")
+                self.assertIn(expected, str(error.exception))
+
+    def test_cli_failure_ignores_malformed_and_unrecognized_stdout_diagnostics(self):
+        request = classify.make_request("Title", "BODY", [], self.vocabulary)
+        stdout = ('not-json\n{"type":"warning","message":"usage limit reached"}\n'
+                  '{"type":"error","message":42}')
+        process = SimpleNamespace(returncode=1, stdout=stdout, stderr="actual stderr")
+        with mock.patch.object(classify.subprocess, "run", return_value=process):
+            with self.assertRaises(classify.ClassificationError) as error:
+                classify.codex_exec(request, executable="codex")
+        self.assertIn("actual stderr", str(error.exception))
+        self.assertNotIn("usage limit", str(error.exception))
+
+    def test_cli_failure_bounds_combined_stdout_and_stderr_diagnostics(self):
+        request = classify.make_request("Title", "BODY", [], self.vocabulary)
+        stdout = json.dumps({"type": "error", "message": "x" * 600 + " usage limit"})
+        stderr = "y" * 700
+        process = SimpleNamespace(returncode=1, stdout=stdout, stderr=stderr)
+        with mock.patch.object(classify.subprocess, "run", return_value=process):
+            with self.assertRaises(classify.ClassificationError) as error:
+                classify.codex_exec(request, executable="codex")
+        details = str(error.exception).split("(kilépési kód: 1). ", 1)[1]
+        self.assertEqual(len(details), 1000)
+        self.assertIn("usage limit", details)
+
+    def test_codex_item_error_diagnostics_are_nonfatal_when_result_is_valid(self):
+        request = classify.make_request("Title", "BODY", [], self.vocabulary)
+        for kind in ("item.started", "item.updated", "item.completed"):
+            with self.subTest(kind=kind):
+                def run(command, **kwargs):
+                    Path(command[command.index("--output-last-message") + 1]).write_text(
+                        json.dumps(self.response), encoding="utf-8")
+                    event = {"type": kind, "item": {"type": "error", "message": "nonfatal diagnostic"}}
+                    return SimpleNamespace(returncode=0, stdout=json.dumps(event), stderr="")
+                with mock.patch.object(classify.subprocess, "run", side_effect=run):
+                    result = classify.codex_exec(request, executable="codex")
+                self.assertEqual(result, self.response)
+
+    def test_codex_top_level_error_events_are_fatal_even_with_valid_result_file(self):
+        request = classify.make_request("Title", "BODY", [], self.vocabulary)
+        events = (
+            {"type": "error", "message": "top-level failure"},
+            {"type": "turn.failed", "error": {"message": "turn failure"}},
+        )
+        for event in events:
+            with self.subTest(event=event):
+                def run(command, **kwargs):
+                    Path(command[command.index("--output-last-message") + 1]).write_text(
+                        json.dumps(self.response), encoding="utf-8")
+                    return SimpleNamespace(returncode=0, stdout=json.dumps(event), stderr="")
+                with mock.patch.object(classify.subprocess, "run", side_effect=run):
+                    with self.assertRaises(classify.ClassificationError) as error:
+                        classify.codex_exec(request, executable="codex")
+                self.assertIn("végzetes", str(error.exception))
+                self.assertIn(event.get("message") or event["error"]["message"], str(error.exception))
+
+    def test_codex_item_error_does_not_hide_later_tool_events_including_updated(self):
+        request = classify.make_request("Title", "BODY", [], self.vocabulary)
+        events = (
+            {"type": "item.completed", "item": {"type": "error", "message": "diagnostic"}},
+            {"type": "item.updated", "item": {"type": "command_execution"}},
+        )
+        def run(command, **kwargs):
+            Path(command[command.index("--output-last-message") + 1]).write_text(
+                json.dumps(self.response), encoding="utf-8")
+            return SimpleNamespace(returncode=0,
+                                   stdout="\n".join(json.dumps(event) for event in events), stderr="")
+        with mock.patch.object(classify.subprocess, "run", side_effect=run):
+            with self.assertRaisesRegex(classify.ClassificationError,
+                                        "item.updated/command_execution"):
+                classify.codex_exec(request, executable="codex")
+
+    def test_codex_missing_result_includes_bounded_item_error_diagnostic(self):
+        request = classify.make_request("Title", "BODY", [], self.vocabulary)
+        event = {"type": "item.completed", "item": {"type": "error",
+                                                        "message": "x" * 1400}}
+        with mock.patch.object(classify.subprocess, "run", return_value=SimpleNamespace(
+                returncode=0, stdout=json.dumps(event), stderr="")):
+            with self.assertRaises(classify.ClassificationError) as error:
+                classify.codex_exec(request, executable="codex")
+        self.assertIn("nem készített eredményfájlt", str(error.exception))
+        self.assertLessEqual(len(str(error.exception)), len("A Codex futás nem készített eredményfájlt. ") + 1000)
 
     def test_cli_failure_or_tool_use_never_returns_a_result(self):
         request = classify.make_request("Title", "BODY", [], self.vocabulary)

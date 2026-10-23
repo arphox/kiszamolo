@@ -144,6 +144,7 @@ class SyncTests(unittest.TestCase):
         for key in keys or tuple(state["records"]):
             if state["records"].get(key, {}).get("type") == "post":
                 state["records"][key]["classification_pending"] = False
+                state["records"][key]["content_classification_pending"] = False
         (self.root / "state.json").write_bytes(sync.json_bytes(state))
 
     def article_file(self, number, kind="post"):
@@ -340,8 +341,10 @@ class SyncTests(unittest.TestCase):
         self.run_sync()
         state = self.state()
         self.assertTrue(state["records"]["post:1"]["classification_pending"])
+        self.assertTrue(state["records"]["post:1"]["content_classification_pending"])
         entries = [json.loads(line) for line in (self.articles / "index.jsonl").read_text().splitlines()]
         self.assertTrue(next(item for item in entries if item["key"] == "post:1")["classification_pending"])
+        self.assertTrue(next(item for item in entries if item["key"] == "post:1")["content_classification_pending"])
 
     def test_changed_post_sets_pending_and_unchanged_refresh_does_not(self):
         self.run_sync()
@@ -349,9 +352,11 @@ class SyncTests(unittest.TestCase):
         self.records[0] = post(modified="2026-10-08T12:00:00", body="<p>Changed</p>")
         self.run_sync()
         self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
+        self.assertTrue(self.state()["records"]["post:1"]["content_classification_pending"])
         self.clear_classification_pending()
         self.run_sync()
         self.assertFalse(self.state()["records"]["post:1"]["classification_pending"])
+        self.assertFalse(self.state()["records"]["post:1"]["content_classification_pending"])
 
     def test_metadata_only_refresh_does_not_queue_post(self):
         self.run_sync()
@@ -363,6 +368,18 @@ class SyncTests(unittest.TestCase):
                       categories=[12], tags=[34], yoast_head_json={"title": "New SEO title"})
         self.run_sync()
         self.assertFalse(self.state()["records"]["post:1"]["classification_pending"])
+
+    def test_refresh_preserves_independent_classifier_pending_flags(self):
+        self.run_sync()
+        for topic_pending, content_pending in ((False, True), (True, False)):
+            state = self.state()
+            state["records"]["post:1"].update(classification_pending=topic_pending,
+                                               content_classification_pending=content_pending)
+            (self.root / "state.json").write_bytes(sync.json_bytes(state))
+            self.run_sync()
+            item = self.state()["records"]["post:1"]
+            self.assertEqual(item["classification_pending"], topic_pending)
+            self.assertEqual(item["content_classification_pending"], content_pending)
 
     def test_classification_content_fields_queue_post(self):
         changes = (
@@ -391,6 +408,7 @@ class SyncTests(unittest.TestCase):
                     record["modified"] = record["modified_gmt"] = "2026-10-08T12:00:00"
                     self.run_sync()
                     self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
+                    self.assertTrue(self.state()["records"]["post:1"]["content_classification_pending"])
 
     def test_missing_valid_previous_source_conservatively_queues_post(self):
         self.run_sync()
@@ -429,6 +447,7 @@ class SyncTests(unittest.TestCase):
                 self.records[0]["modified"] = self.records[0]["modified_gmt"] = f"2026-10-{index:02}T12:00:00"
                 self.run_sync(metadata_loader=metadata)
                 self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
+                self.assertTrue(self.state()["records"]["post:1"]["content_classification_pending"])
 
     def test_pending_survives_failed_asset_retry_and_offline_rebuild(self):
         self.run_sync()
@@ -442,15 +461,18 @@ class SyncTests(unittest.TestCase):
         self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
         entries = [json.loads(line) for line in (self.articles / "index.jsonl").read_text().splitlines()]
         self.assertTrue(next(item for item in entries if item["key"] == "post:1")["classification_pending"])
+        self.assertTrue(next(item for item in entries if item["key"] == "post:1")["content_classification_pending"])
 
     def test_existing_legacy_record_without_pending_flag_is_not_mass_queued(self):
         self.run_sync()
         state = self.state()
         for item in state["records"].values():
             item.pop("classification_pending", None)
+            item.pop("content_classification_pending", None)
         (self.root / "state.json").write_bytes(sync.json_bytes(state))
         self.run_sync()
         self.assertFalse(self.state()["records"]["post:1"]["classification_pending"])
+        self.assertFalse(self.state()["records"]["post:1"]["content_classification_pending"])
 
     def test_legacy_protected_record_remains_incomplete_and_is_retried(self):
         self.records = [post()]

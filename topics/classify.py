@@ -280,10 +280,12 @@ def validate_result(result, allowed):
     return topics
 
 
-def codex_exec(request, executable=None, timeout=600):
+def codex_exec(request, executable=None, timeout=600, *, model=None, reasoning=None):
     executable = executable or shutil.which("codex")
     if not executable:
         raise ClassificationError("A codex CLI nem található a PATH-on.")
+    model = model or MODEL
+    reasoning = reasoning or REASONING
     with tempfile.TemporaryDirectory(prefix="kiszamolo-classify-") as directory:
         workdir = Path(directory)
         if workdir.resolve().is_relative_to(ROOT.resolve()):
@@ -291,8 +293,8 @@ def codex_exec(request, executable=None, timeout=600):
         schema_path, result_path = workdir / "schema.json", workdir / "result.json"
         schema_path.write_text(json.dumps(request["schema"], ensure_ascii=False), encoding="utf-8")
         command = [executable, "exec", "--ignore-user-config", "--ephemeral", "--skip-git-repo-check",
-                   "--sandbox", "read-only", "--model", MODEL,
-                   "-c", f"model_reasoning_effort='{REASONING}'", "-c", "forced_login_method='chatgpt'",
+                   "--sandbox", "read-only", "--model", model,
+                   "-c", f"model_reasoning_effort='{reasoning}'", "-c", "forced_login_method='chatgpt'",
                    "-c", "web_search='disabled'", "--disable", "shell_tool", "--disable", "multi_agent",
                    "--disable", "apps", "--disable", "hooks", "--output-schema", str(schema_path),
                    "--output-last-message", str(result_path), "--json"]
@@ -310,17 +312,67 @@ def codex_exec(request, executable=None, timeout=600):
         except subprocess.TimeoutExpired:
             raise ClassificationError("A modellhívás időtúllépés miatt megállt; nincs automatikus újrapróbálkozás.") from None
         if process.returncode:
-            details = " ".join(process.stderr.split())[-1000:]
+            details = _codex_failure_details(process.stdout, process.stderr)
             message = f"A Codex hívás sikertelen (kilépési kód: {process.returncode})."
             raise ClassificationError(f"{message} {details}" if details else message)
         for line in process.stdout.splitlines():
             event = json.loads(line)
             kind = event.get("type", "")
+            if kind in {"error", "turn.failed"}:
+                details = _codex_failure_details(process.stdout, process.stderr)
+                message = "A Codex futás végzetes hibát jelzett."
+                raise ClassificationError(f"{message} {details}" if details else message)
+            item = event.get("item") if isinstance(event.get("item"), dict) else {}
+            item_type = item.get("type", "")
+            if (kind in {"item.started", "item.updated", "item.completed"}
+                    and item_type == "error"):
+                # Codex's item-level error is a nonfatal diagnostic; the output file
+                # remains authoritative unless a top-level fatal event was emitted.
+                continue
             if (any(word in kind.lower() for word in ("tool", "mcp", "command"))
-                    or kind in {"item.started", "item.completed"}
-                    and event.get("item", {}).get("type") not in {"reasoning", "agent_message"}):
-                raise ClassificationError("A modell tiltott eszközt próbált használni.")
-        return load_json(result_path)
+                    or kind in {"item.started", "item.updated", "item.completed"}
+                    and item_type not in {"reasoning", "agent_message"}):
+                detail = f"{kind}/{item_type}"[:120]
+                raise ClassificationError(f"A modell tiltott eszközt próbált használni ({detail}).")
+        try:
+            return load_json(result_path)
+        except FileNotFoundError as error:
+            details = _codex_failure_details(process.stdout, process.stderr)
+            message = "A Codex futás nem készített eredményfájlt."
+            raise ClassificationError(f"{message} {details}" if details else message) from error
+
+
+def _codex_failure_details(stdout, stderr, limit=1000):
+    """Extract bounded diagnostics from recognized Codex errors and stderr."""
+    events = []
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("type")
+        message = event.get("message") if kind == "error" else None
+        item = event.get("item")
+        if (kind in {"item.started", "item.updated", "item.completed"}
+                and isinstance(item, dict) and item.get("type") == "error"):
+            message = item.get("message")
+        if kind == "turn.failed":
+            error = event.get("error")
+            message = error.get("message") if isinstance(error, dict) else None
+        if isinstance(message, str) and message.strip():
+            events.append(" ".join(message.split()))
+    event_details = " ".join(events)
+    stderr_details = " ".join(stderr.split())
+    if not event_details:
+        return stderr_details[-limit:]
+    if not stderr_details:
+        return event_details[-limit:]
+    # Reserve half of the bounded diagnostic for each source so stderr cannot hide a quota error.
+    event_limit = limit // 2
+    stderr_limit = limit - event_limit - 1
+    return f"{event_details[-event_limit:]} {stderr_details[-stderr_limit:]}"
 
 
 @contextmanager

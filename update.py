@@ -8,10 +8,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "automation/content-mirror"))
-sys.path.insert(0, str(ROOT / "topics"))
 
 import sync
-import classify
+from topics import classify
+from classification import classify as content_classifier
 
 
 def confirm_reclassification(count):
@@ -41,50 +41,76 @@ def run_update(root=ROOT, *, progress=print, confirm=None):
         assignments = classify.validate_assignments(
             classify.load_json(root / "topics/assignments.json"),
             {topic["id"] for topic in vocabulary["topics"]})
+        content_assignments = content_classifier.validate_assignments(
+            classify.load_json(root / "classification/assignments.json"))
         posts = sorted((item for item in state["records"].values() if item["type"] == "post"),
                        key=lambda item: int(item["id"]))
         new = [item for item in posts if str(item["id"]) not in assignments]
         changed = [item for item in posts if str(item["id"]) in assignments and item.get("classification_pending")]
+        new_ids = {str(item["id"]) for item in new}
+        content_new = [item for item in posts if str(item["id"]) not in content_assignments and (
+            item.get("content_classification_pending") or item.get("classification_pending")
+            or str(item["id"]) in new_ids)]
+        content_changed = [item for item in posts if str(item["id"]) in content_assignments
+                           and item.get("content_classification_pending")]
+        for item in content_new:
+            item["content_classification_pending"] = True
+        if content_new:
+            sync.atomic_write(source_root / "state.json", sync.json_bytes(state))
         report = dict(started_at=sync.utc_now().isoformat(), new_candidates=len(new),
                       changed_candidates=len(changed), classified=[], reclassified=[],
                       review_required=[], errors=[], reclassification_approved=None,
+                      content_new_candidates=len(content_new), content_changed_candidates=len(content_changed),
+                      content_classified=[], content_reclassified=[], content_review_required=[], content_errors=[],
                       incomplete_downloads=sync_report["incomplete_records"])
 
         def save_report():
             report["pending_article_ids"] = [item["id"] for item in posts
                 if item.get("classification_pending") or str(item["id"]) not in assignments]
+            report["content_pending_article_ids"] = [item["id"] for item in posts
+                if item.get("content_classification_pending")]
             report["updated_at"] = sync.utc_now().isoformat()
             sync.atomic_write(articles_root / "update-report.json", sync.json_bytes(report))
 
-        def process(items, *, force):
+        def process(items, *, force, content=False):
+            classifier = content_classifier if content else classify
+            prefix = "content_" if content else ""
+            pending_flag = "content_classification_pending" if content else "classification_pending"
             for number, item in enumerate(items, 1):
                 aid = str(item["id"])
-                progress(f"{'Újbóli besorolás' if force else 'Témakörök szerinti besorolás'}: {number}/{len(items)} · {aid} · {item['title']}")
+                kind = "Tartalmi" if content else "Témakörök szerinti"
+                progress(f"{kind} {'újrabesorolás' if force else 'besorolás'}: {number}/{len(items)} · {aid} · {item['title']}")
                 try:
-                    result = classify.classify_article(aid, root=root, force=force)
+                    result = classifier.classify_article(aid, root=root, force=force)
                 except classify.ReviewRequired as error:
-                    report["review_required"].append(dict(id=item["id"], title=item["title"], reason=str(error)))
+                    report[prefix + "review_required"].append(dict(id=item["id"], title=item["title"], reason=str(error)))
                 except (classify.ClassificationError, OSError, ValueError, subprocess.TimeoutExpired) as error:
-                    report["errors"].append(dict(id=item["id"], title=item["title"], reason=str(error)))
+                    report[prefix + "errors"].append(dict(id=item["id"], title=item["title"], reason=str(error)))
                 else:
-                    # The registry owns pending work; assignments contain only topics.
-                    item.pop("classification_pending", None)
+                    # Each classifier acknowledges only its own registry flag.
+                    item.pop(pending_flag, None)
                     sync.atomic_write(source_root / "state.json", sync.json_bytes(state))
-                    assignments[aid] = {"topics": result["topics"]}
-                    report["reclassified" if force else "classified"].append(item["id"])
+                    if content:
+                        content_assignments[aid] = {"content_nature": result["content_nature"]}
+                    else:
+                        assignments[aid] = {"topics": result["topics"]}
+                    report[prefix + ("reclassified" if force else "classified")].append(item["id"])
                 save_report()
 
         save_report()
         try:
             process(new, force=False)
-            if changed:
-                approved = len(changed) <= 5 or (confirm or confirm_reclassification)(len(changed))
+            process(content_new, force=False, content=True)
+            changed_ids = {item["id"] for item in changed + content_changed}
+            if changed_ids:
+                approved = len(changed_ids) <= 5 or (confirm or confirm_reclassification)(len(changed_ids))
                 report["reclassification_approved"] = approved
                 save_report()
                 if approved:
                     process(changed, force=True)
+                    process(content_changed, force=True, content=True)
                 else:
-                    progress(f"Újbóli besorolás elhalasztva: {len(changed)} cikk függőben maradt.")
+                    progress(f"Újbóli besorolás elhalasztva: {len(changed_ids)} cikk függőben maradt.")
         finally:
             sync.publish_article_index(articles_root, state)
 
@@ -93,7 +119,10 @@ def run_update(root=ROOT, *, progress=print, confirm=None):
         progress(f"Kész: {len(report['classified'])} besorolva, {len(report['reclassified'])} újra besorolva; "
                  f"{len(report['pending_article_ids'])} cikk függőben, "
                  f"{report['incomplete_downloads']} hiányos letöltés.")
-        for kind in ("review_required", "errors"):
+        progress(f"Tartalmi besorolás: {len(report['content_classified'])} új, "
+                 f"{len(report['content_reclassified'])} frissített, "
+                 f"{len(report['content_pending_article_ids'])} függőben.")
+        for kind in ("review_required", "errors", "content_review_required", "content_errors"):
             for issue in report[kind]:
                 progress(f"Teendő · {issue['id']} · {issue['title']}: {issue['reason']}")
         progress(f"Részletek: {articles_root / 'update-report.json'}")
@@ -101,12 +130,13 @@ def run_update(root=ROOT, *, progress=print, confirm=None):
 
 
 def main(argv=None, *, root=ROOT):
-    parser = argparse.ArgumentParser(description="A helyi cikkgyűjtemény frissítése és témakörök szerinti besorolása.")
+    parser = argparse.ArgumentParser(description="A helyi cikkgyűjtemény frissítése, témakörök és tartalmi jelleg besorolása.")
     parser.parse_args(argv)
     try:
         report = run_update(root)
         return 2 if (report["pending_article_ids"] or report["incomplete_downloads"]
-                     or report["review_required"] or report["errors"]) else 0
+                     or report["review_required"] or report["errors"] or report["content_pending_article_ids"]
+                     or report["content_review_required"] or report["content_errors"]) else 0
     except KeyboardInterrupt:
         print("Megszakítva; a megmaradt teendőkhöz indítsd újra a parancsot.", file=sys.stderr)
         return 130

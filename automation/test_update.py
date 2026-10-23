@@ -21,8 +21,14 @@ class UpdateTests(unittest.TestCase):
         self.source.mkdir(parents=True)
         self.articles.mkdir()
         (self.root / "topics").mkdir()
+        (self.root / "classification").mkdir()
+        (self.root / "classification/README.md").write_text(
+            (Path(__file__).resolve().parent.parent / "classification/README.md").read_text(encoding="utf-8"),
+            encoding="utf-8")
         self.records = {}
         self.assignments = {}
+        self.content_assignments = {}
+        self.write_json(self.root / "classification/assignments.json", {"articles": {}})
         self.write_json(self.root / "topics/topics.json", {"topics": [{"id": "topic"}, {"id": "old"}]})
         sync_patch = mock.patch.object(update.sync, "run_sync", return_value={"incomplete_records": 0})
         self.addCleanup(sync_patch.stop)
@@ -32,24 +38,34 @@ class UpdateTests(unittest.TestCase):
             "topics": [{"id": "topic", "evidence": "The article covers this topic."}], "review_reason": None})
         self.addCleanup(model_patch.stop)
         self.model = model_patch.start()
+        content_patch = mock.patch.object(update.content_classifier, "codex_exec", return_value={
+            "content_nature": [{"id": "explanatory", "evidence": "The article explains a method."}],
+            "review_case": None})
+        self.addCleanup(content_patch.stop)
+        self.content_model = content_patch.start()
         self.confirm = mock.Mock(return_value=True)
         self.output = []
 
     def write_json(self, path, value):
         path.write_text(json.dumps(value), encoding="utf-8")
 
-    def add_post(self, aid, *, assigned=False, pending=False, incomplete=False):
+    def add_post(self, aid, *, assigned=False, pending=False, incomplete=False,
+                 content_assigned=False, content_pending=False):
         self.records[f"post:{aid}"] = dict(id=aid, key=f"post:{aid}", type="post", title=f"Title {aid}",
             directory=f"records/posts/{aid}", path=f"{aid}.md", status="active", published_at="2026-10-21",
-            acquisition_status="incomplete" if incomplete else "complete", classification_pending=pending)
+            acquisition_status="incomplete" if incomplete else "complete", classification_pending=pending,
+            content_classification_pending=content_pending)
         (self.articles / f"{aid}.md").write_text(f"# Title {aid}\n\nFull content for article {aid}.", encoding="utf-8")
         if assigned:
             self.assignments[str(aid)] = {"topics": ["old"]}
+        if content_assigned:
+            self.content_assignments[str(aid)] = {"content_nature": []}
 
     def prepare(self):
         state = {"schema_version": 1, "records": self.records, "assets": {}, "articles_root": str(self.articles)}
         self.write_json(self.source / "state.json", state)
         self.write_json(self.root / "topics/assignments.json", {"articles": self.assignments})
+        self.write_json(self.root / "classification/assignments.json", {"articles": self.content_assignments})
         update.sync.publish_article_index(self.articles, state)
 
     def run_update(self):
@@ -62,13 +78,100 @@ class UpdateTests(unittest.TestCase):
     def stored_assignments(self):
         return json.loads((self.root / "topics/assignments.json").read_text(encoding="utf-8"))["articles"]
 
+    def stored_content(self):
+        return json.loads((self.root / "classification/assignments.json").read_text(encoding="utf-8"))["articles"]
+
     def test_no_changes_use_no_ai_and_do_not_request_approval(self):
         self.add_post(1, assigned=True)
         report = self.run_update()
         self.model.assert_not_called()
+        self.content_model.assert_not_called()
         self.confirm.assert_not_called()
         self.assertEqual(report["pending_article_ids"], [])
         self.assertEqual(self.stored_assignments(), self.assignments)
+
+    def test_new_article_uses_independent_calls_and_stores(self):
+        self.add_post(1, pending=True)
+        report = self.run_update()
+        self.model.assert_called_once()
+        self.content_model.assert_called_once()
+        self.assertEqual(self.stored_assignments()["1"], {"topics": ["topic"]})
+        self.assertEqual(self.stored_content()["1"], {"content_nature": ["explanatory"]})
+        self.assertEqual(report["content_classified"], [1])
+        self.assertEqual(report["content_pending_article_ids"], [])
+
+    def test_content_only_work_keeps_topics_untouched(self):
+        self.add_post(1, assigned=True, content_pending=True)
+        report = self.run_update()
+        self.model.assert_not_called()
+        self.content_model.assert_called_once()
+        self.assertEqual(self.stored_assignments(), self.assignments)
+        self.assertEqual(report["content_classified"], [1])
+
+    def test_topic_review_does_not_block_content_classification(self):
+        self.add_post(1, pending=True)
+        self.model.return_value = {"topics": [], "review_reason": "A new topic is needed."}
+        report = self.run_update()
+        self.assertEqual(report["pending_article_ids"], [1])
+        self.assertEqual(report["content_pending_article_ids"], [])
+        self.assertEqual(report["content_classified"], [1])
+        self.assertNotIn("1", self.stored_assignments())
+        self.assertIn("1", self.stored_content())
+
+    def test_content_review_retries_without_repeating_successful_topics(self):
+        self.add_post(1, pending=True)
+        self.content_model.side_effect = update.classify.ReviewRequired("Missing required image.")
+        first = self.run_update()
+        self.assertEqual(first["pending_article_ids"], [])
+        self.assertEqual(first["content_pending_article_ids"], [1])
+        self.assertEqual(first["content_review_required"][0]["id"], 1)
+        self.model.reset_mock()
+        self.content_model.side_effect = None
+        second = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
+        self.model.assert_not_called()
+        self.assertEqual(second["content_classified"], [1])
+        self.assertEqual(second["content_pending_article_ids"], [])
+        self.assertEqual(self.stored_assignments()["1"], {"topics": ["topic"]})
+
+    def test_evaluated_empty_content_is_not_unprocessed(self):
+        self.add_post(1, assigned=True, content_assigned=True)
+        report = self.run_update()
+        self.model.assert_not_called()
+        self.content_model.assert_not_called()
+        self.assertEqual(self.stored_content(), self.content_assignments)
+
+    def test_content_reclassification_error_preserves_old_record(self):
+        self.add_post(1, assigned=True, content_assigned=True, content_pending=True)
+        self.content_model.side_effect = update.classify.ClassificationError("Model failed.")
+        report = self.run_update()
+        self.assertEqual(report["content_errors"][0]["id"], 1)
+        self.assertEqual(report["content_pending_article_ids"], [1])
+        self.assertEqual(self.stored_content(), self.content_assignments)
+        self.model.assert_not_called()
+
+    def test_shared_reclassification_approval_counts_articles_once(self):
+        for aid in range(1, 7):
+            self.add_post(aid, assigned=True, pending=True, content_assigned=True, content_pending=True)
+        report = self.run_update()
+        self.confirm.assert_called_once_with(6)
+        self.assertEqual(report["reclassified"], list(range(1, 7)))
+        self.assertEqual(report["content_reclassified"], list(range(1, 7)))
+
+    def test_interrupted_content_keeps_its_own_unfinished_work(self):
+        self.add_post(1, assigned=True, content_pending=True)
+        self.add_post(2, assigned=True, content_pending=True)
+        self.content_model.side_effect = [self.content_model.return_value, KeyboardInterrupt()]
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_update()
+        records = self.stored_state()["records"]
+        self.assertFalse(records["post:1"].get("content_classification_pending"))
+        self.assertTrue(records["post:2"].get("content_classification_pending"))
+        self.content_model.side_effect = None
+        self.content_model.reset_mock()
+        report = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
+        self.model.assert_not_called()
+        self.content_model.assert_called_once()
+        self.assertEqual(report["content_classified"], [2])
 
     def test_five_changed_articles_are_reclassified_automatically(self):
         for aid in range(1, 6):
@@ -212,6 +315,23 @@ class UpdateTests(unittest.TestCase):
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             self.assertEqual(update.main([], root=self.root), 2)
         self.model.assert_not_called()
+
+    def test_cli_returns_two_for_content_only_failure(self):
+        self.add_post(1, assigned=True, content_pending=True)
+        self.prepare()
+        self.content_model.side_effect = update.classify.ClassificationError("Model failed.")
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            self.assertEqual(update.main([], root=self.root), 2)
+        self.model.assert_not_called()
+
+    def test_unassigned_old_content_does_not_trigger_bulk_model_calls(self):
+        self.add_post(1, assigned=True)
+        self.prepare()
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            self.assertEqual(update.main([], root=self.root), 0)
+        self.content_model.assert_not_called()
+        report = json.loads((self.articles / "update-report.json").read_text(encoding="utf-8"))
+        self.assertEqual(report.get("content_pending_article_ids"), [])
 
     def test_real_sync_and_classification_integrate_without_network_or_ai(self):
         from test_sync import FakeClient, post

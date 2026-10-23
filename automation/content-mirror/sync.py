@@ -829,6 +829,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
         for item in state["records"].values():
             if item.get("type") == "post":
                 item.setdefault("classification_pending", False)
+                item.setdefault("content_classification_pending", False)
         inventories = [inventory_loader(client, kind, progress=progress) for kind in ("posts", "pages")]
         census = [record for inv in inventories for record in inv.records]
         if len({record["id"] for record in census}) != len(census):
@@ -972,8 +973,11 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                         featured_classification_content(old_featured) != featured_classification_content(featured_record))
                     item["classification_pending"] = bool(
                         previous.get("classification_pending") or not previous or source_changed or featured_changed)
+                    item["content_classification_pending"] = bool(
+                        previous.get("content_classification_pending") or not previous or source_changed or featured_changed)
                 else:
                     item.pop("classification_pending", None)
+                    item.pop("content_classification_pending", None)
                 item.pop("remote_missing_since", None)
                 atomic_write(root / directory / "source.json", json_bytes(record))
                 atomic_write(root / directory / "source.html", record["content"]["rendered"].encode("utf-8"))
@@ -1098,6 +1102,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             for key, item in state["records"].items():
                 if item.get("type") == "post" and changed_asset_urls.intersection(item.get("asset_urls", [])):
                     item["classification_pending"] = True
+                    item["content_classification_pending"] = True
         for key, item in state["records"].items():
             if key in planned_paths:
                 item["path"] = planned_paths[key]
