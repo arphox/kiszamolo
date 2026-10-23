@@ -1,8 +1,9 @@
 # Local downloads and processing cache.
 /.local-cache/
 
-# Generated archive; tracking is deferred until article content stabilizes.
-/blog/content-mirror/articles/
+# Generated archive; keep the hand-maintained exclusions tracked.
+/blog/content-mirror/articles/*
+!/blog/content-mirror/articles/exclusions.json
 
 # Python bytecode and local virtual environments.
 __pycache__/

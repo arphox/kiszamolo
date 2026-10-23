@@ -20,6 +20,7 @@ class UpdateTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.articles = self.root / "blog/content-mirror/articles"
         self.articles.mkdir(parents=True)
+        self.write_json(self.root / update.sync.EXCLUSIONS_PATH, {})
         self.index_path = self.root / update.catalog.INDEX_PATH
         (self.root / "blog/enrichment").mkdir(parents=True)
         self.records = {}

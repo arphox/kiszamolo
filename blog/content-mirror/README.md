@@ -33,7 +33,7 @@ A frissítő beolvassa az indexet, és lekéri a blog könnyű leltárát. Csak 
 
 A cikkadatok közvetlenül az API-válaszból készülnek. Ha az API nem tartalmaz szöveget, a letöltő megpróbálja a nyilvános cikkoldalból kinyerni. A nyers API-válaszokat és HTML-forrásokat nem őrizzük meg külön archívumban. A blogról eltűnt cikk helyi példánya megmarad.
 
-Az [exclusions.json](automation/exclusions.json) tartalmazza a kézzel kizárt rekordokat és az indoklást. A frissítés eltávolítja ezeket a helyi gyűjteményből. A kizárásokról a felhasználó dönt, a besoroló önállóan nem zár ki cikket.
+Az [articles/exclusions.json](articles/exclusions.json) tartalmazza a kézzel kizárt rekordokat WordPress-ID → indoklás formában. Az ID önmagában azonosítja a bejegyzéseket és az oldalakat, típuselőtag nélkül. A frissítés eltávolítja ezeket a helyi gyűjteményből. A kizárásokról a felhasználó dönt, a besoroló önállóan nem zár ki cikket.
 
 A gyűjtemény a blog tudásanyagát fedi le. Kizárjuk a navigációs, cikkjegyzék-, szolgáltatás-, eszköz- és adminisztratív oldalakat, a tesztanyagokat és a külön kiválasztott alkalmi közleményeket. Szintén kizárjuk a saját érdemi szöveg nélküli bejegyzéseket akkor is, ha a beágyazott videó vagy ábra hozzáférhető, feldolgozható tudásanyagot tartalmaz. Kizárjuk továbbá az elérhetetlenné vált érdemi tartalomra mutató bejegyzéseket, valamint a blog tudásanyagához lazán kapcsolódó, saját magyarázat nélküli egyszeri külső érdekességeket. Az új WordPress-oldalak nem záródnak ki automatikusan; a témakör-besorolás állapota és a szöveghossz önmagában nem kizárási ok.
 

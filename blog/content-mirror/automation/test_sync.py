@@ -42,6 +42,9 @@ class SyncTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        self.exclusions_path = self.root / sync.EXCLUSIONS_PATH
+        self.exclusions_path.parent.mkdir(parents=True)
+        self.exclusions_path.write_text("{}", encoding="utf-8")
         self.client = FakeClient()
         self.records = [post()]
         self.detail_calls = []
@@ -185,11 +188,16 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(self.index(), {"1": self.records[0]["modified_gmt"]})
 
     def test_exclusions_skip_download_and_prune_even_when_not_in_remote_census(self):
-        self.records.append(post(104048))
+        exclusions = {"2": "Administrative page.", "104048": "Protected post."}
+        self.exclusions_path.write_text(json.dumps(exclusions), encoding="utf-8")
+        page = dict(post(2), type="page")
+        self.records.extend([post(104048), page])
         report = self.run_update()
         self.assertEqual(self.detail_calls, [("posts", [1])])
-        self.assertIn("post:104048", report["excluded_records"])
+        self.assertEqual(report["excluded_records"], exclusions)
+        self.assertEqual(report["post_ids"], [1])
         self.assertNotIn("104048", self.index())
+        self.assertNotIn("2", self.index())
 
         metadata = {"id": 104048, "type": "post", "title": "Excluded",
                     "url": "https://kiszamolo.hu/excluded/",
@@ -207,6 +215,31 @@ class SyncTests(unittest.TestCase):
         self.run_update()
         self.assertNotIn("104048", self.index())
         self.assertFalse(path.exists())
+
+    def test_exclusions_prune_index_only_and_unindexed_local_records(self):
+        self.run_update()
+        self.exclusions_path.write_text(json.dumps({"2": "Administrative page.",
+                                                    "104048": "Protected post."}), encoding="utf-8")
+        index = self.index()
+        index["104048"] = self.records[0]["modified_gmt"]
+        catalog.save_index(self.root, index)
+        metadata, _ = catalog.read_article(self.article())
+        metadata.update(id=2, type="page", url="https://kiszamolo.hu/excluded/")
+        path = self.root / catalog.ARTICLES_PATH / "2010/01/2010-01-01 00.00 Excluded [2].md"
+        catalog.write_article(path, metadata, "# Excluded\n")
+        relative = sync._relative_url(self.article().parent, path)
+        original_metadata, original_body = catalog.read_article(self.article())
+        catalog.write_article(self.article(), original_metadata,
+                              original_body + f"\n[Excluded]({relative})\n")
+
+        report = self.run_update()
+
+        self.assertEqual(set(report["excluded_records"]), {"2", "104048"})
+        self.assertEqual(self.index(), {"1": self.records[0]["modified_gmt"]})
+        self.assertFalse(path.exists())
+        _, body = catalog.read_article(self.article())
+        self.assertIn("[Excluded](https://kiszamolo.hu/excluded/)", body)
+        self.assertNotIn(relative, body)
 
     def test_empty_api_body_uses_public_html_fallback(self):
         self.records = [post(body="")]

@@ -25,9 +25,7 @@ from render import extract_public_content, make_markdown, plain_title, rewrite_h
 
 ROOT = Path(__file__).resolve().parents[3]
 ALLOWED_HOSTS = {"kiszamolo.hu", "www.kiszamolo.hu"}
-EXCLUDED_RECORDS = json.loads(Path(__file__).with_name("exclusions.json").read_text(encoding="utf-8"))
-EXCLUDED_IDS = {int(key.split(":", 1)[1]) for key in EXCLUDED_RECORDS}
-EXCLUSIONS_BY_ID = {int(key.split(":", 1)[1]): key for key in EXCLUDED_RECORDS}
+EXCLUSIONS_PATH = ARTICLES_PATH / "exclusions.json"
 
 
 def record_key(record):
@@ -123,6 +121,7 @@ def run_sync(root=ROOT, *, client=None, inventory_loader=fetch_census,
               "excluded_records": [], "post_ids": []}
 
     with exclusive_run(root):
+        exclusions = json.loads((root / EXCLUSIONS_PATH).read_text(encoding="utf-8"))
         modified_by_id = load_index(root)
         local_paths = list_article_paths(root)
         inventories = [inventory_loader(client, kind, progress=progress)
@@ -132,31 +131,15 @@ def run_sync(root=ROOT, *, client=None, inventory_loader=fetch_census,
         if len(census_by_id) != len(census):
             raise ValueError("Duplicate WordPress IDs across posts and pages")
 
-        excluded = {}
-        for record in census:
-            key = record_key(record)
-            if key in EXCLUDED_RECORDS:
-                excluded[key] = EXCLUDED_RECORDS[key]
-        for item_id in sorted(EXCLUDED_IDS &
-                              ({int(value) for value in modified_by_id} | {int(value) for value in local_paths})):
-            remote = census_by_id.get(item_id)
-            if remote is not None:
-                key = record_key(remote)
-            else:
-                path = local_paths.get(str(item_id))
-                if path is not None and path.is_file():
-                    key = record_key(read_metadata(path))
-                else:
-                    key = EXCLUSIONS_BY_ID[item_id]
-            if key in EXCLUDED_RECORDS:
-                excluded[key] = EXCLUDED_RECORDS[key]
+        known_ids = {str(item_id) for item_id in census_by_id} | set(modified_by_id) | set(local_paths)
+        excluded = {identity: reason for identity, reason in exclusions.items()
+                    if identity in known_ids}
         report["excluded_records"] = excluded
 
         deleted_targets = {}
-        for key in excluded:
-            item_id = int(key.split(":", 1)[1])
-            modified_by_id.pop(str(item_id), None)
-            path = local_paths.pop(str(item_id), None)
+        for identity in excluded:
+            modified_by_id.pop(identity, None)
+            path = local_paths.pop(identity, None)
             if path is not None:
                 if not path.is_absolute():
                     path = article_root / path
@@ -167,7 +150,7 @@ def run_sync(root=ROOT, *, client=None, inventory_loader=fetch_census,
         if excluded:
             save_index(root, modified_by_id)
 
-        excluded_ids = {int(key.split(":", 1)[1]) for key in excluded}
+        excluded_ids = {int(identity) for identity in excluded}
         census = [item for item in census if item["id"] not in excluded_ids]
         census_by_id = {record["id"]: record for record in census}
 

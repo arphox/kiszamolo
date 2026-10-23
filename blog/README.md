@@ -38,6 +38,7 @@ A frissítő a `content-mirror/articles/wordpress-modified.json` alapján dönti
 | --- | --- |
 | `blog/content-mirror/articles/` | Az olvasható cikkek és oldalak, saját metaadataikkal. |
 | `blog/content-mirror/articles/wordpress-modified.json` | A cikkek azonosítói és WP-módosítási idői a frissítéshez. |
+| `blog/content-mirror/articles/exclusions.json` | A [kézzel kizárt rekordok és indoklásuk](content-mirror/README.md#frissítés). |
 | `blog/content-mirror/automation/` | A [letöltő és feldolgozó](content-mirror/README.md), a tesztjeivel együtt. |
 | `blog/enrichment/` | [Témakörök és tartalmi jelleg](enrichment/README.md), közös nyilvántartás és besoroló. |
 | `blog/update.py` | A letöltést és a besorolást összefogó parancs. |
@@ -71,7 +72,7 @@ A csak letöltéshez és az index újraépítéséhez szükséges parancsokat a 
 - A letöltő a jelenleg elérhető tartalmat követi; a cikkek korábbi változatairól nem készít történetet. Ha egy cikk eltűnik a blogról, a már mentett helyi példánya megmarad.
 - A hozzászólásokat nem gyűjtjük.
 - A képek, mellékletek és a külső videólejátszók tartalmai webes hivatkozásként maradnak meg. A gyűjtemény ezért nem minden részében használható internet nélkül; a webes kalkulátorok működését sem másolja le.
-- A teljes `blog/content-mirror/articles/` mappa egyelőre ki van zárva a Gitből, az indexszel együtt; a cikkek tartalmának stabilizálódására várunk. Addig ezt a mappát külön is menteni kell. A besorolási nyilvántartás a repó része.
+- A `blog/content-mirror/articles/` mappában a cikkek és a frissítési index egyelőre ki vannak zárva a Gitből; a cikkek tartalmának stabilizálódására várunk. Addig ezt a mappát külön is menteni kell. A kézzel karbantartott kizárási lista és a besorolási nyilvántartás a repó része.
 
 ## Tesztek
 
