@@ -501,72 +501,13 @@ def _decode_record_batch(response: Response, kind: str) -> list[dict]:
 
 
 def fetch_metadata(client: HttpClient, kind: str, ids=None, *, api_base=API_BASE,
-                   fields=None,
                    progress=lambda message: None) -> Inventory:
-    """Fetch public taxonomy metadata or selected media, retaining complete records."""
-    if kind not in {"categories", "tags", "media"}:
-        raise ValueError("kind must be 'categories', 'tags', or 'media'")
+    """Fetch selected public media metadata, retaining complete records."""
+    if kind != "media":
+        raise ValueError("kind must be 'media'")
     endpoint = api_base.rstrip("/") + "/" + kind
     _validate_url(endpoint)
     responses, records = [], []
-
-    if kind in {"categories", "tags"}:
-        if fields is not None:
-            fields = tuple(fields)
-            if not fields or any(not isinstance(field, str) or not field for field in fields):
-                raise ValueError("taxonomy fields must be non-empty strings")
-            fields = ",".join(fields)
-        expected_total = expected_pages = None
-        previous_id = 0
-        page = 1
-        while True:
-            params = {"per_page": PAGE_SIZE, "page": page,
-                      "orderby": "id", "order": "asc"}
-            if fields is not None:
-                params["_fields"] = fields
-            query = urlencode(params)
-            url = f"{endpoint}?{query}"
-            response = client.request_bytes(url, max_bytes=DEFAULT_MAX_BYTES)
-            batch = _decode_record_batch(response, kind)
-            total = _response_header(response, "X-WP-Total")
-            total_pages = _response_header(response, "X-WP-TotalPages")
-            if total_pages != math.ceil(total / PAGE_SIZE):
-                raise ValueError(f"Invalid WordPress {kind} pagination headers")
-            if expected_total is None:
-                expected_total, expected_pages = total, total_pages
-            elif (total, total_pages) != (expected_total, expected_pages):
-                raise ValueError(f"WordPress {kind} count changed during pagination")
-            expected_length = min(PAGE_SIZE, max(0, total - (page - 1) * PAGE_SIZE))
-            if len(batch) != expected_length:
-                raise ValueError(f"Incomplete WordPress {kind} page {page}")
-            for record in batch:
-                item_id = record.get("id")
-                if type(item_id) is not int or item_id <= previous_id:
-                    raise ValueError(f"WordPress {kind} IDs are duplicate or unordered")
-                previous_id = item_id
-                records.append(record)
-            responses.append((url, response))
-            progress(f"{kind}: page {page}/{max(1, total_pages)}, {len(records)}/{total}")
-            if page >= total_pages:
-                break
-            page += 1
-
-        probe_params = {"per_page": 1, "page": 1, "orderby": "id", "order": "asc"}
-        if fields is not None:
-            probe_params["_fields"] = "id"
-        probe_query = urlencode(probe_params)
-        probe_url = f"{endpoint}?{probe_query}"
-        probe = client.request_bytes(probe_url, max_bytes=DEFAULT_MAX_BYTES)
-        if probe.status != 200:
-            raise ValueError(f"Unexpected HTTP {probe.status} while rechecking {kind} count")
-        final_total = _response_header(probe, "X-WP-Total")
-        final_pages = _response_header(probe, "X-WP-TotalPages")
-        if final_total != expected_total or final_pages != final_total:
-            raise ValueError(f"WordPress {kind} count changed before inventory completion")
-        if len(records) != expected_total:
-            raise ValueError(f"Incomplete WordPress {kind} inventory")
-        responses.append((probe_url, probe))
-        return Inventory(records, responses)
 
     if ids is None:
         raise ValueError("ids are required when fetching media")

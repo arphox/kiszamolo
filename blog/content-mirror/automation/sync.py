@@ -506,6 +506,8 @@ def publish_article_index(articles_root, state):
     entries = []
     for record in records:
         entry = dict(record)
+        for field in ("categories", "tags", "category_names", "tag_names"):
+            entry.pop(field, None)
         entry["source_record"] = entry.pop("directory")
         page = dict(entry.get("page", {}))
         page.pop("path", None)
@@ -532,17 +534,6 @@ def publish_indexes(root, state, stats, report, articles_root=None, *, update_me
         title = item["title"].replace("[", "\\[").replace("]", "\\]").replace("\n", " ")
         md.append(f"- {item['published_at'][:10]} [{title}]({quote(item['path'], safe='/')})"
                   f" · {item['type']} · {item['status']} · {item['acquisition_status']}")
-    md.extend(["", "## Kategóriák", ""])
-    categories = {}
-    for item in records:
-        for category in item.get("category_names", []):
-            categories.setdefault(category, []).append(item)
-    for category, items in sorted(categories.items()):
-        md.extend([f"### {category}", ""])
-        for item in items:
-            title = item["title"].replace("[", "\\[").replace("]", "\\]").replace("\n", " ")
-            md.append(f"- [{title}]({quote(item['path'], safe='/')}) · {item['status']}")
-        md.append("")
     atomic_write(articles_root / "INDEX.md", ("\n".join(md) + "\n").encode("utf-8"))
     if update_media_sources:
         smd = ["# Médiaforrások", "", "A statisztika a legutóbbi `--rebuild` során feldolgozott helyi cikk- és oldaltörzsekben, valamint elérhető kiemelt képekben felismert URL-eket mutatja. A normál frissítés nem frissíti ezt a statisztikát. A srcset-változatok külön URL-nek számítanak; ez nem különálló ábrák száma.",
@@ -615,7 +606,6 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
             alt = html.escape(featured_record.get("alt_text", ""), quote=True)
             caption = featured_record.get("caption", {}).get("rendered", "")
             body = f'<figure><img src="{image_url}" alt="{alt}"><figcaption>{caption}</figcaption></figure>\n' + body
-        display_record = dict(record, category_names=item["category_names"], tag_names=item["tag_names"])
         rewritten = rewrite_html(body, record["link"], RelativePaths(directory, targets),
                                  RelativePaths(directory, embed_targets))
         soup = BeautifulSoup(rewritten, "html.parser")
@@ -629,7 +619,7 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
         if output_path.is_file():
             previous_markdown = output_path.read_text(encoding="utf-8")
             previous_anchors = set(re.findall(r'<a id="([^"]+)"></a>', previous_markdown))
-        markdown_text = make_markdown(display_record, str(soup),
+        markdown_text = make_markdown(record, str(soup),
             retained_anchors=retained_anchors | source_anchors | previous_anchors)
         if previous_anchors:
             missing_anchors = sorted(previous_anchors -
@@ -717,12 +707,6 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             record_loader=record_loader, progress=progress)
         fetched_keys &= scope_keys
         progress(f"Full records fetched: {len(fetched_keys)}; unchanged sources reused: {len(scope_keys) - len(fetched_keys)}")
-        need_taxonomies = bool(fetched_keys)
-        taxonomies = ({kind: metadata_loader(client, kind, progress=progress,
-                                            fields=("id", "name"))
-                       for kind in ("categories", "tags")} if need_taxonomies else {})
-        names = {kind: {term["id"]: plain_title(term["name"]) for term in inv.records}
-                 for kind, inv in taxonomies.items()}
         process_keys = ((fetched_keys | repair_keys) & scope_keys)
         if sample_ids is not None:
             process_keys.update(scope_keys)
@@ -760,7 +744,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                     except (ValueError, OSError):
                         pass
         api_sources = []
-        source_inventories = dict(zip(("inventory-posts", "inventory-pages"), inventories)) | detail_inventories | taxonomies
+        source_inventories = dict(zip(("inventory-posts", "inventory-pages"), inventories)) | detail_inventories
         if media_inventory:
             source_inventories["media"] = media_inventory
         for kind, inv in source_inventories.items():
@@ -819,10 +803,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                     published_at_gmt=record.get("date_gmt"), modified_at=record.get("modified"),
                     modified_at_gmt=record.get("modified_gmt"), url=record["link"],
                     directory=directory, status="active", last_seen_at=stamp,
-                    source_sha256=source_hash, categories=record.get("categories", []),
-                    tags=record.get("tags", []),
-                    category_names=[names["categories"].get(n, f"ID:{n}") for n in record.get("categories", [])],
-                    tag_names=[names["tags"].get(n, f"ID:{n}") for n in record.get("tags", [])],
+                    source_sha256=source_hash,
                     featured_media_sha256=media_hash,
                     featured_media_error=media_error if record.get("featured_media") in failed_media_ids else None,
                     protected_content=bool(record.get("content", {}).get("protected")),
@@ -849,11 +830,6 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                     atomic_write(root / directory / "source-featured-media.json", json_bytes(featured_record))
             else:
                 item = dict(previous)
-                if taxonomies:
-                    item["category_names"] = [names["categories"].get(n, f"ID:{n}")
-                                              for n in item.get("categories", [])]
-                    item["tag_names"] = [names["tags"].get(n, f"ID:{n}")
-                                         for n in item.get("tags", [])]
             item["path"] = planned_paths[key]
             state["records"][key] = item
             if newly_fetched:

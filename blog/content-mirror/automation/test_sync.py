@@ -180,25 +180,37 @@ class SyncTests(unittest.TestCase):
         refreshed = json.loads(stats_path.read_text(encoding="utf-8"))
         self.assertIn("outside.test", refreshed)
 
-    def test_unchanged_taxonomy_does_not_trigger_fetch_or_rerender(self):
-        self.records[0]["categories"] = [5]
-        current_name = "Finance"
+    def test_wordpress_taxonomy_is_neither_fetched_nor_persisted(self):
+        self.records[0].update(categories=[5], tags=[34])
         calls = []
 
         def metadata(client, kind, **kwargs):
             calls.append(kind)
-            return Inventory([{"id": 5, "name": current_name}] if kind == "categories" else [], [])
+            self.assertEqual(kind, "media")
+            return Inventory([], [])
 
         sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
             record_loader=self.details, metadata_loader=metadata, progress=lambda _: None)
-        self.assertEqual(self.state()["records"]["post:1"]["category_names"], ["Finance"])
-        calls.clear()
-        current_name = "Updated category"
-        with patch("sync.render_views", side_effect=AssertionError("Unchanged articles rerendered")):
-            sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
-                record_loader=self.details, metadata_loader=metadata, progress=lambda _: None)
         self.assertEqual(calls, [])
-        self.assertEqual(self.state()["records"]["post:1"]["category_names"], ["Finance"])
+        item = self.state()["records"]["post:1"]
+        for field in ("categories", "tags", "category_names", "tag_names"):
+            self.assertNotIn(field, item)
+        self.assertNotIn("Kategóriák", (self.articles / "INDEX.md").read_text(encoding="utf-8"))
+        indexed = json.loads((self.articles / "index.jsonl").read_text(encoding="utf-8").splitlines()[0])
+        for field in ("categories", "tags", "category_names", "tag_names"):
+            self.assertNotIn(field, indexed)
+
+    def test_taxonomy_only_source_change_does_not_queue_reclassification(self):
+        self.run_sync()
+        self.clear_classification_pending()
+        self.records[0].update(modified="2026-10-08T12:00:00", modified_gmt="2026-10-08T12:00:00",
+                               categories=[99], tags=[88])
+        self.run_sync()
+        item = self.state()["records"]["post:1"]
+        self.assertFalse(item["classification_pending"])
+        self.assertFalse(item["content_classification_pending"])
+        for field in ("categories", "tags", "category_names", "tag_names"):
+            self.assertNotIn(field, item)
 
     def test_only_explicitly_excluded_record_is_skipped_before_fetching(self):
         self.records.append(post(104048))
@@ -585,12 +597,13 @@ class SyncTests(unittest.TestCase):
             self.run_sync()
         self.assertEqual((self.root / "state.json").read_bytes(), before)
 
-    def test_featured_media_and_taxonomy_names_are_preserved(self):
+    def test_featured_media_metadata_is_preserved_without_taxonomy_metadata(self):
         self.records[0]["featured_media"] = 100
-        self.records[0]["categories"] = [5]
+        self.records[0].update(categories=[5], tags=[34])
+        metadata_calls = []
         def metadata(client, kind, **kwargs):
-            if kind == "categories":
-                return Inventory([{"id": 5, "name": "Finance"}], [])
+            metadata_calls.append(kind)
+            self.assertEqual(kind, "media")
             if kind == "media":
                 return Inventory([{"id": 100, "media_type": "image", "source_url": "https://kiszamolo.hu/hero.png",
                                    "alt_text": "Hero", "caption": {"rendered": "Caption"}}], [])
@@ -601,7 +614,10 @@ class SyncTests(unittest.TestCase):
         self.assertIn("https://kiszamolo.hu/hero.png", state["records"]["post:1"]["external_assets"])
         self.assertTrue((self.root / "records/posts/1/source-featured-media.json").is_file())
         text = self.article_file(1).read_text(encoding="utf-8")
-        self.assertIn('category_names: ["Finance"]', text)
+        self.assertNotIn("category_names", text)
+        for field in ("categories", "tags", "category_names", "tag_names"):
+            self.assertNotIn(field, state["records"]["post:1"])
+        self.assertEqual(metadata_calls, ["media"])
         self.assertIn("Hero", text)
         self.assertIn("Caption", text)
         def failed_metadata(client, kind, **kwargs):
@@ -999,7 +1015,7 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(report["page_failures"], {})
             self.assertEqual(report["incomplete_records"], 0)
         self.assertNotIn("media", [kind for kind, _ in calls])
-        self.assertTrue(all(kwargs["fields"] == ("id","name") for kind,kwargs in calls if kind!="media"))
+        self.assertTrue(all(kind == "media" for kind, _ in calls))
         self.assertIn("hero.png", json.dumps(self.state()["records"]["post:1"]["external_assets"]))
 
     def test_legacy_state_needs_no_modified_gmt_migration(self):

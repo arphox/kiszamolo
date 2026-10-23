@@ -458,50 +458,6 @@ class RemoteTests(unittest.TestCase):
         inventory = fetch_records(Client(), "pages", [7], api_base="https://example.test/wp-json/wp/v2")
         self.assertEqual(inventory.records, [record])
 
-    def test_metadata_fetches_all_taxonomy_pages_and_rechecks_count(self):
-        terms = [{"id": 4, "name": "One", "extra": {"kept": True}},
-                 {"id": 9, "name": "Two"}]
-
-        class Client:
-            def __init__(self):
-                self.calls = []
-
-            def request_bytes(self, url, max_bytes):
-                self.calls.append(url)
-                batch = terms if len(self.calls) == 1 else []
-                return Response(json.dumps(batch).encode(), 200, {
-                    "X-WP-Total": "2", "X-WP-TotalPages": "1" if "per_page=100" in url else "2",
-                }, url)
-
-        client = Client()
-        inventory = fetch_metadata(client, "categories", api_base="https://example.test/wp-json/wp/v2")
-        self.assertEqual(inventory.records, terms)
-        self.assertEqual(inventory.records[0]["extra"], {"kept": True})
-        self.assertEqual(len(client.calls), 2)
-        self.assertEqual(inventory.responses[0][1].body, json.dumps(terms).encode())
-
-    def test_taxonomy_fields_limit_payload_and_count_probe_to_id(self):
-        terms = [{"id": 4, "name": "One"}]
-
-        class Client:
-            def __init__(self):
-                self.queries = []
-
-            def request_bytes(self, url, max_bytes):
-                query = parse_qs(urlsplit(url).query)
-                self.queries.append(query)
-                batch = terms if query["per_page"] == ["100"] else [{"id": 4}]
-                return Response(json.dumps(batch).encode(), 200, {
-                    "X-WP-Total": "1", "X-WP-TotalPages": "1",
-                }, url)
-
-        client = Client()
-        inventory = fetch_metadata(client, "categories", fields=("id", "name"),
-                                   api_base="https://example.test/wp-json/wp/v2")
-        self.assertEqual(inventory.records, terms)
-        self.assertEqual(client.queries[0]["_fields"], ["id,name"])
-        self.assertEqual(client.queries[1]["_fields"], ["id"])
-
     def test_media_metadata_batches_include_ids_in_groups_of_100(self):
         requested = list(range(1, 102))
 

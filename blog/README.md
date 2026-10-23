@@ -20,7 +20,7 @@ Ezek az átállás célját rögzítik. Az alábbi használati leírás a jelenl
 
 A `content-mirror/` tölti le és tárolja a blog tartalmát. Az `enrichment/` a mentett cikkekhez saját metaadatokat ad. Mindkettőnek saját automatizációja és tesztjei vannak; a `blog/update.py` együtt indítja őket.
 
-A cím, dátum, forrás-URL, WordPress-azonosító és a blog saját kategóriái a cikkgyűjteményhez tartoznak. A saját témakörök és a tartalmi jelleg szerinti besorolások az `enrichment/` adatai; WordPress-azonosítóval kapcsolódnak a cikkekhez.
+A cím, dátum, forrás-URL és WordPress-azonosító a cikkgyűjteményhez tartozik. A blog saját kategóriáit és címkéit [tudatosan kihagyjuk](content-mirror/README.md#tárolás). A saját témakörök és a tartalmi jelleg szerinti besorolások az `enrichment/` adatai; WordPress-azonosítóval kapcsolódnak a cikkekhez.
 
 A letöltési cache helye `.local-cache/blog/content-mirror/`, a repó gyökeréhez képest. A cél az, hogy a teljes `.local-cache/` törölhető legyen adatvesztés nélkül. Jelenleg az offline újragenerálás és a besorolás még használja az itt tárolt forrásokat és állapotot; ezeket egyelőre meg kell őrizni. Az enrichment saját feldolgozási állapota és a cache-független működés további átalakítást igényel.
 

@@ -40,6 +40,8 @@ Az offline újragenerálás nem ellenőrzi a távoli állapotot és nem változt
 
 Az `index.jsonl` `path` mezője a `blog/content-mirror/articles/` alatti Markdown-fájlra mutat. A `source_record` (például `records/posts/123`) a nyers archívum logikai rekordazonosítója; nem a `blog/content-mirror/articles/` alatti fájlútvonal.
 
+A blog eredeti WordPress-kategóriáit és -címkéit nem vesszük át az olvasható cikkekbe és a cikknyilvántartásba: ezek nem illeszkednek a tudásbázis tematikus keresési és rendszerezési igényeihez. Erre a célra az [enrichment saját témaköreit](../enrichment/README.md) használjuk.
+
 ## Gyűjtemény és kizárások
 
 Az [exclusions.json](automation/exclusions.json) tartalmazza a kézzel kizárt rekordokat. A kulcs a rekord típusa és WordPress-ID-ja, például `post:104197` vagy `page:2`; az érték a kizárás indoka. A sync és a `--rebuild` törli a kizárt rekord helyi cikkét és forrásmappáját, és frissíti az indexeket.
