@@ -65,7 +65,7 @@ def codex_exec(request, *, model=DEFAULT_MODEL, reasoning_effort=DEFAULT_REASONI
     return topic_classifier.codex_exec(request, model=model, reasoning=reasoning_effort)
 
 
-def evaluate_request(request, runner):
+def evaluate_request(request, runner, *, dimension="content_nature", allowed=NATURE_IDS):
     for attempt in range(2):
         try:
             response = runner(request)
@@ -74,7 +74,7 @@ def evaluate_request(request, runner):
                 raise
             continue
         try:
-            return validate_result(response)
+            return validate_result(response, dimension=dimension, allowed=allowed)
         except ReviewRequired:
             raise
         except ClassificationError:
@@ -82,20 +82,20 @@ def evaluate_request(request, runner):
                 raise
 
 
-def validate_result(result):
-    if not isinstance(result, dict) or set(result) != {"content_nature", "review_case"} or not isinstance(result["content_nature"], list):
+def validate_result(result, *, dimension="content_nature", allowed=NATURE_IDS):
+    if not isinstance(result, dict) or set(result) != {dimension, "review_case"} or not isinstance(result[dimension], list):
         raise ClassificationError("Hibás modellválasz.")
     review = _validate_review_case(result["review_case"])
     found = {}
-    for item in result["content_nature"]:
-        if not isinstance(item, dict) or set(item) != {"id", "evidence"} or item["id"] not in NATURE_IDS or item["id"] in found or not isinstance(item["evidence"], str) or not item["evidence"].strip():
-            raise ClassificationError("Ismeretlen vagy ismétlődő content_nature, illetve hiányzó tartalmi bizonyíték.")
+    for item in result[dimension]:
+        if not isinstance(item, dict) or set(item) != {"id", "evidence"} or item["id"] not in allowed or item["id"] in found or not isinstance(item["evidence"], str) or not item["evidence"].strip():
+            raise ClassificationError("Ismeretlen vagy ismétlődő kategória, illetve hiányzó tartalmi bizonyíték.")
         found[item["id"]] = item["evidence"].strip()
     if review:
         if found: raise ClassificationError("Áttekintési eset nem tartalmazhat végleges jelöléseket.")
         raise ContentReviewRequired(review)
-    if not found: raise ClassificationError("Végleges besoroláshoz legalább egy tartalmi jelleg szükséges.")
-    return {"content_nature": sorted(found)}, found
+    if not found: raise ClassificationError("Végleges besoroláshoz legalább egy kategória szükséges.")
+    return {dimension: sorted(found)}, found
 
 
 def _validate_review_case(value):
@@ -336,27 +336,6 @@ def _dimension_request(prepared, dimension, root):
     return make_request(prepared["row"]["title"], prepared["body"] + note_text, prepared["images"], rule)
 
 
-def _validate_dimension_result(response, dimension, allowed):
-    if dimension == "content_nature":
-        selected, evidence = validate_result(response)
-        return selected[dimension], evidence
-    if not isinstance(response, dict) or set(response) != {"topics", "review_case"} or not isinstance(response["topics"], list):
-        raise ClassificationError("Hibás modellválasz.")
-    review_case = _validate_review_case(response["review_case"])
-    found = {}
-    for item in response["topics"]:
-        if (not isinstance(item, dict) or set(item) != {"id", "evidence"}
-                or item["id"] not in allowed or item["id"] in found
-                or not isinstance(item["evidence"], str) or not item["evidence"].strip()):
-            raise ClassificationError("Ismeretlen vagy ismétlődő témakör, illetve hiányzó bizonyíték.")
-        found[item["id"]] = item["evidence"].strip()
-    if review_case:
-        if found: raise ClassificationError("Áttekintési eset nem tartalmazhat végleges címkéket.")
-        raise ContentReviewRequired(review_case)
-    if not found: raise ClassificationError("Végleges témakör-besoroláshoz legalább egy címke szükséges.")
-    return sorted(found), found
-
-
 def _save_dimension(root, article_id, dimension, values, expected, snapshot, force):
     path = Path(root) / "classification/assignments.json"
     with topic_classifier.assignment_lock(path):
@@ -429,27 +408,10 @@ def classify_article(article_id, root=None, transport=None, *, dimension="conten
     runner = transport or (lambda value: (topic_classifier.codex_exec(value, model=model, reasoning=reasoning_effort)
                                           if dimension == "topics" else
                                           codex_exec(value, model=model, reasoning_effort=reasoning_effort)))
-    if dimension == "topics":
-        allowed = _topic_ids(root)
-        for attempt in range(2):
-            try:
-                response = runner(request)
-            except json.JSONDecodeError:
-                if attempt: raise
-                continue
-            try:
-                values, evidence = _validate_dimension_result(response, dimension, allowed)
-                break
-            except ReviewRequired:
-                raise
-            except ClassificationError:
-                if attempt: raise
-        result = _save_dimension(root, article_id, dimension, values, expected, snapshot, force)
-        result["evidence"] = evidence
-    else:
-        values, evidence = evaluate_request(request, runner)
-        result = _save_dimension(root, article_id, dimension, values[dimension], expected, snapshot, force)
-        result["evidence"] = evidence
+    allowed = _topic_ids(root) if dimension == "topics" else NATURE_IDS
+    values, evidence = evaluate_request(request, runner, dimension=dimension, allowed=allowed)
+    result = _save_dimension(root, article_id, dimension, values[dimension], expected, snapshot, force)
+    result["evidence"] = evidence
     return result
 
 

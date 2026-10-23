@@ -154,6 +154,53 @@ class UnifiedClassifierTests(unittest.TestCase):
                     classify.classify_article(10, self.root, runner, dimension=dimension)
                 runner.assert_called_once()
 
+    def test_invalid_response_retries_once_and_saves_for_either_dimension(self):
+        for dimension, category in (("topics", "costs"), ("content_nature", "reporting")):
+            for invalid in ({"wrong": "shape"}, json.JSONDecodeError("Invalid JSON", "", 0)):
+                with self.subTest(dimension=dimension, invalid=invalid):
+                    response = {dimension: [{"id": category, "evidence": "Konkrét bizonyíték."}],
+                                "review_case": None}
+                    runner = mock.Mock(side_effect=[invalid, response])
+                    result = classify.classify_article(10, self.root, runner, dimension=dimension, force=True)
+                    self.assertTrue(result["saved"])
+                    self.assertEqual(runner.call_count, 2)
+                    self.assertEqual(result["evidence"], {category: "Konkrét bizonyíték."})
+                    self.assertEqual(classify.load_json(self.assignments)["articles"]["10"][dimension], [category])
+
+    def test_invalid_results_are_rejected_without_saving_for_either_dimension(self):
+        for dimension, category in (("topics", "costs"), ("content_nature", "reporting")):
+            item = {"id": category, "evidence": "Konkrét bizonyíték."}
+            invalid_results = [
+                {"wrong": "shape"},
+                {dimension: [], "review_case": None},
+                {dimension: [item, item], "review_case": None},
+                {dimension: [{"id": "unknown", "evidence": "Indok"}], "review_case": None},
+                {dimension: [{"id": category, "evidence": "  "}], "review_case": None},
+                {dimension: [item], "review_case": {"type": "source_unavailable", "reason": "Hiányzik."}},
+                {dimension: [], "review_case": {"type": "unknown", "reason": "Indok"}},
+            ]
+            for response in invalid_results:
+                with self.subTest(dimension=dimension, response=response):
+                    before = self.assignments.read_bytes()
+                    runner = mock.Mock(return_value=response)
+                    with self.assertRaises(classify.ClassificationError):
+                        classify.classify_article(10, self.root, runner, dimension=dimension)
+                    self.assertEqual(runner.call_count, 2)
+                    self.assertEqual(self.assignments.read_bytes(), before)
+
+    def test_review_cases_do_not_retry_or_save_for_either_dimension(self):
+        for dimension in ("topics", "content_nature"):
+            for case_type in ("source_unavailable", "taxonomy_unmatched"):
+                with self.subTest(dimension=dimension, case_type=case_type):
+                    response = {dimension: [], "review_case": {"type": case_type, "reason": "Indok"}}
+                    runner = mock.Mock(return_value=response)
+                    before = self.assignments.read_bytes()
+                    with self.assertRaises(classify.ContentReviewRequired) as error:
+                        classify.classify_article(10, self.root, runner, dimension=dimension)
+                    self.assertEqual(error.exception.review_case, response["review_case"])
+                    runner.assert_called_once()
+                    self.assertEqual(self.assignments.read_bytes(), before)
+
 
 if __name__ == "__main__":
     unittest.main()
