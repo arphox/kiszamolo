@@ -42,9 +42,8 @@ kategóriáitól és címkéitől független besorolást készítünk.
 
 - A `topics.json` definíciói az irányadók. Csak az ott szereplő
   témakörazonosítókat használd.
-- A témakör a blog tudásanyagán belül hasznos, önálló keresési témát jelöljön.
-  Egyszeri, lazán kapcsolódó külső érdekesség miatt nem bővítjük a fogalomtárat;
-  az ilyen bejegyzésnél kizárást javasolj a felhasználónak.
+- Új témakört akkor javasolj, ha az a blog tudásanyagán belül önálló keresési
+  témaként is hasznos lenne.
 - Egy cikk több, egymást átfedő témakörbe is besorolható. A tágabb témakört is a
   cikk tartalma és a definíció alapján válaszd ki; a `broader` kapcsolat nem
   jelent automatikus öröklést.

@@ -35,7 +35,18 @@ A cikkadatok közvetlenül az API-válaszból készülnek. Ha az API nem tartalm
 
 Az [articles/exclusions.json](articles/exclusions.json) tartalmazza a kézzel kizárt rekordokat WordPress-ID → indoklás formában. Az ID önmagában azonosítja a bejegyzéseket és az oldalakat, típuselőtag nélkül. A frissítés eltávolítja ezeket a helyi gyűjteményből. A kizárásokról a felhasználó dönt, a besoroló önállóan nem zár ki cikket.
 
-A gyűjtemény a blog tudásanyagát fedi le. Kizárjuk a navigációs, cikkjegyzék-, szolgáltatás-, eszköz- és adminisztratív oldalakat, a tesztanyagokat és a külön kiválasztott alkalmi közleményeket. Szintén kizárjuk a saját érdemi szöveg nélküli bejegyzéseket akkor is, ha a beágyazott videó vagy ábra hozzáférhető, feldolgozható tudásanyagot tartalmaz. Kizárjuk továbbá az elérhetetlenné vált érdemi tartalomra mutató bejegyzéseket, valamint a blog tudásanyagához lazán kapcsolódó, saját magyarázat nélküli egyszeri külső érdekességeket. Az új WordPress-oldalak nem záródnak ki automatikusan; a témakör-besorolás állapota és a szöveghossz önmagában nem kizárási ok.
+## Kizárási szabályok
+
+Azt hagyjuk ki, amiben nincs a későbbi tudásbázisban hasznosítható érdemi információ. A szöveg mellett a hozzáférhető képek, beágyazott videók és mellékletek is számítanak. Egy érdemi rész elegendő a megtartáshoz, reklám vagy közlemény mellett is.
+
+Kizárjuk:
+
+- a pusztán navigációs, cikkjegyzék-, adminisztratív és tesztoldalakat;
+- az önálló érdemi tartalom nélküli ajánlókat, átlinkeléseket, szolgáltatásajánlatokat és eszközfelületeket;
+- a pusztán alkalmi közleményeket és felhívásokat, például tanfolyam elmaradását vagy szolgáltatás újraindulását;
+- az elérhetetlen vagy jelszóval védett tartalmakat, ha a hozzáférhető részek önmagukban nem adnak érdemi információt.
+
+A rövidség, elavulás, hírjelleg, nem pénzügyi téma, külső eredet vagy hiányzó témakör önmagában nem kizárási ok.
 
 ## Az index újraépítése
 
