@@ -57,7 +57,7 @@ A képek, dokumentumok, hang- és videófájlok az eredeti, abszolút webes URL-
 
 A besorolás eredményeit és feldolgozási nyilvántartását az [enrichment](../enrichment/README.md#tárolás-és-működés) kezeli.
 
-A hibák és az összesítés a terminálra kerülnek; külön riportfájlok, cikkjegyzékek és médiastatisztikák nem készülnek. A kilépési kód `0` siker, `2` befejezett futás megmaradt teendővel, `1` végzetes hiba, `130` megszakítás. Egy közös folyamatközi zár védi a frissítést és a besorolást; a zárolási fájl az `articles/` mappán kívül van.
+A hibák és az összesítés a terminálra kerülnek; külön riportfájlok, cikkjegyzékek és médiastatisztikák nem készülnek. A kilépési kód `0` siker, `2` befejezett futás megmaradt teendővel, `1` végzetes hiba, `130` megszakítás. Egy közös folyamatközi zár védi a frissítést és a besorolást; a zárolási fájlok a repó `.local-cache/locks/` mappájában vannak.
 
 ## Ellenőrzés
 

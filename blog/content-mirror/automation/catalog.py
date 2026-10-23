@@ -167,8 +167,8 @@ def rebuild_index(root=ROOT):
 
 @contextmanager
 def exclusive_run(root=ROOT):
-    """Use one process-held lock outside the article collection."""
-    path = Path(root) / "blog/content-mirror/.update.lock"
+    """Use one process-held lock in the repository's local cache."""
+    path = Path(root) / ".local-cache/locks/blog-update.lock"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+b") as handle:
         if handle.seek(0, 2) == 0:

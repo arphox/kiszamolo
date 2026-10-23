@@ -210,8 +210,10 @@ def _codex_failure_details(stdout, stderr, limit=1000):
     stderr_limit = limit - event_limit - 1
     return f"{event_details[-event_limit:]} {stderr_details[-stderr_limit:]}"
 @contextmanager
-def assignment_lock(path):
-    with path.with_name(".assignments.lock").open("a+b") as handle:
+def assignment_lock(root):
+    path = Path(root) / ".local-cache/locks/blog-assignments.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as handle:
         if handle.seek(0, 2) == 0:
             handle.write(b"0")
             handle.flush()

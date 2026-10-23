@@ -315,7 +315,7 @@ def _dimension_request(prepared, dimension, root):
 
 def _save_dimension(root, article_id, dimension, values, expected, snapshot, force):
     path = Path(root) / "blog/enrichment/assignments.json"
-    with topic_classifier.assignment_lock(path):
+    with topic_classifier.assignment_lock(root):
         if _rules_snapshot(root, dimension) != snapshot:
             raise ClassificationError("A besorolási szabályzat vagy fogalomtár közben megváltozott; indíts új futást.")
         data = load_json(path)

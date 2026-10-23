@@ -110,15 +110,15 @@ class CommonHelpersTests(unittest.TestCase):
     def test_assignment_lock_serializes_separate_processes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            assignment = root / "assignments.json"
             acquired = root / "acquired.txt"
             source = ("from pathlib import Path\nimport sys\n"
                       "from blog.enrichment.automation.common import assignment_lock\n"
                       "p = Path(sys.argv[1])\n"
                       "with assignment_lock(p):\n"
-                      "    p.with_name('acquired.txt').write_text('ok')\n")
-            with common.assignment_lock(assignment):
-                child = subprocess.Popen([sys.executable, "-c", source, str(assignment)],
+                      "    (p / 'acquired.txt').write_text('ok')\n")
+            with common.assignment_lock(root):
+                self.assertTrue((root / ".local-cache/locks/blog-assignments.lock").is_file())
+                child = subprocess.Popen([sys.executable, "-c", source, str(root)],
                                          cwd=common.ROOT, stdout=subprocess.DEVNULL,
                                          stderr=subprocess.PIPE, text=True)
                 time.sleep(0.1)

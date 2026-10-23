@@ -2,6 +2,8 @@
 
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -105,6 +107,23 @@ class CatalogTests(unittest.TestCase):
         with self.assertRaises(json.JSONDecodeError):
             catalog.load_index(self.root)
         self.assertEqual(index.read_text(encoding="utf-8"), "broken\n")
+
+    def test_update_lock_in_local_cache_excludes_other_processes_and_releases(self):
+        source = ("from pathlib import Path\nimport sys\nimport catalog\n"
+                  "with catalog.exclusive_run(Path(sys.argv[1])):\n"
+                  "    pass\n")
+
+        def acquire():
+            return subprocess.run([sys.executable, "-B", "-c", source, str(self.root)],
+                                  cwd=Path(catalog.__file__).parent,
+                                  capture_output=True, text=True, timeout=10)
+
+        with catalog.exclusive_run(self.root):
+            self.assertTrue((self.root / ".local-cache/locks/blog-update.lock").is_file())
+            self.assertNotEqual(acquire().returncode, 0)
+        result = acquire()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.root / "blog").exists())
 
 
 if __name__ == "__main__":

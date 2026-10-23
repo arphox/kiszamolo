@@ -9,7 +9,3 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
-
-# OS-held lock for canonical assignment updates.
-/blog/enrichment/.assignments.lock
-/blog/content-mirror/.update.lock
