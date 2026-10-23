@@ -30,9 +30,9 @@ from article_links import repair_markdown_links
 from render import (conversion_warnings, discover_assets, discover_embeds,
                     extract_public_content, make_markdown, plain_title, referenced_anchors, rewrite_html)
 
-ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUTPUT = ROOT / "articles"
-DEFAULT_SOURCE_OUTPUT = ROOT / "raw_source" / "content-mirror"
+ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_OUTPUT = ROOT / "blog/content-mirror/articles"
+DEFAULT_SOURCE_OUTPUT = ROOT / ".local-cache/blog/content-mirror"
 ALLOWED_HOSTS = {"kiszamolo.hu", "www.kiszamolo.hu"}
 SCHEMA_VERSION = 1
 
@@ -140,7 +140,7 @@ def validate_roots(root, articles_root):
     root, articles_root = Path(root).resolve(), Path(articles_root).resolve()
     if articles_root == root or articles_root.is_relative_to(root) or root.is_relative_to(articles_root):
         raise ValueError("Source and Markdown directories must be separate, non-overlapping roots")
-    forbidden = [ROOT / "automation"]
+    forbidden = [ROOT / "blog/content-mirror/automation", ROOT / "blog/enrichment"]
     for path in (root, articles_root):
         for item in forbidden:
             if path.is_relative_to(item.resolve()) or item.resolve().is_relative_to(path):
@@ -1278,9 +1278,9 @@ def main():
     args = parser.parse_args()
     output = args.output.resolve()
     source_output = args.source_output.resolve()
-    forbidden = [ROOT / "automation"]
-    if output in {ROOT.resolve(), (ROOT / "raw_source").resolve()} or source_output in {ROOT.resolve(), (ROOT / "raw_source").resolve(), DEFAULT_OUTPUT.resolve()}:
-        parser.error("Use articles output and a dedicated raw_source subdirectory")
+    forbidden = [ROOT / "blog/content-mirror/automation", ROOT / "blog/enrichment"]
+    if output in {ROOT.resolve(), (ROOT / ".local-cache").resolve()} or source_output in {ROOT.resolve(), (ROOT / ".local-cache").resolve(), DEFAULT_OUTPUT.resolve()}:
+        parser.error("Use articles output and a dedicated cache subdirectory")
     if any(path.is_relative_to(p.resolve()) or p.resolve().is_relative_to(path)
            for path in [output, source_output] for p in forbidden):
         parser.error("Output roots must not touch the tool directory")

@@ -5,11 +5,12 @@ from pathlib import Path
 import sys
 
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT / "automation/content-mirror"))
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "blog/content-mirror/automation"))
 
 import sync
-from classification import classify
+from blog.enrichment.automation import classify
 
 
 DIMENSIONS = classify.DIMENSIONS
@@ -30,18 +31,18 @@ def confirm_reclassification(count):
 
 def run_update(root=ROOT, *, progress=print, confirm=None):
     root = Path(root).resolve()
-    source_root = root / "raw_source/content-mirror"
-    articles_root = root / "articles"
+    source_root = root / ".local-cache/blog/content-mirror"
+    articles_root = root / "blog/content-mirror/articles"
     progress("Cikkgyűjtemény frissítése…")
     sync_report = sync.run_sync(source_root, articles_root=articles_root, progress=progress)
 
     # Hold both locks while preparing input, calling the model, and saving progress.
     with sync.exclusive_run(source_root), sync.exclusive_run(articles_root):
         state = sync.load_state(source_root)
-        vocabulary = classify.load_json(root / "classification/topics.json")
+        vocabulary = classify.load_json(root / "blog/enrichment/topics.json")
         allowed_topics = {topic["id"] for topic in vocabulary["topics"]}
         assignments = classify.validate_assignments(
-            classify.load_json(root / "classification/assignments.json"), allowed_topics)
+            classify.load_json(root / "blog/enrichment/assignments.json"), allowed_topics)
         posts = sorted((item for item in state["records"].values() if item["type"] == "post"),
                        key=lambda item: int(item["id"]))
         scheduled = {d: {"new": set(), "changed": set()} for d in DIMENSIONS}

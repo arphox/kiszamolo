@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from classification import classify
+from blog.enrichment.automation import classify
 
 
 class ClassificationTests(unittest.TestCase):
@@ -17,19 +17,19 @@ class ClassificationTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(dir=os.environ.get("CLASSIFICATION_TEST_TMP"))
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        (self.root / "classification").mkdir()
-        (self.root / "articles/2026/10").mkdir(parents=True)
-        self.rules = Path(classify.ROOT / "classification/README.md").read_text(encoding="utf-8")
-        (self.root / "classification/README.md").write_text(self.rules, encoding="utf-8")
-        (self.root / "classification/topics.json").write_bytes(
-            (classify.ROOT / "classification/topics.json").read_bytes())
-        self.path = self.root / "classification/assignments.json"
+        (self.root / "blog/enrichment").mkdir(parents=True)
+        (self.root / "blog/content-mirror/articles/2026/10").mkdir(parents=True)
+        self.rules = Path(classify.ROOT / "blog/enrichment/README.md").read_text(encoding="utf-8")
+        (self.root / "blog/enrichment/README.md").write_text(self.rules, encoding="utf-8")
+        (self.root / "blog/enrichment/topics.json").write_bytes(
+            (classify.ROOT / "blog/enrichment/topics.json").read_bytes())
+        self.path = self.root / "blog/enrichment/assignments.json"
         self.path.write_text('{\n  "articles": {}\n}\n', encoding="utf-8")
         self.rows = [dict(id=aid, type="post", title=f"Article {aid}", path=f"2026/10/{aid}.md")
                      for aid in (10, 20, 30)]
         self.write_index()
         for row in self.rows:
-            (self.root / "articles" / row["path"]).write_text(
+            (self.root / "blog/content-mirror/articles" / row["path"]).write_text(
                 f"# {row['title']}\n\nBODY_ONLY_FOR_{row['id']}", encoding="utf-8")
         self.response = {
             "content_nature": [{"id": "explanatory", "evidence": "A működést részletesen kifejti."}],
@@ -38,7 +38,7 @@ class ClassificationTests(unittest.TestCase):
         self.transport = mock.Mock(return_value=self.response)
 
     def write_index(self):
-        (self.root / "articles/index.jsonl").write_text(
+        (self.root / "blog/content-mirror/articles/index.jsonl").write_text(
             "\n".join(json.dumps(row) for row in self.rows) + "\n", encoding="utf-8")
 
 
@@ -50,7 +50,7 @@ class ClassificationTests(unittest.TestCase):
         for aid in ids:
             row = dict(id=aid, type="post", title=f"Article {aid}", path=f"2026/10/{aid}.md")
             self.rows.append(row)
-            (self.root / "articles" / row["path"]).write_text(
+            (self.root / "blog/content-mirror/articles" / row["path"]).write_text(
                 f"# {row['title']}\n\nBODY_ONLY_FOR_{row['id']}", encoding="utf-8")
         self.write_index()
 
@@ -65,7 +65,7 @@ class ClassificationTests(unittest.TestCase):
                 "acquisition_status": "complete", "classification_pending": True,
                 "content_classification_pending": True,
             }
-        path = self.root / "raw_source/content-mirror/state.json"
+        path = self.root / ".local-cache/blog/content-mirror/state.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"records": records}), encoding="utf-8")
         return path
@@ -197,7 +197,7 @@ class ClassificationTests(unittest.TestCase):
     def test_rules_change_during_model_call_prevents_save(self):
         original = self.rules
         def transport(request):
-            (self.root / "classification/README.md").write_text(
+            (self.root / "blog/enrichment/README.md").write_text(
                 original.replace("A cikk legalább", "A cikk mindig", 1), encoding="utf-8")
             return self.response
         with self.assertRaisesRegex(classify.ClassificationError, "szabályzat"):
@@ -298,7 +298,7 @@ class ClassificationTests(unittest.TestCase):
         record = json.loads(state_path.read_text(encoding="utf-8"))["records"]["post:10"]
         self.assertNotIn("content_classification_pending", record)
         self.assertTrue(record["classification_pending"])
-        published = json.loads((self.root / "articles/index.jsonl").read_text(encoding="utf-8"))
+        published = json.loads((self.root / "blog/content-mirror/articles/index.jsonl").read_text(encoding="utf-8"))
         self.assertNotIn("content_classification_pending", published)
 
     def test_ack_retry_republishes_index_after_first_publish_failure(self):
@@ -322,7 +322,7 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(publish_calls, 2)
         state = json.loads(state_path.read_text(encoding="utf-8"))["records"]
         self.assertNotIn("content_classification_pending", state["post:10"])
-        index = [json.loads(line) for line in (self.root / "articles/index.jsonl").read_text().splitlines()]
+        index = [json.loads(line) for line in (self.root / "blog/content-mirror/articles/index.jsonl").read_text().splitlines()]
         self.assertNotIn("content_classification_pending", index[0])
 
 
@@ -371,7 +371,7 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(second_code, 0)
         self.assertEqual(calls, 4)
         self.transport.assert_called_once()
-        index_row = json.loads((self.root / "articles/index.jsonl").read_text(encoding="utf-8"))
+        index_row = json.loads((self.root / "blog/content-mirror/articles/index.jsonl").read_text(encoding="utf-8"))
         self.assertNotIn("content_classification_pending", index_row)
 
 

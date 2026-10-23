@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-import update
+from blog import update
 
 REAL_SYNC = update.sync.run_sync
 
@@ -18,16 +18,16 @@ class UpdateTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        self.source = self.root / "raw_source/content-mirror"
-        self.articles = self.root / "articles"
+        self.source = self.root / ".local-cache/blog/content-mirror"
+        self.articles = self.root / "blog/content-mirror/articles"
         self.source.mkdir(parents=True)
-        self.articles.mkdir()
-        (self.root / "classification").mkdir()
+        self.articles.mkdir(parents=True)
+        (self.root / "blog/enrichment").mkdir(parents=True)
         self.records = {}
         self.assignments = {}
-        self.write_json(self.root / "classification/assignments.json", {"articles": {}})
-        self.write_json(self.root / "classification/topics.json", {"topics": [{"id": "topic"}, {"id": "old"}]})
-        (self.root / "classification/README.md").write_text("rules", encoding="utf-8")
+        self.write_json(self.root / "blog/enrichment/assignments.json", {"articles": {}})
+        self.write_json(self.root / "blog/enrichment/topics.json", {"topics": [{"id": "topic"}, {"id": "old"}]})
+        (self.root / "blog/enrichment/README.md").write_text("rules", encoding="utf-8")
         sync_patch = mock.patch.object(update.sync, "run_sync", return_value={"incomplete_records": 0})
         self.addCleanup(sync_patch.stop)
         self.sync_mock = sync_patch.start()
@@ -69,7 +69,7 @@ class UpdateTests(unittest.TestCase):
         return nullcontext({"article_id": str(article_id)})
 
     def classify(self, article_id, *, dimension, force=False, prepared=None, **kwargs):
-        path = self.root / "classification/assignments.json"
+        path = self.root / "blog/enrichment/assignments.json"
         data = json.loads(path.read_text(encoding="utf-8"))
         record = data["articles"].setdefault(str(article_id), {})
         record[dimension] = ["topic"] if dimension == "topics" else ["explanatory"]
@@ -79,7 +79,7 @@ class UpdateTests(unittest.TestCase):
     def prepare(self):
         state = {"schema_version": 1, "records": self.records, "assets": {}, "articles_root": str(self.articles)}
         self.write_json(self.source / "state.json", state)
-        self.write_json(self.root / "classification/assignments.json", {"articles": self.assignments})
+        self.write_json(self.root / "blog/enrichment/assignments.json", {"articles": self.assignments})
         update.sync.publish_article_index(self.articles, state)
 
     def run_update(self):
@@ -90,7 +90,7 @@ class UpdateTests(unittest.TestCase):
         return json.loads((self.source / "state.json").read_text(encoding="utf-8"))
 
     def stored_assignments(self):
-        return json.loads((self.root / "classification/assignments.json").read_text(encoding="utf-8"))["articles"]
+        return json.loads((self.root / "blog/enrichment/assignments.json").read_text(encoding="utf-8"))["articles"]
 
     def test_no_changes_use_no_model_and_do_not_request_approval(self):
         self.add_post(1, assigned=True, content_assigned=True)
@@ -340,10 +340,10 @@ class UpdateTests(unittest.TestCase):
     def test_unified_classifier_persists_both_dimensions_in_real_workflow(self):
         self.add_post(1, pending=True)
         self.prepare()
-        actual_rules = (Path(__file__).resolve().parent.parent / "classification/README.md").read_text(
+        actual_rules = (Path(__file__).resolve().parent.parent / "blog/enrichment/README.md").read_text(
             encoding="utf-8")
-        (self.root / "classification/README.md").write_text(actual_rules, encoding="utf-8")
-        self.write_json(self.root / "classification/topics.json", {"topics": [
+        (self.root / "blog/enrichment/README.md").write_text(actual_rules, encoding="utf-8")
+        self.write_json(self.root / "blog/enrichment/topics.json", {"topics": [
             {"id": "topic", "name": "Pénzügy", "rule": "Személyes pénzügyek érdemi tárgyalása.",
              "synonyms": [], "broader": []}]})
 

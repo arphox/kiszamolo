@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 from PIL import Image, features
 
-from classification.media import (MediaError, fetch_remote_image, normalize_local_image,
+from blog.enrichment.automation.media import (MediaError, fetch_remote_image, normalize_local_image,
                                   normalize_local_video, compact_model_images)
 
 
@@ -147,7 +147,7 @@ class MediaTests(unittest.TestCase):
         with self.assertRaisesRegex(MediaError, "total limit"):
             normalize_local_image(source, self.scratch, max_total_pixels=7)
 
-    @patch("classification.media.socket.getaddrinfo")
+    @patch("blog.enrichment.automation.media.socket.getaddrinfo")
     def test_remote_fetch_normalizes_with_bounded_request(self, resolve):
         resolve.return_value = [(None, None, None, None, ("93.184.216.34", 443))]
         response = FakeResponse(body=png_bytes(), headers={"Content-Length": str(len(png_bytes()))})
@@ -159,7 +159,7 @@ class MediaTests(unittest.TestCase):
         self.assertEqual(session.urls[0][1]["allow_redirects"], False)
         self.assertIsNotNone(session.urls[0][1]["timeout"])
 
-    @patch("classification.media.socket.getaddrinfo")
+    @patch("blog.enrichment.automation.media.socket.getaddrinfo")
     def test_remote_rejects_private_targets_and_redirects(self, resolve):
         resolve.return_value = [(None, None, None, None, ("127.0.0.1", 80))]
         with self.assertRaisesRegex(MediaError, "non-public"):
@@ -172,7 +172,7 @@ class MediaTests(unittest.TestCase):
             fetch_remote_image("https://images.example/image.png", self.scratch, session=session)
         self.assertEqual(len(session.urls), 1)
 
-    @patch("classification.media.socket.getaddrinfo")
+    @patch("blog.enrichment.automation.media.socket.getaddrinfo")
     def test_remote_response_size_limit(self, resolve):
         resolve.return_value = [(None, None, None, None, ("93.184.216.34", 443))]
         session = FakeSession([FakeResponse(body=b"x" * 30)])
@@ -180,7 +180,7 @@ class MediaTests(unittest.TestCase):
             fetch_remote_image("https://images.example/image.png", self.scratch,
                                max_bytes=20, session=session)
 
-    @patch("classification.media.socket.getaddrinfo")
+    @patch("blog.enrichment.automation.media.socket.getaddrinfo")
     def test_remote_stream_errors_become_optional_media_errors(self, resolve):
         import requests
 
@@ -194,7 +194,7 @@ class MediaTests(unittest.TestCase):
             fetch_remote_image("https://images.example/image.png", self.scratch,
                                session=FakeSession([BrokenResponse()]))
 
-    @patch("classification.media.socket.getaddrinfo")
+    @patch("blog.enrichment.automation.media.socket.getaddrinfo")
     def test_remote_connects_to_validated_ip_with_original_tls_and_host_names(self, resolve):
         resolve.side_effect = [
             [(None, None, None, None, ("93.184.216.34", 443))],
@@ -224,7 +224,7 @@ class MediaTests(unittest.TestCase):
         response.close.assert_called_once()
         pool.close.assert_called_once()
 
-    @patch("classification.media.socket.getaddrinfo")
+    @patch("blog.enrichment.automation.media.socket.getaddrinfo")
     def test_remote_total_deadline_checks_each_available_chunk(self, resolve):
         resolve.return_value = [(None, None, None, None, ("93.184.216.34", 443))]
         response = MagicMock()
@@ -241,7 +241,7 @@ class MediaTests(unittest.TestCase):
         pool = MagicMock()
         pool.urlopen.return_value = response
         with patch("urllib3.HTTPSConnectionPool", return_value=pool), \
-                patch("classification.media.time.monotonic", side_effect=lambda: clock[0]):
+                patch("blog.enrichment.automation.media.time.monotonic", side_effect=lambda: clock[0]):
             with self.assertRaisesRegex(MediaError, "exceeded 15-second limit"):
                 fetch_remote_image("https://images.example/pic", self.scratch, max_duration=15)
         self.assertEqual(response.read1.call_count, 3)
@@ -260,8 +260,8 @@ class MediaTests(unittest.TestCase):
         source.write_bytes(b"local video placeholder")
         probe_result = subprocess.CompletedProcess(
             [], 0, json.dumps({"streams": [{"width": 16, "height": 16, "duration": "121"}]}), "")
-        with patch("classification.media.shutil.which", side_effect=["ffprobe.exe", "ffmpeg.exe"]), \
-                patch("classification.media.subprocess.run", return_value=probe_result) as run:
+        with patch("blog.enrichment.automation.media.shutil.which", side_effect=["ffprobe.exe", "ffmpeg.exe"]), \
+                patch("blog.enrichment.automation.media.subprocess.run", return_value=probe_result) as run:
             with self.assertRaisesRegex(MediaError, "duration must be between"):
                 normalize_local_video(source, self.scratch)
         run.assert_called_once()  # ffprobe only; ffmpeg is not invoked for an over-limit video.
@@ -313,8 +313,8 @@ class MediaTests(unittest.TestCase):
                     output_pattern.parent / f"frame-{frame_index:04d}.png")
             return subprocess.CompletedProcess(args, 0, b"", b"")
 
-        with patch("classification.media.shutil.which", side_effect=["ffprobe.exe", "ffmpeg.exe"]), \
-                patch("classification.media.subprocess.run", side_effect=fake_run):
+        with patch("blog.enrichment.automation.media.shutil.which", side_effect=["ffprobe.exe", "ffmpeg.exe"]), \
+                patch("blog.enrichment.automation.media.subprocess.run", side_effect=fake_run):
             with self.assertRaisesRegex(MediaError, "total-pixel limit"):
                 normalize_local_video(source, self.scratch, max_total_pixels=40)
 

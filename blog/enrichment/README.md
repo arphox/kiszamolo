@@ -192,14 +192,14 @@ a nyilvántartásba nem kerül.
 A fájl UTF-8 kódolású, LF sorvégű, záró soremeléssel; minden cikk egy sor,
 a cikkazonosítók számszerű sorrendben szerepelnek.
 
-A cím és a helyi Markdown-útvonal a letöltő [cikklistájában](../automation/content-mirror/README.md#tárolás) kereshető ki a cikkazonosító alapján.
+A cím és a helyi Markdown-útvonal a letöltő [cikklistájában](../content-mirror/README.md#tárolás) kereshető ki a cikkazonosító alapján.
 
-Alapesetben mindkét parancs a hiányzó vagy [függő](../automation/content-mirror/README.md#besorolási-teendők)
+Alapesetben mindkét parancs a hiányzó vagy [függő](../content-mirror/README.md#besorolási-teendők)
 besorolásokat dolgozza fel, és szempontonként ment. Csak a sikeresen mentett
 szempont függő jelzését törli; hiba, kihagyás vagy emberi döntést igénylő eset
 után a feladat folytatható, korábbi értéke megmarad. Az egyik szempont hibája
 nem akadályozza a másikat. A teljes frissítő a teendőket az
-`articles/update-report.json` fájlba menti; az egycikkes parancs a terminálra írja.
+`blog/content-mirror/articles/update-report.json` fájlba menti; az egycikkes parancs a terminálra írja.
 
 ## Használat
 
@@ -208,14 +208,14 @@ A [telepítés](../README.md#telepítés-és-frissítés) után a parancsokat a 
 Egy már letöltött cikk mindkét besorolása:
 
 ```powershell
-.\.venv\Scripts\python.exe -B classification/classify.py 125610
+.\.venv\Scripts\python.exe -B blog/enrichment/automation/classify.py 125610
 ```
 
 Csak az egyik szempont, illetve kifejezett újraértékelés:
 
 ```powershell
-.\.venv\Scripts\python.exe -B classification/classify.py 125610 --dimension topics
-.\.venv\Scripts\python.exe -B classification/classify.py 125610 --dimension content_nature --force
+.\.venv\Scripts\python.exe -B blog/enrichment/automation/classify.py 125610 --dimension topics
+.\.venv\Scripts\python.exe -B blog/enrichment/automation/classify.py 125610 --dimension content_nature --force
 ```
 
 Meglévő, nem függő eredménynél nincs modellhívás. A `--force` a kiválasztott

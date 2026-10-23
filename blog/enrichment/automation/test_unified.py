@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from classification import classify
+from blog.enrichment.automation import classify
 
 
 class UnifiedClassifierTests(unittest.TestCase):
@@ -16,18 +16,18 @@ class UnifiedClassifierTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        (self.root / "classification").mkdir()
-        (self.root / "articles/2026/10").mkdir(parents=True)
-        (self.root / "classification/README.md").write_text(
-            (classify.ROOT / "classification/README.md").read_text(encoding="utf-8"), encoding="utf-8")
-        (self.root / "classification/topics.json").write_bytes(
-            (classify.ROOT / "classification/topics.json").read_bytes())
-        self.assignments = self.root / "classification/assignments.json"
+        (self.root / "blog/enrichment").mkdir(parents=True)
+        (self.root / "blog/content-mirror/articles/2026/10").mkdir(parents=True)
+        (self.root / "blog/enrichment/README.md").write_text(
+            (classify.ROOT / "blog/enrichment/README.md").read_text(encoding="utf-8"), encoding="utf-8")
+        (self.root / "blog/enrichment/topics.json").write_bytes(
+            (classify.ROOT / "blog/enrichment/topics.json").read_bytes())
+        self.assignments = self.root / "blog/enrichment/assignments.json"
         self.assignments.write_text('{\n  "articles": {}\n}\n', encoding="utf-8")
-        self.article = self.root / "articles/2026/10/10.md"
+        self.article = self.root / "blog/content-mirror/articles/2026/10/10.md"
         self.article.write_text("# Cím\n\nA cikk érdemi szövege.", encoding="utf-8")
         row = {"id": 10, "type": "post", "title": "Cím", "path": "2026/10/10.md"}
-        (self.root / "articles/index.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+        (self.root / "blog/content-mirror/articles/index.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
 
     def test_schema_accepts_legacy_empty_topics_and_partial_records(self):
         result = classify.validate_assignments({"articles": {
@@ -83,7 +83,7 @@ class UnifiedClassifierTests(unittest.TestCase):
 
     def test_model_call_rejects_rules_changed_during_decision(self):
         response = {"content_nature": [{"id": "news", "evidence": "Aktuális eseményt ismertet."}], "review_case": None}
-        rules_path = self.root / "classification/README.md"
+        rules_path = self.root / "blog/enrichment/README.md"
 
         def change_rules(_request):
             current = rules_path.read_text(encoding="utf-8")
@@ -112,14 +112,14 @@ class UnifiedClassifierTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
 
     def test_standalone_entrypoint_shows_cli_help_without_model_access(self):
-        result = subprocess.run([sys.executable, "-B", "classification/classify.py", "--help"],
+        result = subprocess.run([sys.executable, "-B", "blog/enrichment/automation/classify.py", "--help"],
                                 cwd=classify.ROOT, capture_output=True, text=True, encoding="utf-8", check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--dimension", result.stdout)
 
     def test_linked_local_image_uses_available_original_instead_of_thumbnail(self):
-        thumbnail = self.root / "articles/2026/10/thumb.gif"
-        original = self.root / "articles/2026/10/original.gif"
+        thumbnail = self.root / "blog/content-mirror/articles/2026/10/thumb.gif"
+        original = self.root / "blog/content-mirror/articles/2026/10/original.gif"
         thumbnail.write_bytes(b"thumb")
         original.write_bytes(b"original")
         self.article.write_text("# Cím\n\n[![ábra](thumb.gif)](original.gif)", encoding="utf-8")
@@ -132,7 +132,7 @@ class UnifiedClassifierTests(unittest.TestCase):
                                      for note in prepared["source_notes"]))
 
     def test_pending_failed_force_reclassification_retries_and_preserves_old_value(self):
-        state_path = self.root / "raw_source/content-mirror/state.json"
+        state_path = self.root / ".local-cache/blog/content-mirror/state.json"
         state_path.parent.mkdir(parents=True)
         state_path.write_text(json.dumps({"records": {"post:10": {
             "content_classification_pending": True}}}), encoding="utf-8")
@@ -150,7 +150,7 @@ class UnifiedClassifierTests(unittest.TestCase):
         for name in ("first.mp4", "second.mp4"):
             (self.article.parent / name).write_bytes(b"video")
         body = '<a href="first.mp4">video</a><video src="second.mp4"></video><img src="missing.png">'
-        images, remote, videos, notes = classify.discover_media(body, self.article, self.root / "articles", {}, "")
+        images, remote, videos, notes = classify.discover_media(body, self.article, self.root / "blog/content-mirror/articles", {}, "")
         self.assertEqual((images, remote), ([], []))
         self.assertEqual([video.name for video in videos], ["second.mp4", "first.mp4"])
         self.assertEqual(notes, ["A cikk helyi képe hiányzik: missing.png",

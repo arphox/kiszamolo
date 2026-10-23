@@ -1296,7 +1296,7 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(sync.validate_roots(sync.DEFAULT_SOURCE_OUTPUT, sync.DEFAULT_OUTPUT),
                          (sync.DEFAULT_SOURCE_OUTPUT.resolve(), sync.DEFAULT_OUTPUT.resolve()))
         with self.assertRaises(ValueError):
-            sync.validate_roots(self.root, sync.ROOT/"automation"/"output")
+            sync.validate_roots(self.root, sync.ROOT/"blog/content-mirror/automation"/"output")
 
     def test_migration_target_directory_aborts_before_any_move(self):
         self.run_sync()

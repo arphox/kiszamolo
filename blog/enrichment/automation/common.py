@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 from urllib.parse import unquote, urljoin, urlsplit
 from bs4 import BeautifulSoup
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[3]
 MODEL = "gpt-6.1-sol"
 REASONING = "medium"
 MAX_REQUEST_BYTES = 200_000
@@ -44,7 +44,7 @@ def local_path(directory, target, boundary=None):
     return path
 def article_row(root, article_id):
     matches = []
-    with (root / "articles/index.jsonl").open(encoding="utf-8") as source:
+    with (root / "blog/content-mirror/articles/index.jsonl").open(encoding="utf-8") as source:
         for line in source:
             row = json.loads(line)
             if str(row["id"]) == article_id and row["type"] == "post":
@@ -52,7 +52,7 @@ def article_row(root, article_id):
     if len(matches) != 1:
         raise ClassificationError(f"A cikk nincs egyértelműen a helyi cikklistában: {article_id}. Előbb töltsd le.")
     row = matches[0]
-    path = local_path(root / "articles", row["path"])
+    path = local_path(root / "blog/content-mirror/articles", row["path"])
     if not path.is_file():
         raise ClassificationError(f"A cikk nincs letöltve helyben: {article_id}. Előbb töltsd le.")
     return row, path
@@ -89,14 +89,14 @@ def image_variants(row, root):
         return {}, decorations
     if row["source_record"] != f"records/posts/{row['id']}":
         raise ClassificationError("A forrásútvonal nem a besorolandó cikkhez tartozik.")
-    source_root = root / "raw_source/content-mirror"
+    source_root = root / ".local-cache/blog/content-mirror"
     source = local_path(source_root, row["source_record"]) / "view-source.html"
     soup = BeautifulSoup(source.read_text(encoding="utf-8"), "html.parser")
     assets = load_json(source_root / "state.json")["assets"]
 
     def cached(target):
         asset = assets.get(urljoin(row["url"], target), {})
-        return local_path(root / "articles", asset["path"]) if asset.get("path") else None
+        return local_path(root / "blog/content-mirror/articles", asset["path"]) if asset.get("path") else None
 
     for url, text in DECORATIVE_IMAGES.items():
         if path := cached(url):

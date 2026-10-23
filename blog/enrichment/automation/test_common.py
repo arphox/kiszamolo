@@ -11,7 +11,7 @@ from unittest import mock
 
 from bs4 import BeautifulSoup
 
-from classification import common
+from blog.enrichment.automation import common
 
 
 class CommonHelpersTests(unittest.TestCase):
@@ -19,7 +19,7 @@ class CommonHelpersTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             with self.assertRaisesRegex(common.ClassificationError, "kilép"):
-                common.local_path(root / "articles", "../../outside.md", root / "articles")
+                common.local_path(root / "blog/content-mirror/articles", "../../outside.md", root / "blog/content-mirror/articles")
 
     def test_load_json_rejects_duplicate_object_keys(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -77,8 +77,8 @@ class CommonHelpersTests(unittest.TestCase):
     def test_article_row_rejects_duplicate_and_escaping_index_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            articles = root / "articles"
-            articles.mkdir()
+            articles = root / "blog/content-mirror/articles"
+            articles.mkdir(parents=True)
             (articles / "one.md").write_text("body", encoding="utf-8")
             row = {"id": 42, "type": "post", "path": "one.md"}
             index = articles / "index.jsonl"
@@ -92,7 +92,7 @@ class CommonHelpersTests(unittest.TestCase):
     def test_image_sources_and_cached_variants_choose_largest_local_image(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            articles = root / "articles"
+            articles = root / "blog/content-mirror/articles"
             assets_dir = articles / "assets"
             assets_dir.mkdir(parents=True)
             small = assets_dir / "small.png"
@@ -103,13 +103,13 @@ class CommonHelpersTests(unittest.TestCase):
                 '<img src="small.png" srcset="small.png 100w, chart,full.png 1200w">', "html.parser").img
             self.assertEqual(common.image_sources(image), ["chart,full.png", "small.png", "small.png"])
 
-            source_root = root / "raw_source/content-mirror/records/posts/42"
+            source_root = root / ".local-cache/blog/content-mirror/records/posts/42"
             source_root.mkdir(parents=True)
             (source_root / "view-source.html").write_text(
                 '<img src="https://media.test/small.png" '
                 'srcset="https://media.test/small.png 100w, https://media.test/chart,full.png 1200w">',
                 encoding="utf-8")
-            state_root = root / "raw_source/content-mirror"
+            state_root = root / ".local-cache/blog/content-mirror"
             (state_root / "state.json").write_text(json.dumps({"assets": {
                 "https://media.test/small.png": {"path": "assets/small.png"},
                 "https://media.test/chart,full.png": {"path": "assets/chart,full.png"},
@@ -122,9 +122,9 @@ class CommonHelpersTests(unittest.TestCase):
     def test_decorative_replacement_only_changes_registered_sources(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            articles = root / "articles"
+            articles = root / "blog/content-mirror/articles"
             article = articles / "article.md"
-            articles.mkdir()
+            articles.mkdir(parents=True)
             smile = "https://kiszamolo.hu/wp-includes/images/smilies/icon_smile.gif"
             body = (f"BODY\n![:)]({smile})\n<img src=\"{smile}\">\n"
                     "![](https://example.test/unknown.gif)")
@@ -139,7 +139,7 @@ class CommonHelpersTests(unittest.TestCase):
             assignment = root / "assignments.json"
             acquired = root / "acquired.txt"
             source = ("from pathlib import Path\nimport sys\n"
-                      "from classification.common import assignment_lock\n"
+                      "from blog.enrichment.automation.common import assignment_lock\n"
                       "p = Path(sys.argv[1])\n"
                       "with assignment_lock(p):\n"
                       "    p.with_name('acquired.txt').write_text('ok')\n")

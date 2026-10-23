@@ -1,7 +1,8 @@
-# Downloaded sources and generated article archive.
-/articles/
-/raw_source/*
-!/raw_source/README.md
+# Local downloads and processing cache.
+/.local-cache/
+
+# Generated archive; tracked Markdown will follow the asset-policy change.
+/blog/content-mirror/articles/
 
 # Python bytecode and local virtual environments.
 __pycache__/
@@ -10,4 +11,4 @@ __pycache__/
 venv/
 
 # OS-held lock for canonical assignment updates.
-/classification/.assignments.lock
+/blog/enrichment/.assignments.lock
