@@ -1,11 +1,8 @@
 """Deterministic sync lifecycle tests with no remote network access."""
 
 import hashlib
-import errno
 import json
-import os
 from pathlib import Path
-import ssl
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -151,16 +148,21 @@ class SyncTests(unittest.TestCase):
         return self.articles / self.state()["records"][f"{kind}:{number}"]["path"]
 
     def test_full_download_local_links_and_external_policy(self):
+        self.client.fail.update({"https://kiszamolo.hu/a.png", "https://other.test/b.png"})
         report = self.run_sync()
         self.assertEqual(report["incomplete_records"], 0)
-        self.assertTrue(all("other.test" not in url for url, _ in self.client.calls))
+        self.assertEqual({url for url, _ in self.client.calls},
+                         {"https://kiszamolo.hu/p1/", "https://kiszamolo.hu/p2/"})
         text = self.article_file(1).read_text(encoding="utf-8")
         self.assertIn("2011-01-01%2000.00%20Title%202.md#part", text)
-        self.assertIn("../../assets/", text)
+        self.assertIn("https://kiszamolo.hu/a.png", text)
         self.assertFalse(list(self.articles.rglob("*.html")))
+        self.assertFalse((self.articles / "assets").exists())
         self.assertTrue((self.root / "records/posts/1/source.html").exists())
         self.assertIn("https://other.test/b.png", text)
-        self.assertIn("https://other.test/b.png", self.state()["records"]["post:1"]["asset_urls"])
+        self.assertNotIn("assets", self.state())
+        self.assertEqual(self.state()["records"]["post:1"]["external_assets"],
+                         ["https://kiszamolo.hu/a.png", "https://other.test/b.png"])
 
     def test_media_source_statistics_refresh_only_during_offline_rebuild(self):
         self.run_sync()
@@ -251,9 +253,8 @@ class SyncTests(unittest.TestCase):
                 self.assertEqual(set(self.state()["records"]), {"post:1"})
                 self.assertFalse(old_article.exists())
                 self.assertFalse((self.root / "records/posts/104048").exists())
-                self.assertFalse((self.articles / sync.asset_filename("https://kiszamolo.hu/private.png")).exists())
-                self.assertTrue((self.articles / sync.asset_filename("https://kiszamolo.hu/a.png")).is_file())
-                self.assertNotIn("https://kiszamolo.hu/private.png", self.state()["assets"])
+                self.assertFalse((self.articles / "assets").exists())
+                self.assertNotIn("assets", self.state())
                 self.assertIn("[Policy](https://kiszamolo.hu/p104048/)", self.article_file(1).read_text(encoding="utf-8"))
                 self.assertNotIn("104048", (self.articles / "index.jsonl").read_text(encoding="utf-8"))
                 self.assertNotIn("Title 104048", (self.articles / "INDEX.md").read_text(encoding="utf-8"))
@@ -449,10 +450,9 @@ class SyncTests(unittest.TestCase):
                 self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
                 self.assertTrue(self.state()["records"]["post:1"]["content_classification_pending"])
 
-    def test_pending_survives_failed_asset_retry_and_offline_rebuild(self):
+    def test_pending_survives_sync_and_offline_rebuild(self):
         self.run_sync()
         self.records[0] = post(modified="2026-10-08T12:00:00", body="<p>Changed</p><img src='/a.png'>")
-        self.client.fail.add("https://kiszamolo.hu/a.png")
         self.run_sync()
         self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
         self.run_sync()
@@ -487,41 +487,6 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(report["incomplete_records"], 1)
         self.assertTrue(self.state()["records"]["post:1"]["protected_content"])
         self.assertEqual(self.state()["records"]["post:1"]["acquisition_status"], "incomplete")
-
-    def test_changed_asset_bytes_set_pending_but_same_bytes_do_not(self):
-        self.run_sync()
-        self.clear_classification_pending()
-        asset_path = self.articles / self.state()["assets"]["https://kiszamolo.hu/a.png"]["path"]
-        asset_path.unlink()
-        self.run_sync()
-        self.assertFalse(self.state()["records"]["post:1"]["classification_pending"])
-        self.clear_classification_pending()
-        self.client.payloads["https://kiszamolo.hu/a.png"] = b"new image bytes"
-        asset_path.unlink()
-        self.run_sync()
-        self.assertTrue(self.state()["records"]["post:1"]["classification_pending"])
-
-    def test_failed_asset_is_explicit_and_retried(self):
-        self.records[0]["content"]["rendered"] += '<img src="/healthy.png">'
-        self.client.fail.add("https://kiszamolo.hu/a.png")
-        self.assertEqual(self.run_sync()["incomplete_records"], 2)
-        self.assertEqual(self.state()["records"]["post:1"]["acquisition_status"], "incomplete")
-        for failing in (True, False):
-            with self.subTest(failing=failing):
-                if not failing:
-                    self.client.fail.clear()
-                self.client.calls.clear()
-                self.detail_calls.clear()
-                report = self.run_sync()
-                self.assertEqual(report["incomplete_records"], 2 if failing else 0)
-                self.assertEqual(report["refreshed_pages"], 0)
-                self.assertEqual(report["refreshed_assets"], 1)
-                self.assertEqual(report["full_records_fetched"], 0)
-                self.assertEqual(report["cached_records_reused"], 2)
-                self.assertEqual(self.detail_calls, [])
-                self.assertEqual([u for u, _ in self.client.calls], ["https://kiszamolo.hu/a.png"])
-                self.assertEqual(self.state()["records"]["post:1"]["failed_assets"],
-                                 ["https://kiszamolo.hu/a.png"] if failing else [])
 
     def test_permanent_public_page_failure_is_skipped_after_article_change(self):
         self.records = [post(body="<p>API body</p>")]
@@ -577,88 +542,6 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(self.detail_calls, [])
         self.assertEqual(self.client.calls, [])
 
-    def test_permanent_http_failures_are_skipped_even_after_article_changes(self):
-        url = "https://kiszamolo.hu/missing.png"
-        for status in (404, 410, 403):
-            with self.subTest(status=status):
-                self.root = Path(self.temp.name) / f"mirror-{status}"
-                self.articles = Path(self.temp.name) / "articles"
-                self.records = [post(body='<p>First</p><img src="/missing.png">')]
-                self.client = FakeClient()
-                self.client.http_failures[url] = status
-                report = self.run_sync()
-                asset = self.state()["assets"][url]
-                self.assertEqual(asset["status"], "unavailable")
-                self.assertEqual(asset["http_status"], status)
-                self.assertIn("HTTPError", asset["error"])
-                self.assertEqual(report["incomplete_records"], 0)
-                self.assertEqual(report["asset_failures"], {})
-                text = self.article_file(1).read_text(encoding="utf-8")
-                self.assertIn(url, text)
-                self.assertNotIn("../../assets/", text)
-
-                self.records[0] = post(modified="2011-01-02T00:00:00",
-                                       body='<p>Changed</p><img src="/missing.png">')
-                self.client.calls.clear()
-                self.run_sync()
-                self.assertNotIn(url, [called_url for called_url, _ in self.client.calls])
-                self.assertEqual(self.state()["assets"][url]["status"], "unavailable")
-                self.assertIn(url, self.article_file(1).read_text(encoding="utf-8"))
-
-    def test_invalid_media_is_unavailable_without_repeated_attempts(self):
-        url = "https://kiszamolo.hu/bad.png"
-        self.records = [post(body='<img src="/bad.png">')]
-        self.client.invalid_media.add(url)
-        self.run_sync()
-        asset = self.state()["assets"][url]
-        self.assertEqual(asset["status"], "unavailable")
-        self.assertIn("ValueError", asset["error"])
-        self.assertEqual(self.state()["records"]["post:1"]["acquisition_status"], "complete")
-        self.client.calls.clear()
-        self.run_sync()
-        self.assertEqual(self.client.calls, [])
-
-    def test_certificate_failure_inside_transport_wrapper_is_permanent(self):
-        url = "https://kiszamolo.hu/cert.png"
-        self.records = [post(body='<img src="/cert.png">')]
-        self.client.exceptions[url] = TransientDownloadError(
-            URLError(ssl.SSLCertVerificationError("certificate rejected")))
-        self.run_sync()
-        self.assertEqual(self.state()["assets"][url]["status"], "unavailable")
-
-    def test_unavailable_cached_asset_reverts_all_markdown_links_to_source_url(self):
-        url = "https://kiszamolo.hu/a.png"
-        self.run_sync()
-        self.records[0] = post(modified="2011-01-02T00:00:00",
-                               body='<p>Changed</p><img src="/a.png">')
-        self.client.fail.add(url)
-        self.run_sync()
-        self.assertEqual(self.state()["assets"][url]["status"], "failed")
-        self.client.fail.clear()
-        self.client.http_failures[url] = 404
-        self.run_sync()
-        asset = self.state()["assets"][url]
-        self.assertEqual(asset["status"], "unavailable")
-        self.assertTrue(asset["cached_copy"])
-        self.assertTrue((self.articles / asset["path"]).is_file())
-        for number in (1, 2):
-            text = self.article_file(number).read_text(encoding="utf-8")
-            self.assertIn(url, text)
-            self.assertNotIn("../../assets/", text)
-
-    def test_offline_rebuild_ignores_missing_unavailable_cached_copy(self):
-        url = "https://kiszamolo.hu/a.png"
-        self.run_sync()
-        self.records[0] = post(modified="2011-01-02T00:00:00",
-                               body='<p>Changed</p><img src="/a.png">')
-        self.client.http_failures[url] = 404
-        self.run_sync()
-        asset = self.state()["assets"][url]
-        self.assertEqual(asset["status"], "unavailable")
-        (self.articles / asset["path"]).unlink()
-        sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
-        self.assertIn(url, self.article_file(1).read_text(encoding="utf-8"))
-
     def test_missing_remote_retained_and_reactivation(self):
         self.run_sync()
         old = self.article_file(2)
@@ -693,14 +576,6 @@ class SyncTests(unittest.TestCase):
                           metadata_loader=lambda *a, **k: Inventory([], []), progress=lambda _: None)
         self.assertEqual(before, ((self.root / "state.json").read_bytes(), (self.articles / "index.jsonl").read_bytes()))
 
-    def test_offline_rebuild_rejects_corrupt_cached_asset(self):
-        self.run_sync()
-        state = self.state()
-        asset = state["assets"]["https://kiszamolo.hu/a.png"]
-        (self.articles / asset["path"]).write_bytes(b"corrupt")
-        with self.assertRaisesRegex(ValueError, "Cached media hash mismatch"):
-            sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
-
     def test_live_missing_candidate_aborts_without_false_status(self):
         self.run_sync()
         before = (self.root / "state.json").read_bytes()
@@ -723,7 +598,7 @@ class SyncTests(unittest.TestCase):
         sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
                       record_loader=self.details, metadata_loader=metadata, progress=lambda _: None)
         state = self.state()
-        self.assertIn("https://kiszamolo.hu/hero.png", state["records"]["post:1"]["asset_urls"])
+        self.assertIn("https://kiszamolo.hu/hero.png", state["records"]["post:1"]["external_assets"])
         self.assertTrue((self.root / "records/posts/1/source-featured-media.json").is_file())
         text = self.article_file(1).read_text(encoding="utf-8")
         self.assertIn('category_names: ["Finance"]', text)
@@ -737,7 +612,7 @@ class SyncTests(unittest.TestCase):
         sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
                       record_loader=self.details, metadata_loader=failed_metadata, progress=lambda _: None)
         self.assertIn(b"Hero", self.article_file(1).read_bytes())
-        self.assertIn("https://kiszamolo.hu/hero.png", self.state()["records"]["post:1"]["asset_urls"])
+        self.assertIn("https://kiszamolo.hu/hero.png", self.state()["records"]["post:1"]["external_assets"])
         self.assertEqual(self.state()["records"]["post:1"]["acquisition_status"], "incomplete")
         self.detail_calls.clear()
         report = sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
@@ -863,7 +738,7 @@ class SyncTests(unittest.TestCase):
         self.assertIn("Actual page", text)
         self.assertNotIn("Navigation", text)
         self.assertNotIn("Footer", text)
-        self.assertIn("../../assets/", text)
+        self.assertIn("https://kiszamolo.hu/builder.png", text)
         self.assertEqual(self.state()["records"]["page:1"]["derived_source"], "public_page_content")
 
     def test_cached_page_repair_preserves_public_body_assets_and_embeds(self):
@@ -883,7 +758,7 @@ class SyncTests(unittest.TestCase):
                 self.detail_calls.clear()
                 self.run_sync(sample_ids=sample_ids)
                 after = self.state()["records"]["page:1"]
-                self.assertEqual(after["asset_urls"], before["asset_urls"])
+                self.assertEqual(after["external_assets"], before["external_assets"])
                 self.assertEqual(after["embed_urls"], before["embed_urls"])
                 self.assertEqual(self.article_file(1, "page").read_bytes(), before_markdown)
                 self.assertEqual(self.client.calls, [])
@@ -920,7 +795,7 @@ class SyncTests(unittest.TestCase):
         self.records[1]["modified"] = self.records[1]["modified_gmt"] = "2026-10-08T12:00:00"
         self.run_sync()
         text = self.article_file(1).read_text(encoding="utf-8")
-        self.assertIn("[![cover](../../assets/", text)
+        self.assertIn("[![cover](https://kiszamolo.hu/a.png", text)
         self.assertIn("](2011-01-01%2000.00%20Renamed%20target.md)", text)
         self.assertFalse(old.exists())
 
@@ -1031,8 +906,6 @@ class SyncTests(unittest.TestCase):
             for name in ("source.json", "source.html", "view-source.html", "source-page.html")
         }
         protected.update(self.articles / item["path"] for item in state["records"].values())
-        protected.update(self.articles / asset["path"] for asset in state["assets"].values()
-                         if asset.get("path"))
         original_read_bytes = Path.read_bytes
 
         def guarded_read_bytes(path):
@@ -1062,21 +935,6 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(report["processed_records"], 1)
         self.assertEqual(report["rendered_records"], 1)
         self.assertTrue(self.article_file(1).is_file())
-
-    def test_media_retry_does_not_reload_or_rerender_article(self):
-        self.client.fail.add("https://kiszamolo.hu/a.png")
-        self.run_sync()
-        self.client.fail.clear()
-        self.detail_calls.clear()
-        self.client.calls.clear()
-        with patch("sync.load_cached_view", side_effect=AssertionError("Media retry loaded article")), \
-             patch("sync.render_views", side_effect=AssertionError("Media retry rerendered articles")):
-            self.run_sync()
-        self.assertEqual(self.detail_calls, [])
-        self.assertEqual([url for url, _ in self.client.calls], ["https://kiszamolo.hu/a.png"])
-        text = self.article_file(1).read_text(encoding="utf-8")
-        self.assertNotIn("https://kiszamolo.hu/a.png", text)
-        self.assertIn("../../assets/", text)
 
     def test_missing_raw_source_is_refetched(self):
         self.run_sync()
@@ -1139,35 +997,10 @@ class SyncTests(unittest.TestCase):
             report = sync.run_sync(self.root, client=self.client, inventory_loader=self.inventory,
                                    record_loader=self.details, metadata_loader=metadata, progress=lambda _: None)
             self.assertEqual(report["page_failures"], {})
-            self.assertEqual(report["asset_failures"], {})
             self.assertEqual(report["incomplete_records"], 0)
         self.assertNotIn("media", [kind for kind, _ in calls])
         self.assertTrue(all(kwargs["fields"] == ("id","name") for kind,kwargs in calls if kind!="media"))
-        self.assertIn("hero.png", json.dumps(self.state()["records"]["post:1"]["asset_urls"]))
-
-    @unittest.skipUnless(os.name == "nt", "Windows path resolution regression")
-    def test_media_download_handles_concurrent_parent_creation(self):
-        import ntpath
-
-        self.records = [post(body='<img src="/a.png"><img src="/c.png">')]
-        assets = self.articles / "assets"
-        get_final_path = ntpath._getfinalpathname
-
-        def create_parent_after_missing_path(path):
-            try:
-                return get_final_path(path)
-            except FileNotFoundError as error:
-                if error.winerror == 3 and Path(path).parent == assets:
-                    # Simulate another worker creating the parent between the
-                    # two Windows lookups performed by Path.resolve().
-                    assets.mkdir(exist_ok=True)
-                raise
-
-        with patch("ntpath._getfinalpathname", side_effect=create_parent_after_missing_path):
-            report = self.run_sync(workers=1)
-        self.assertEqual(report["asset_failures"], {})
-        self.assertEqual(report["incomplete_records"], 0)
-        self.assertEqual(report["refreshed_assets"], 2)
+        self.assertIn("hero.png", json.dumps(self.state()["records"]["post:1"]["external_assets"]))
 
     def test_legacy_state_needs_no_modified_gmt_migration(self):
         self.run_sync()
@@ -1209,151 +1042,31 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(report["api_response_count"], 3)
         self.assertEqual(report["api_response_bytes"], sum(r["size_bytes"] for r in manifest))
 
-    def legacy_asset_layout(self):
-        state = self.state()
-        state.pop("assets_location", None)
-        for item in state["assets"].values():
-            if item.get("sha256"):
-                old = self.root/item["path"]
-                old.parent.mkdir(parents=True, exist_ok=True)
-                (self.articles/item["path"]).replace(old)
-        (self.root/"state.json").write_bytes(sync.json_bytes(state))
-        return state
-
-    def test_offline_rebuild_moves_legacy_media_and_preserves_sync_status(self):
-        self.run_sync()
-        before = self.legacy_asset_layout()
-        report_before = (self.articles/"last-report.json").read_bytes()
-        with patch("sync.HttpClient", side_effect=AssertionError("Network forbidden")):
-            sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
-        state = self.state()
-        self.assertEqual(state["assets_location"], "articles")
-        self.assertEqual(state["last_completed_sync_at"], before["last_completed_sync_at"])
-        self.assertEqual(state["last_inventory_at"], before["last_inventory_at"])
-        self.assertEqual((self.articles/"last-report.json").read_bytes(), report_before)
-        self.assertFalse((self.root/"assets").exists())
-        self.assertIn("../../assets/", self.article_file(1).read_text())
-        entries = [json.loads(line) for line in (self.articles/"index.jsonl").read_text().splitlines()]
-        self.assertEqual(entries[0]["source_record"], "records/posts/1")
-        self.assertNotIn("source_directory", entries[0])
-        self.assertNotIn("directory", entries[0])
-        self.assertNotIn("path", entries[0]["page"])
-        first = self.article_file(1).read_bytes()
-        sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
-        self.assertEqual(self.article_file(1).read_bytes(), first)
-
-    def test_normal_sync_migrates_old_assets_without_refetch(self):
-        self.run_sync()
-        self.legacy_asset_layout()
-        self.client.calls.clear()
-        self.run_sync()
-        self.assertFalse(self.client.calls)
-        self.assertTrue((self.articles/sync.asset_filename("https://kiszamolo.hu/a.png")).is_file())
-        self.assertFalse((self.root/"assets").exists())
-
-    def test_conflicting_migration_target_aborts_without_overwrite(self):
-        self.run_sync()
-        state = self.legacy_asset_layout()
-        asset = state["assets"]["https://kiszamolo.hu/a.png"]
-        (self.articles/asset["path"]).write_bytes(b"different")
-        before = (self.root/"state.json").read_bytes()
-        with self.assertRaises(ValueError):
-            sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
-        self.assertEqual((self.root/asset["path"]).read_bytes(), b"data")
-        self.assertEqual((self.articles/asset["path"]).read_bytes(), b"different")
-        self.assertEqual((self.root/"state.json").read_bytes(), before)
-
-    def test_partial_asset_migration_can_resume(self):
-        self.records[0] = post(body='<p>Body</p><img src="/a.png"><img src="/c.png">')
-        self.run_sync()
-        state = self.legacy_asset_layout()
-        first = next(item for item in state["assets"].values() if item.get("sha256"))
-        (self.root/first["path"]).replace(self.articles/first["path"])
-        sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
-        self.assertFalse((self.root/"assets").exists())
-        self.assertEqual(len(list((self.articles/"assets").iterdir())), 2)
-
-    def test_offline_rebuild_preserves_failed_asset_with_valid_cached_copy(self):
-        self.run_sync()
-        self.client.fail.add("https://kiszamolo.hu/a.png")
-        self.records[0]["modified"] = self.records[0]["modified_gmt"] = "2026-10-19T00:00:00"
-        self.run_sync()
-        before = self.legacy_asset_layout()
-        sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
-        after = self.state()
-        self.assertEqual(after["assets"], before["assets"])
-        self.assertEqual(after["records"]["post:1"]["acquisition_status"], "incomplete")
-        self.assertIn("../../assets/", self.article_file(1).read_text())
-
-    def test_rebuild_rejects_corrupt_downloaded_asset(self):
-        self.run_sync()
-        asset = self.state()["assets"]["https://kiszamolo.hu/a.png"]
-        (self.articles/asset["path"]).write_bytes(b"corrupt")
-        with self.assertRaises(ValueError):
-            sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
-
     def test_default_roots_are_allowed_but_tool_targets_are_rejected(self):
         self.assertEqual(sync.validate_roots(sync.DEFAULT_SOURCE_OUTPUT, sync.DEFAULT_OUTPUT),
                          (sync.DEFAULT_SOURCE_OUTPUT.resolve(), sync.DEFAULT_OUTPUT.resolve()))
         with self.assertRaises(ValueError):
             sync.validate_roots(self.root, sync.ROOT/"blog/content-mirror/automation"/"output")
 
-    def test_migration_target_directory_aborts_before_any_move(self):
+    def test_changing_output_while_old_articles_are_locked_leaves_old_output_unchanged(self):
         self.run_sync()
-        state = self.legacy_asset_layout()
-        asset = state["assets"]["https://kiszamolo.hu/a.png"]
-        (self.articles/asset["path"]).mkdir()
-        with self.assertRaises(ValueError):
-            sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
-        self.assertTrue((self.root/asset["path"]).is_file())
-
-    def test_cross_volume_move_verifies_copy_before_removing_source(self):
-        source = Path(self.temp.name)/"source.bin"
-        destination = Path(self.temp.name)/"destination.bin"
-        source.write_bytes(b"media")
-        replace = sync.os.replace
-        calls = []
-        def cross_volume_first(old, new):
-            calls.append((old,new))
-            if len(calls)==1:
-                raise OSError(errno.EXDEV, "Different devices")
-            return replace(old,new)
-        with patch("sync.os.replace", side_effect=cross_volume_first):
-            sync.move_asset(source,destination)
-        self.assertFalse(source.exists())
-        self.assertEqual(destination.read_bytes(),b"media")
-
-    def test_failed_cross_volume_verification_keeps_source_and_cleans_temporary(self):
-        source = Path(self.temp.name)/"source.bin"
-        destination = Path(self.temp.name)/"destination.bin"
-        source.write_bytes(b"media")
-        with patch("sync.os.replace", side_effect=OSError(errno.EXDEV,"Different devices")):
-            with patch("sync.files_equal", return_value=False):
-                with self.assertRaises(OSError):
-                    sync.move_asset(source,destination)
-        self.assertEqual(source.read_bytes(),b"media")
-        self.assertFalse(destination.exists())
-        self.assertFalse(list(Path(self.temp.name).glob("*.tmp")))
-
-    def test_changing_output_requires_previous_articles_lock(self):
-        self.run_sync()
-        asset = self.state()["assets"]["https://kiszamolo.hu/a.png"]
-        before = (self.root/"state.json").read_bytes()
+        previous_files = {path: path.read_bytes() for path in self.articles.rglob("*") if path.is_file()}
+        other_articles = Path(self.temp.name) / "other-articles"
         with sync.exclusive_run(self.articles):
-            with self.assertRaises(OSError):
-                sync.run_sync(self.root, articles_root=Path(self.temp.name)/"other-articles",
-                              client=self.client, inventory_loader=self.inventory,
-                              record_loader=self.details, metadata_loader=lambda *a,**k: Inventory([],[]),
-                              progress=lambda _: None)
-        self.assertTrue((self.articles/asset["path"]).is_file())
-        self.assertEqual((self.root/"state.json").read_bytes(),before)
+            sync.run_sync(self.root, articles_root=other_articles, client=self.client,
+                          inventory_loader=self.inventory, record_loader=self.details,
+                          metadata_loader=lambda *a, **k: Inventory([], []), progress=lambda _: None)
+        self.assertEqual({path: path.read_bytes() for path in previous_files}, previous_files)
+        self.assertTrue((other_articles / "INDEX.md").is_file())
+        self.assertEqual(self.state()["articles_root"], str(other_articles.resolve()))
 
     def test_offline_rebuild_preserves_crlf_view_source_input(self):
-        self.records[0] = post(body="<p>First</p>\r\n<p>Second</p>")
+        self.records[0] = post(body='<p>First</p>\r\n<p>Second</p><img src="/a.png">')
         self.run_sync()
         before = self.article_file(1).read_bytes()
         sync.offline_rebuild(self.root, self.articles, progress=lambda _: None)
         self.assertEqual(self.article_file(1).read_bytes(),before)
+        self.assertIn("https://kiszamolo.hu/a.png", self.article_file(1).read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

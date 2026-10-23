@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import html
@@ -13,7 +13,6 @@ import json
 import os
 from pathlib import Path
 import re
-import errno
 import ssl
 import shutil
 import sys
@@ -72,41 +71,6 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def files_equal(first, second):
-    with Path(first).open("rb") as left, Path(second).open("rb") as right:
-        while True:
-            a, b = left.read(1024 * 1024), right.read(1024 * 1024)
-            if a != b:
-                return False
-            if not a:
-                return True
-
-
-def move_asset(source, destination):
-    """Move one asset atomically, copying through a verified temp on other volumes."""
-    try:
-        os.replace(source, destination)
-        return
-    except OSError as error:
-        if error.errno != errno.EXDEV and getattr(error, "winerror", None) != 17:
-            raise
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp",
-                                     dir=destination.parent)
-    try:
-        with os.fdopen(fd, "wb") as target, Path(source).open("rb") as original:
-            shutil.copyfileobj(original, target, length=1024 * 1024)
-            target.flush()
-            os.fsync(target.fileno())
-        if not files_equal(source, temporary):
-            raise OSError(f"Copied asset verification failed: {source}")
-        os.replace(temporary, destination)
-        Path(source).unlink()
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
-
 def atomic_write(path, data):
     """Preserve existing bytes when equal, otherwise replace one file atomically."""
     path = Path(path)
@@ -148,74 +112,6 @@ def validate_roots(root, articles_root):
     return root, articles_root
 
 
-def _tracked_asset_path(root, relative):
-    """Only move flat asset files recorded in state; never traverse arbitrary paths."""
-    path = safe_path(root, relative)
-    if Path(relative).parent.as_posix() != "assets" or Path(relative).name in ("", ".", ".."):
-        raise ValueError(f"Tracked media path is not a flat assets file: {relative!r}")
-    if (root / relative).is_symlink() or (root / "assets").is_symlink():
-        raise ValueError(f"Tracked media must not be a symlink: {relative!r}")
-    if (root / "assets").exists() and not (root / "assets").is_dir():
-        raise ValueError("Asset parent must be a directory")
-    if path.exists() and not path.is_file():
-        raise ValueError(f"Tracked media must be a regular file: {relative!r}")
-    return path
-
-
-def migrate_assets(root, articles_root, state):
-    """Move tracked media into the portable article tree, then commit its location marker."""
-    root, articles_root = validate_roots(root, articles_root)
-    location = state.get("assets_location", "raw")
-    if location not in {"raw", "articles"}:
-        raise ValueError(f"Unsupported assets location: {location!r}")
-    old_articles_root = Path(state.get("articles_root") or articles_root).resolve()
-    source_root = root if location == "raw" else old_articles_root
-    if location == "articles" and source_root == articles_root:
-        return 0
-    if location == "articles":
-        validate_roots(root, source_root)
-        if source_root != articles_root and (source_root.is_relative_to(articles_root) or articles_root.is_relative_to(source_root)):
-            raise ValueError("Previous and current Markdown directories must not overlap")
-    with ExitStack() as locks:
-        if location == "articles" and source_root != articles_root:
-            locks.enter_context(exclusive_run(source_root))
-        moves = []
-        # Validate every known path and every collision before moving any file.
-        for info in state.get("assets", {}).values():
-            relative = info.get("path")
-            if not relative:
-                continue
-            _tracked_asset_path(root, relative)
-            source = _tracked_asset_path(source_root, relative)
-            destination = _tracked_asset_path(articles_root, relative)
-            if source == destination:
-                continue
-            if source.is_file() and destination.is_file():
-                if not files_equal(source, destination):
-                    raise ValueError(f"Conflicting source and article media files: {relative}")
-                moves.append((source, destination, "duplicate"))
-            elif source.is_file():
-                moves.append((source, destination, "move"))
-            elif not destination.is_file():
-                # Missing media remains an acquisition retry target during online sync.
-                continue
-        moved = 0
-        for source, destination, action in moves:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            if action == "duplicate":
-                source.unlink()
-            else:
-                move_asset(source, destination)
-                moved += 1
-        old_assets = source_root / "assets"
-        if old_assets.is_dir() and not any(old_assets.iterdir()):
-            old_assets.rmdir()
-        state["assets_location"] = "articles"
-        state["articles_root"] = str(articles_root)
-        atomic_write(root / "state.json", json_bytes(state))
-        return moved
-
-
 @contextmanager
 def exclusive_run(root):
     """OS-held lock is released even if a process dies; the lock file may remain."""
@@ -245,18 +141,15 @@ def exclusive_run(root):
 def load_state(root):
     path = root / "state.json"
     if not path.exists():
-        return {"schema_version": SCHEMA_VERSION, "records": {}, "assets": {},
+        return {"schema_version": SCHEMA_VERSION, "records": {},
                 "last_completed_sync_at": None}
     state = json.loads(path.read_text(encoding="utf-8"))
     if state.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("Unsupported mirror state schema")
-    if not isinstance(state.get("records"), dict) or not isinstance(state.get("assets"), dict):
+    if not isinstance(state.get("records"), dict):
         raise ValueError("Invalid mirror state")
     for item in state["records"].values():
         safe_path(root, item["directory"])
-    for item in state["assets"].values():
-        if item.get("path"):
-            safe_path(root, item["path"])
     return state
 
 
@@ -404,10 +297,6 @@ def prune_excluded(root, articles_root, state):
     if not excluded:
         return []
     kept = [item for key, item in state["records"].items() if key not in excluded]
-    shared_assets = {url for item in kept for url in item.get("asset_urls", [])}
-    removed_assets = {url for item in excluded.values() for url in item.get("asset_urls", [])} - shared_assets
-    shared_paths = {asset["path"] for url, asset in state["assets"].items()
-                    if url not in removed_assets and asset.get("path")}
     files, directories = set(), []
     for key, item in excluded.items():
         if record_key(item) != key or item["directory"] != record_directory(item):
@@ -421,10 +310,6 @@ def prune_excluded(root, articles_root, state):
             if path != articles_root / item["path"] or any(other.get("path") == item["path"] for other in kept):
                 raise ValueError(f"Excluded Markdown path is shared or uses symlinks: {key}")
             files.add(path)
-    for url in removed_assets:
-        asset = state["assets"].get(url, {})
-        if asset.get("path") and asset["path"] not in shared_paths:
-            files.add(_tracked_asset_path(articles_root, asset["path"]))
     # All deletion targets have been resolved and checked before any removal.
     for path in files:
         path.unlink(missing_ok=True)
@@ -434,8 +319,6 @@ def prune_excluded(root, articles_root, state):
     for key, item in excluded.items():
         state["records"].pop(key)
         state.get("obsolete_markdown", {}).pop(item.get("path"), None)
-    for url in removed_assets:
-        state["assets"].pop(url, None)
     atomic_write(root / "state.json", json_bytes(state))
     return sorted(excluded)
 
@@ -566,21 +449,13 @@ def host_statistics(records, discovered):
         for category, urls in [("assets", assets), ("images", images), ("embeds", embeds)]:
             for url in urls:
                 host = urlsplit(url).hostname.lower()
-                item = hosts.setdefault(host, {"download_allowed": host in ALLOWED_HOSTS,
-                    "assets": set(), "asset_documents": set(), "images": set(),
+                item = hosts.setdefault(host, {"assets": set(), "asset_documents": set(), "images": set(),
                     "image_documents": set(), "embeds": set(), "embed_documents": set()})
                 item[category].add(url)
                 item[{"assets": "asset_documents", "images": "image_documents",
                       "embeds": "embed_documents"}[category]].add(key)
     return {host: {key: len(value) if isinstance(value, set) else value
                    for key, value in item.items()} for host, item in sorted(hosts.items())}
-
-
-def asset_filename(url):
-    suffix = Path(urlsplit(url).path).suffix.lower()
-    if not re.fullmatch(r"\.[a-z0-9]{1,10}", suffix):
-        suffix = ".bin"
-    return f"assets/{digest(url.encode('utf-8'))}{suffix}"
 
 
 def relative_url(directory, target):
@@ -671,10 +546,10 @@ def publish_indexes(root, state, stats, report, articles_root=None, *, update_me
     atomic_write(articles_root / "INDEX.md", ("\n".join(md) + "\n").encode("utf-8"))
     if update_media_sources:
         smd = ["# Médiaforrások", "", "A statisztika a legutóbbi `--rebuild` során feldolgozott helyi cikk- és oldaltörzsekben, valamint elérhető kiemelt képekben felismert URL-eket mutatja. A normál frissítés nem frissíti ezt a statisztikát. A srcset-változatok külön URL-nek számítanak; ez nem különálló ábrák száma.",
-               "", "| Host | Egyedi média-/fájl-URL | Érintett tartalom | Kép-URL | Képes tartalom | Embed-URL | Letölthető |",
+               "", "| Host | Egyedi média-/fájl-URL | Érintett tartalom | Kép-URL | Képes tartalom | Embed-URL |",
                "|---|---:|---:|---:|---:|---:|---:|"]
         for host, item in sorted(stats.items(), key=lambda x: (-x[1]["images"], x[0])):
-            smd.append(f"| {host} | {item['assets']} | {item['asset_documents']} | {item['images']} | {item['image_documents']} | {item['embeds']} | {'igen' if item['download_allowed'] else 'nem'} |")
+            smd.append(f"| {host} | {item['assets']} | {item['asset_documents']} | {item['images']} | {item['image_documents']} | {item['embeds']} |")
         atomic_write(articles_root / "MEDIA-SOURCES.md", ("\n".join(smd) + "\n").encode("utf-8"))
         atomic_write(articles_root / "media-sources.json", json_bytes(stats))
     atomic_write(articles_root / "last-report.json", json_bytes(report))
@@ -682,15 +557,12 @@ def publish_indexes(root, state, stats, report, articles_root=None, *, update_me
     atomic_write(root / "state.json", json_bytes(state))
 
 
-def update_acquisition_status(item, assets, *, protected_content, derived_view_available):
+def update_acquisition_status(item, *, protected_content, derived_view_available):
     """Refresh acquisition bookkeeping without changing the caller's source flags."""
-    urls = item.get("asset_urls", [])
-    failures = [url for url in urls if assets.get(url, {}).get("status") == "failed"]
-    item["failed_assets"] = failures
-    item["external_assets"] = [url for url in urls
-                               if assets.get(url, {}).get("status") == "external_reference"]
+    item.pop("failed_assets", None)
+    item["external_assets"] = list(item.get("asset_urls", []))
     item["acquisition_status"] = "incomplete" if (
-        failures or item.get("page", {}).get("status") not in {"downloaded", "unavailable"} or
+        item.get("page", {}).get("status") not in {"downloaded", "unavailable"} or
         protected_content or item.get("featured_media_error") or not derived_view_available) else "complete"
 
 
@@ -728,13 +600,6 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
         item = state["records"][key]
         output_path = safe_path(articles_root, item["path"])
         directory = output_path.parent
-        asset_paths = {}
-        for url in item.get("asset_urls", []):
-            asset = state["assets"].get(url, {})
-            if (asset.get("path") and asset.get("sha256") and
-                    (asset.get("status") == "downloaded" or
-                     (asset.get("status") == "failed" and asset.get("cached_copy")))):
-                asset_paths[url] = relative_url(directory, safe_path(articles_root, asset["path"]))
         body = view_bodies[key]
         featured_record = featured.get(record.get("featured_media"))
         if featured_record is None and record.get("featured_media"):
@@ -751,7 +616,7 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
             caption = featured_record.get("caption", {}).get("rendered", "")
             body = f'<figure><img src="{image_url}" alt="{alt}"><figcaption>{caption}</figcaption></figure>\n' + body
         display_record = dict(record, category_names=item["category_names"], tag_names=item["tag_names"])
-        rewritten = rewrite_html(body, record["link"], asset_paths, RelativePaths(directory, targets),
+        rewritten = rewrite_html(body, record["link"], RelativePaths(directory, targets),
                                  RelativePaths(directory, embed_targets))
         soup = BeautifulSoup(rewritten, "html.parser")
         for frame in soup.find_all("iframe", src=True):
@@ -776,7 +641,7 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
         atomic_write(output_path, markdown)
         item["markdown_sha256"] = digest(markdown)
         if update_status:
-            update_acquisition_status(item, state.get("assets", {}),
+            update_acquisition_status(item,
                 protected_content=record["content"].get("protected"),
                 derived_view_available=item.get("derived_view_available"))
             if record["content"].get("protected"):
@@ -785,7 +650,7 @@ def render_views(root, articles_root, state, render_records, view_bodies, featur
 
 
 def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=4,
-             max_asset_bytes=None, progress=print, inventory_loader=fetch_census,
+             progress=print, inventory_loader=fetch_census,
              metadata_loader=fetch_metadata, record_loader=fetch_records):
     started = utc_now()
     root = Path(root).resolve()
@@ -796,7 +661,6 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
     with exclusive_run(root), exclusive_run(articles_root):
         state = load_state(root)
         previous_articles_root = state.get("articles_root")
-        migrate_assets(root, articles_root, state)
         before_exclusions = {key: dict(item) for key, item in state["records"].items()}
         excluded_keys = sorted(key for key in state["records"] if key in EXCLUDED_RECORDS)
         deleted_targets = {
@@ -1037,60 +901,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             view_bodies[key] = body
             if key in fetched_keys:
                 atomic_write(root / item["directory"] / "view-source.html", body.encode("utf-8"))
-        all_assets = {url for key in scope_keys for url in state["records"].get(key, {}).get("asset_urls", [])}
-        assets_refresh = {url for key in fetched_keys if key in discovered for url in discovered[key][0]}
-        jobs = {}
-        previous_asset_hashes = {url: state["assets"].get(url, {}).get("sha256") for url in all_assets}
-        previous_asset_statuses = {url: state["assets"].get(url, {}).get("status") for url in all_assets}
-        previous_asset_paths = {url: state["assets"].get(url, {}).get("path") for url in all_assets}
-        previously_available = {
-            url: state["assets"].get(url, {}).get("status") == "downloaded" and
-                 bool(state["assets"].get(url, {}).get("path")) and
-                 safe_path(articles_root, state["assets"][url]["path"]).is_file()
-            for url in all_assets
-        }
-        # Avoid racing Windows path resolution with creation of the shared parent.
-        safe_path(articles_root, "assets").mkdir(exist_ok=True)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-            for url in sorted(all_assets):
-                previous = state["assets"].get(url, {})
-                if urlsplit(url).hostname not in ALLOWED_HOSTS:
-                    state["assets"][url] = dict(status="external_reference", url=url)
-                    continue
-                asset_path = previous.get("path") or asset_filename(url)
-                present = safe_path(articles_root, asset_path).is_file()
-                if previous.get("status") == "unavailable":
-                    continue
-                if url in assets_refresh or not present or previous.get("status") != "downloaded":
-                    jobs[pool.submit(fetch_file, client, url, articles_root, asset_filename(url),
-                        previous, stamp, max_bytes=max_asset_bytes, expected_media=True)] = url
-            progress(f"Media refresh: {len(jobs)}; external references: {sum(urlsplit(u).hostname not in ALLOWED_HOSTS for u in all_assets)}")
-            for n, future in enumerate(concurrent.futures.as_completed(jobs), 1):
-                url = jobs[future]
-                state["assets"][url] = dict(future.result(), url=url)
-                if n % 50 == 0 or n == len(jobs):
-                    progress(f"Media: {n}/{len(jobs)}")
-        changed_asset_urls = {
-            url for url in all_assets
-            if previous_asset_hashes.get(url) is not None
-            and state["assets"].get(url, {}).get("status") == "downloaded"
-            and state["assets"].get(url, {}).get("sha256") is not None
-            and previous_asset_hashes[url] != state["assets"][url]["sha256"]
-        }
-        unavailable_targets = {
-            previous_asset_paths[url]: url
-            for url in all_assets
-            if previous_asset_statuses.get(url) in {"downloaded", "failed"}
-            and state["assets"].get(url, {}).get("status") == "unavailable"
-            and previous_asset_paths.get(url)
-        }
-        remote_targets = {
-            url: state["assets"][url]["path"]
-            for url in all_assets
-            if not previously_available[url] and
-            state["assets"].get(url, {}).get("status") == "downloaded" and
-            state["assets"].get(url, {}).get("path")
-        }
+        remote_targets = {}
         article_targets = {}
         for key in fetched_keys - prior_records.keys():
             item = state["records"][key]
@@ -1098,11 +909,6 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                 article_targets[alias] = item["path"]
                 article_targets[alias.rstrip("/") + "/embed/"] = item["path"]
         remote_targets.update(article_targets)
-        if changed_asset_urls:
-            for key, item in state["records"].items():
-                if item.get("type") == "post" and changed_asset_urls.intersection(item.get("asset_urls", [])):
-                    item["classification_pending"] = True
-                    item["content_classification_pending"] = True
         for key, item in state["records"].items():
             if key in planned_paths:
                 item["path"] = planned_paths[key]
@@ -1110,7 +916,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             item = state["records"].get(key)
             if not item:
                 continue
-            update_acquisition_status(item, state.get("assets", {}),
+            update_acquisition_status(item,
                 protected_content=item.get("protected_content"),
                 derived_view_available=item.get("derived_view_available", True))
         render_keys = process_keys
@@ -1123,12 +929,11 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                       previous["path"] != state["records"][key].get("path")}
         rendered_keys = set(render_keys)
         links_repaired = exclusion_links_repaired
-        if path_moves or deleted_targets or remote_targets or unavailable_targets:
+        if path_moves or deleted_targets or remote_targets:
             for key, item in state["records"].items():
                 if key in rendered_keys or not item.get("path"):
                     continue
                 if (not path_moves and not deleted_targets and not article_targets and
-                        not unavailable_targets and
                         remote_targets.keys().isdisjoint(item.get("asset_urls", []))):
                     continue
                 path = safe_path(articles_root, item["path"])
@@ -1138,7 +943,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
                 text = original.decode("utf-8")
                 repaired = repair_markdown_links(text, item["path"], path_moves,
                     remote_targets=remote_targets,
-                    deleted_targets=deleted_targets | unavailable_targets)
+                    deleted_targets=deleted_targets)
                 if repaired == text:
                     continue
                 atomic_write(path, repaired.encode("utf-8"))
@@ -1157,15 +962,13 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             state["last_completed_sync_at"] = utc_now().isoformat()
         state["last_inventory_at"] = stamp
         state["articles_root"] = str(articles_root)
-        failures = {u: state["assets"][u]["error"] for u in all_assets
-                    if state["assets"][u]["status"] == "failed"}
         report = dict(started_at=stamp, finished_at=utc_now().isoformat(),
             mode="sample" if sample_ids is not None else "full_inventory_sync",
             excluded_records=excluded,
             remote_posts=len(inventories[0].records), remote_pages=len(inventories[1].records),
             selected_records=len(scope_keys), processed_records=len(process_keys),
             rendered_records=len(render_keys), links_repaired=links_repaired,
-            refreshed_pages=len(page_refresh_keys), refreshed_assets=len(jobs),
+            refreshed_pages=len(page_refresh_keys),
             classification_pending_count=sum(item.get("type") == "post" and item.get("classification_pending", False)
                                       for item in state["records"].values()),
             full_records_fetched=len(fetched_keys), cached_records_reused=len(scope_keys) - len(fetched_keys),
@@ -1174,7 +977,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
             remote_missing=sum(r["status"] == "remote_missing" for r in state["records"].values()),
             incomplete_records=sum(state["records"][key]["acquisition_status"] != "complete"
                                    for key in scope_keys if key in state["records"]),
-            asset_failures=failures, page_failures={record_key(r):state["records"][record_key(r)].get("page", {}).get("error")
+            page_failures={record_key(r):state["records"][record_key(r)].get("page", {}).get("error")
                 for r in scope_summaries if state["records"].get(record_key(r), {}).get("page", {}).get("status") == "failed"},
             media_hosts=stats)
         report["featured_media_error"] = media_error
@@ -1209,7 +1012,7 @@ def run_sync(root, *, articles_root=None, client=None, sample_ids=None, workers=
 
 
 def offline_rebuild(root, articles_root, progress=print):
-    """Regenerate Markdown and indexes only from verified local mirror files."""
+    """Regenerate Markdown and indexes only from verified local source files."""
     root, articles_root = validate_roots(root, articles_root)
     with exclusive_run(root), exclusive_run(articles_root):
         state = load_state(root)
@@ -1217,7 +1020,6 @@ def offline_rebuild(root, articles_root, progress=print):
             raise ValueError("Cannot rebuild without cached records")
         if state.get("articles_root") != str(articles_root):
             raise ValueError("Offline rebuild requires the articles root recorded in state")
-        moved = migrate_assets(root, articles_root, state)
         excluded = prune_excluded(root, articles_root, state)
         records = []
         view_bodies = {}
@@ -1248,22 +1050,17 @@ def offline_rebuild(root, articles_root, progress=print):
                 extra = discover_record(dict(record, content={"rendered": body}), featured_record)
                 found = found[0] | extra[0], found[1] | extra[1], found[2] | extra[2]
             discovered[key] = found
-        for url, asset in state.get("assets", {}).items():
-            if (asset.get("status") == "downloaded" or
-                    (asset.get("status") == "failed" and asset.get("cached_copy"))):
-                if not verified_file(articles_root, asset):
-                    raise ValueError(f"Cached media hash mismatch or missing file: {url}")
         stats = host_statistics(records, discovered)
         preserved = render_views(root, articles_root, state, records, view_bodies, featured,
-                                 update_status=False)
+                                 update_status=True)
         old_report_path = articles_root / "last-report.json"
         old_report = json.loads(old_report_path.read_text(encoding="utf-8")) if old_report_path.is_file() else {}
         publish_indexes(root, state, stats, old_report, articles_root)
-        report = dict(rebuilt_at=utc_now().isoformat(), moved_assets=moved,
+        report = dict(rebuilt_at=utc_now().isoformat(),
                       excluded_records=excluded,
                       records=len(records), locally_modified_reassigned_files_preserved=preserved)
         atomic_write(articles_root / "rebuild-report.json", json_bytes(report))
-        progress(f"Offline rebuild complete: {len(records)} records; moved assets: {moved}")
+        progress(f"Offline rebuild complete: {len(records)} records")
         return report
 
 
@@ -1274,7 +1071,6 @@ def main():
     parser.add_argument("--sample", type=int, nargs="+", metavar="ID", help="Partial prototype; never marks remote_missing or advances sync watermark")
     parser.add_argument("--rebuild", action="store_true", help="Regenerate Markdown and indexes from verified local files only")
     parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--max-asset-mib", type=float, help="Optional per-asset limit; oversized files are marked unavailable")
     args = parser.parse_args()
     output = args.output.resolve()
     source_output = args.source_output.resolve()
@@ -1288,10 +1084,8 @@ def main():
         parser.error("Source and Markdown output roots must not overlap")
     if args.workers < 1 or args.workers > 8:
         parser.error("workers must be between 1 and 8")
-    if args.max_asset_mib is not None and args.max_asset_mib <= 0:
-        parser.error("max-asset-mib must be positive")
-    if args.rebuild and (args.sample or args.max_asset_mib is not None):
-        parser.error("--rebuild cannot be combined with --sample or --max-asset-mib")
+    if args.rebuild and args.sample:
+        parser.error("--rebuild cannot be combined with --sample")
     if args.sample and (output == DEFAULT_OUTPUT.resolve() or source_output == DEFAULT_SOURCE_OUTPUT.resolve()):
         parser.error("Sample requires separate --output and --source-output directories")
     try:
@@ -1299,8 +1093,7 @@ def main():
             offline_rebuild(source_output, output)
             return 0
         report = run_sync(source_output, articles_root=output, sample_ids=set(args.sample) if args.sample else None,
-            workers=args.workers,
-            max_asset_bytes=int(args.max_asset_mib * 1024 * 1024) if args.max_asset_mib else None)
+            workers=args.workers)
         return 2 if report["incomplete_records"] else 0
     except KeyboardInterrupt:
         print("Interrupted; existing files remain, rerun to resume.", file=sys.stderr)

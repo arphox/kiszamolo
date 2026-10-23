@@ -192,7 +192,7 @@ def repair_markdown_links(
     remote_targets: dict[str, str] | None = None,
     deleted_targets: dict[str, str] | None = None,
 ) -> str:
-    """Rewrite generated inline links to moved, downloaded, or excluded articles/assets."""
+    """Rewrite inline links to moved, newly available, or excluded articles."""
     remote_targets = remote_targets or {}
     deleted_targets = deleted_targets or {}
     if not moves and not remote_targets and not deleted_targets:

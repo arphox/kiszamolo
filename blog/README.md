@@ -14,7 +14,7 @@ A cikkek Markdown-változatát elsősorban sima szövegként és AI-eszközökke
 - Az asseteket nem tároljuk helyben vagy Gitben: a képek és mellékletek az eredeti webes URL-jükön szerepelnek. Elérésük internetet és a forrás elérhetőségét igényli.
 - A közösségi tudásanyag külön, még nem létező részbe kerül majd; nem a forráscikkeket módosítja.
 
-Ezek az átállás célját rögzítik. Az alábbi használati leírás a jelenlegi működést mutatja be, amely még helyi asseteket és a cache-ben tárolt állapotot használ; a cikkgyűjtemény még nincs Gitben.
+Ezek az átállás célját rögzítik. Az alábbi használati leírás a jelenlegi működést mutatja be, amely még a cache-ben tárolt állapotot használ; a cikkgyűjtemény még nincs Gitben.
 
 ## Feladatok és adatok
 
@@ -28,7 +28,7 @@ A letöltési cache helye `.local-cache/blog/content-mirror/`, a repó gyökeré
 
 - A gyűjteménybe válogatott nyilvános cikkek és oldalak letöltése, az eredeti források megőrzésével.
 - Olvasható Markdown-fájlok készítése, év és hónap szerinti mappákban.
-- A blog saját tárhelyén elérhető képek és mellékletek letöltése, valamint a helyi cikkek közötti hivatkozások kialakítása.
+- A képek és mellékletek eredeti URL-jeinek megőrzése, valamint a helyi cikkek közötti hivatkozások kialakítása.
 - Tartalomjegyzék és géppel feldolgozható cikklista készítése.
 - A helyi gyűjtemény, a témakörök és a tartalmi jelleg besorolásának közös, kézzel indítható frissítése.
 
@@ -37,7 +37,6 @@ A letöltési cache helye `.local-cache/blog/content-mirror/`, a repó gyökeré
 | Mappa vagy fájl | Tartalma |
 | --- | --- |
 | `blog/content-mirror/articles/` | Az olvasható cikkek és oldalak. A kiindulópont az `INDEX.md`. |
-| `blog/content-mirror/articles/assets/` | A letöltött képek és mellékletek. |
 | `.local-cache/blog/content-mirror/` | Az eredeti webes források és a frissítés folytatásához szükséges adatok. |
 | `blog/content-mirror/automation/` | A [letöltő és feldolgozó](content-mirror/README.md), a tesztjeivel együtt. |
 | `blog/enrichment/` | [Témakörök és tartalmi jelleg](enrichment/README.md), közös nyilvántartás és besoroló. |
@@ -71,7 +70,7 @@ A csak letöltéshez és az újrageneráláshoz szükséges parancsokat a [letö
 - Az eredeti webes forrásokat jelenleg külön őrizzük meg. Az olvasható Markdown-fájlok ezekből készülnek, és újra előállíthatók; közvetlenül nem szerkesztjük őket.
 - A letöltő a jelenleg elérhető tartalmat követi; a cikkek korábbi változatairól nem készít történetet. Ha egy cikk eltűnik a blogról, a már mentett helyi példánya megmarad.
 - A hozzászólásokat külön nem gyűjti. A teljes weboldal mentett HTML-forrásában azonban szerepelhetnek hozzászólások.
-- Más webhelyek fájljai és a külső videólejátszók tartalmai hivatkozásként maradnak meg. A gyűjtemény ezért nem minden részében használható internet nélkül; a webes kalkulátorok működését sem másolja le.
+- A képek, mellékletek és a külső videólejátszók tartalmai webes hivatkozásként maradnak meg. A gyűjtemény ezért nem minden részében használható internet nélkül; a webes kalkulátorok működését sem másolja le.
 - A letöltött adatok és az előállított cikkfájlok nincsenek Gitben. A repó a kódot, a dokumentációt és a közös besorolási nyilvántartást tartalmazza. A meglévő gyűjtemény megőrzéséhez a `blog/content-mirror/articles/` és a `.local-cache/blog/content-mirror/` mappát külön is menteni kell.
 
 ## Tesztek

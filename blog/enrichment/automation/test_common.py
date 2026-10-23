@@ -89,16 +89,9 @@ class CommonHelpersTests(unittest.TestCase):
             with self.assertRaisesRegex(common.ClassificationError, "kilép"):
                 common.article_row(root, "42")
 
-    def test_image_sources_and_cached_variants_choose_largest_local_image(self):
+    def test_image_sources_and_remote_variants_choose_linked_original_without_state_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            articles = root / "blog/content-mirror/articles"
-            assets_dir = articles / "assets"
-            assets_dir.mkdir(parents=True)
-            small = assets_dir / "small.png"
-            large = assets_dir / "chart,full.png"
-            small.write_bytes(b"small")
-            large.write_bytes(b"large")
             image = BeautifulSoup(
                 '<img src="small.png" srcset="small.png 100w, chart,full.png 1200w">', "html.parser").img
             self.assertEqual(common.image_sources(image), ["chart,full.png", "small.png", "small.png"])
@@ -106,32 +99,25 @@ class CommonHelpersTests(unittest.TestCase):
             source_root = root / ".local-cache/blog/content-mirror/records/posts/42"
             source_root.mkdir(parents=True)
             (source_root / "view-source.html").write_text(
-                '<img src="https://media.test/small.png" '
-                'srcset="https://media.test/small.png 100w, https://media.test/chart,full.png 1200w">',
+                '<a href="https://media.test/original.png"><img src="https://media.test/small.png" '
+                'srcset="https://media.test/small.png 100w, https://media.test/chart,full.png 1200w"></a>',
                 encoding="utf-8")
-            state_root = root / ".local-cache/blog/content-mirror"
-            (state_root / "state.json").write_text(json.dumps({"assets": {
-                "https://media.test/small.png": {"path": "assets/small.png"},
-                "https://media.test/chart,full.png": {"path": "assets/chart,full.png"},
-            }}), encoding="utf-8")
             row = {"id": 42, "url": "https://blog.test/article/", "source_record": "records/posts/42"}
             variants, _ = common.image_variants(row, root)
-            self.assertEqual(variants[small], large)
-            self.assertEqual(variants[large], large)
+            original = "https://media.test/original.png"
+            self.assertEqual(variants["https://media.test/small.png"], original)
+            self.assertEqual(variants["https://media.test/chart,full.png"], original)
+            self.assertEqual(variants[original], original)
+            self.assertFalse((root / ".local-cache/blog/content-mirror/state.json").exists())
 
     def test_decorative_replacement_only_changes_registered_sources(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            articles = root / "blog/content-mirror/articles"
-            article = articles / "article.md"
-            articles.mkdir(parents=True)
-            smile = "https://kiszamolo.hu/wp-includes/images/smilies/icon_smile.gif"
-            body = (f"BODY\n![:)]({smile})\n<img src=\"{smile}\">\n"
-                    "![](https://example.test/unknown.gif)")
-            updated = common.replace_decorative_images(
-                body, article, articles, {smile: ":)"})
-            self.assertEqual(updated.count(":)"), 2)
-            self.assertIn("https://example.test/unknown.gif", updated)
+        smile = "https://kiszamolo.hu/wp-includes/images/smilies/icon_smile.gif"
+        body = (f"BODY\n![:)]({smile})\n<img src=\"{smile}\">\n"
+                "![](https://example.test/unknown.gif)\n![](assets/ad.gif)")
+        updated = common.replace_decorative_images(body, {smile: ":)"})
+        self.assertEqual(updated.count(":)"), 2)
+        self.assertIn("https://example.test/unknown.gif", updated)
+        self.assertIn("assets/ad.gif", updated)
 
     def test_assignment_lock_serializes_separate_processes(self):
         with tempfile.TemporaryDirectory() as tmp:

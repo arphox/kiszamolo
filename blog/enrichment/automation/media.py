@@ -6,12 +6,10 @@ import hashlib
 import ipaddress
 import io
 import json
-import math
 import os
 from pathlib import Path
 import shutil
 import socket
-import subprocess
 import tempfile
 import time
 import warnings
@@ -35,9 +33,6 @@ DEFAULT_MAX_TOTAL_PIXELS = 80_000_000
 DEFAULT_TIMEOUT = (5, 15)
 DEFAULT_MAX_REDIRECTS = 3
 DEFAULT_MAX_DURATION = 30
-VIDEO_EXTENSIONS = {".mp4", ".m4v", ".webm", ".mov", ".mkv"}
-DEFAULT_MAX_VIDEO_DURATION = 120
-DEFAULT_MAX_VIDEO_FRAMES = 120
 
 
 def _output_frames(image: Image.Image, scratch_dir: Path, *, max_frames: int,
@@ -112,63 +107,6 @@ def _decode_bytes(data: bytes, scratch_dir: Path, *, max_frames: int,
                 return _output_frames(image, scratch_dir, max_frames=max_frames,
                                       max_pixels=max_pixels, max_total_pixels=max_total_pixels,
                                       max_bytes=max_bytes)
-            finally:
-                image.close()
-    except MediaError:
-        raise
-    except (UnidentifiedImageError, Image.DecompressionBombError,
-            Image.DecompressionBombWarning, OSError, ValueError) as error:
-        raise MediaError(f"Unsupported or invalid image data: {error}") from error
-
-
-def normalize_local_image(source: str | Path, scratch_dir: str | Path, *,
-                          max_frames: int = DEFAULT_MAX_FRAMES,
-                          max_pixels: int = DEFAULT_MAX_PIXELS,
-                          max_total_pixels: int = DEFAULT_MAX_TOTAL_PIXELS,
-                          max_bytes: int = DEFAULT_MAX_BYTES) -> list[Path]:
-    """Validate static supported images in place; convert other inputs to PNG frames.
-
-    The caller must resolve article-reference and article-root policy before calling.
-    SVG is rejected unless a safe renderer is added; Pillow does not decode it.
-    """
-    path = Path(source)
-    try:
-        if path.is_symlink() or not path.is_file():
-            raise MediaError("Local image must be a regular, non-symlink file.")
-        if path.stat().st_size > max_bytes:
-            raise MediaError(f"Local image exceeds the {max_bytes}-byte limit.")
-        data = path.read_bytes()
-    except MediaError:
-        raise
-    except OSError as error:
-        raise MediaError(f"Cannot read local image {path}: {error}") from error
-    if path.suffix.lower() == ".svg":
-        raise MediaError("SVG normalization is unavailable: a safe SVG renderer is not installed.")
-    passthrough = _supported_static_image(path, data, max_pixels=max_pixels)
-    if passthrough:
-        return [path]
-    return _decode_bytes(data, Path(scratch_dir), max_frames=max_frames,
-                         max_pixels=max_pixels, max_total_pixels=max_total_pixels,
-                         max_bytes=max_bytes)
-
-
-def _supported_static_image(path: Path, data: bytes, *, max_pixels: int) -> bool:
-    if Image is None:
-        raise MediaError("Image normalization is unavailable: Pillow is not installed.")
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            image = Image.open(io.BytesIO(data))
-            try:
-                if image.format not in {"JPEG", "PNG", "WEBP"} or getattr(image, "n_frames", 1) != 1:
-                    return False
-                width, height = image.size
-                if width <= 0 or height <= 0 or width * height > max_pixels:
-                    raise MediaError(
-                        f"Image dimensions {width}x{height} exceed the {max_pixels}-pixel limit."
-                    )
-                image.load()
-                return True
             finally:
                 image.close()
     except MediaError:
@@ -258,116 +196,6 @@ def compact_model_images(paths, scratch_dir: str | Path, *,
             f"limit is {max_total_bytes} bytes."
         )
     return [path for path, _ in unique]
-
-
-def normalize_local_video(source: str | Path, scratch_dir: str | Path, *,
-                          sample_fps: float = 1,
-                          max_duration: float = DEFAULT_MAX_VIDEO_DURATION,
-                          max_frames: int = DEFAULT_MAX_VIDEO_FRAMES,
-                          max_pixels: int = DEFAULT_MAX_PIXELS,
-                          max_total_pixels: int = DEFAULT_MAX_TOTAL_PIXELS,
-                          max_bytes: int = DEFAULT_MAX_BYTES,
-                          probe_timeout: float = 10,
-                          decode_timeout: float = 30) -> list[Path]:
-    """Extract bounded visual samples from one caller-approved local video.
-
-    The caller must enforce same-article path policy. No audio is decoded or transcribed.
-    """
-    path = Path(source)
-    try:
-        sample_fps = float(sample_fps)
-    except (TypeError, ValueError) as error:
-        raise MediaError("Video sample_fps must be greater than 0 and at most 1.") from error
-    if not math.isfinite(sample_fps) or sample_fps <= 0 or sample_fps > 1:
-        raise MediaError("Video sample_fps must be greater than 0 and at most 1.")
-    if path.suffix.lower() not in VIDEO_EXTENSIONS:
-        raise MediaError(f"Unsupported local video type: {path.suffix or '(no extension)'}.")
-    try:
-        if path.is_symlink() or not path.is_file():
-            raise MediaError("Local video must be a regular, non-symlink file.")
-        if path.stat().st_size > max_bytes:
-            raise MediaError(f"Local video exceeds the {max_bytes}-byte limit.")
-        source_hash = hashlib.sha256(path.read_bytes()).hexdigest()
-    except MediaError:
-        raise
-    except OSError as error:
-        raise MediaError(f"Cannot read local video {path}: {error}") from error
-
-    ffprobe = shutil.which("ffprobe")
-    ffmpeg = shutil.which("ffmpeg")
-    if not ffprobe or not ffmpeg:
-        raise MediaError("Local video sampling is unavailable: ffmpeg/ffprobe is not installed.")
-    container = "mov" if path.suffix.lower() in {".mp4", ".m4v", ".mov"} else "matroska"
-    probe_args = [ffprobe, "-v", "error", "-protocol_whitelist", "file,pipe", "-f", container]
-    if container == "mov":
-        probe_args += ["-enable_drefs", "0", "-use_absolute_path", "0"]
-    probe_args += ["-select_streams", "v:0", "-show_entries",
-                  "stream=width,height,duration:format=duration", "-of", "json", str(path)]
-    try:
-        probe = subprocess.run(probe_args, capture_output=True, text=True, timeout=probe_timeout,
-                               check=False, shell=False)
-    except (OSError, subprocess.SubprocessError) as error:
-        raise MediaError(f"Could not inspect local video: {error}") from error
-    if probe.returncode != 0:
-        reason = (probe.stderr or "ffprobe failed").strip()[:500]
-        raise MediaError(f"Could not inspect local video: {reason}")
-    try:
-        metadata = json.loads(probe.stdout)
-        stream = metadata["streams"][0]
-        width, height = int(stream["width"]), int(stream["height"])
-        duration_value = stream.get("duration") or metadata.get("format", {}).get("duration")
-        duration = float(duration_value)
-    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as error:
-        raise MediaError(f"Local video has incomplete or invalid metadata: {error}") from error
-    if not math.isfinite(duration) or duration <= 0 or duration > max_duration:
-        raise MediaError(f"Local video duration must be between 0 and {max_duration} seconds.")
-    if width <= 0 or height <= 0 or width * height > max_pixels:
-        raise MediaError(f"Local video dimensions {width}x{height} exceed the pixel limit.")
-    expected_frames = max(1, math.ceil(duration * sample_fps))
-    if expected_frames > max_frames or expected_frames * width * height > max_total_pixels:
-        raise MediaError("Local video samples exceed the frame or total-pixel limit.")
-
-    scratch = Path(scratch_dir)
-    scratch.mkdir(parents=True, exist_ok=True)
-    output_dir = Path(tempfile.mkdtemp(prefix=f"video-{source_hash[:12]}-", dir=scratch))
-    output_pattern = output_dir / "frame-%04d.png"
-    decode_args = [ffmpeg, "-nostdin", "-v", "error", "-protocol_whitelist", "file,pipe",
-                   "-f", container]
-    if container == "mov":
-        decode_args += ["-enable_drefs", "0", "-use_absolute_path", "0"]
-    decode_args += ["-i", str(path), "-map", "0:v:0", "-vf", f"fps={sample_fps:g}",
-                    "-frames:v", str(max_frames + 1), "-start_number", "0", str(output_pattern)]
-    try:
-        try:
-            decoded = subprocess.run(decode_args, capture_output=True, timeout=decode_timeout,
-                                     check=False, shell=False)
-        except (OSError, subprocess.SubprocessError) as error:
-            raise MediaError(f"Could not sample local video: {error}") from error
-        if decoded.returncode != 0:
-            reason = (decoded.stderr or b"ffmpeg failed").decode("utf-8", "replace").strip()[:500]
-            raise MediaError(f"Could not sample local video: {reason}")
-        frames = sorted(output_dir.glob("frame-*.png"))
-        if not frames or len(frames) > max_frames:
-            raise MediaError(f"Local video yielded {len(frames)} samples; limit is {max_frames}.")
-        actual_total_pixels = 0
-        for frame in frames:
-            try:
-                with Image.open(frame) as image:
-                    frame_pixels = image.width * image.height
-                    if frame_pixels > max_pixels:
-                        raise MediaError(f"Decoded video frame {frame.name} exceeds the pixel limit.")
-                    actual_total_pixels += frame_pixels
-                    if actual_total_pixels > max_total_pixels:
-                        raise MediaError("Decoded local video samples exceed the total-pixel limit.")
-                    image.verify()
-            except MediaError:
-                raise
-            except Exception as error:
-                raise MediaError(f"Decoded video frame {frame.name} is invalid: {error}") from error
-        return frames
-    except Exception:
-        shutil.rmtree(output_dir, ignore_errors=True)
-        raise
 
 
 def _validate_public_url(url: str):

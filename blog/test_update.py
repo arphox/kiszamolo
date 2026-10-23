@@ -77,7 +77,7 @@ class UpdateTests(unittest.TestCase):
         return {dimension: record[dimension], "saved": True}
 
     def prepare(self):
-        state = {"schema_version": 1, "records": self.records, "assets": {}, "articles_root": str(self.articles)}
+        state = {"schema_version": 1, "records": self.records, "articles_root": str(self.articles)}
         self.write_json(self.source / "state.json", state)
         self.write_json(self.root / "blog/enrichment/assignments.json", {"articles": self.assignments})
         update.sync.publish_article_index(self.articles, state)

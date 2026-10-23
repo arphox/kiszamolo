@@ -79,40 +79,39 @@ class RenderTests(unittest.TestCase):
     def test_srcset_discovery_and_rewriting_handle_the_same_candidates(self):
         first_url = "https://kiszamolo.hu/wp/a,one.jpg"
         second_url = "https://kiszamolo.hu/wp/b.jpg"
-        asset_paths = {first_url: "../../media/a.jpg", second_url: "../../media/b.jpg"}
         cases = [
             ("", set(), ""),
             (" \t, , ", set(), ""),
             (
                 "/wp/a,one.jpg 1x, /wp/b.jpg 2x",
                 {first_url, second_url},
-                "../../media/a.jpg 1x, ../../media/b.jpg 2x",
+                f"{first_url} 1x, {second_url} 2x",
             ),
             (
                 "/wp/a,one.jpg, /wp/b.jpg,",
                 {first_url, second_url},
-                "../../media/a.jpg, ../../media/b.jpg",
+                f"{first_url}, {second_url}",
             ),
             (
                 "/wp/a,one.jpg 320w,\t/wp/b.jpg 640w,",
                 {first_url, second_url},
-                "../../media/a.jpg 320w, ../../media/b.jpg 640w",
+                f"{first_url} 320w, {second_url} 640w",
             ),
             (
                 "data:image/png;base64,AAAA 1x, /wp/b.jpg 2x",
                 {second_url},
-                "data:image/png;base64,AAAA 1x, ../../media/b.jpg 2x",
+                f"data:image/png;base64,AAAA 1x, {second_url} 2x",
             ),
         ]
         for value, expected_assets, expected_srcset in cases:
             with self.subTest(srcset=value):
                 content = f'<source srcset="{value}">'
                 self.assertEqual(discover_assets(content, BASE), expected_assets)
-                rewritten = rewrite_html(content, BASE, asset_paths, {})
+                rewritten = rewrite_html(content, BASE, {})
                 source = BeautifulSoup(rewritten, "html.parser").find("source")
                 self.assertEqual(source["srcset"], expected_srcset)
 
-    def test_rewrite_uses_local_paths_and_preserves_fragments_and_unknowns(self):
+    def test_rewrite_preserves_media_urls_and_localizes_articles(self):
         content = (
             '<p><a href="https://kiszamolo.hu/masik-cikk/#resz">belső</a> '
             '<a href="https://example.com/kulso#frag">külső</a></p>'
@@ -122,20 +121,15 @@ class RenderTests(unittest.TestCase):
         rendered = rewrite_html(
             content,
             BASE,
-            {
-                "https://kiszamolo.hu/wp-content/a.png?size=large": "../../media/a.png",
-                "https://kiszamolo.hu/wp/a.jpg": "../../media/a.jpg",
-                "https://kiszamolo.hu/wp/b.jpg": "../../media/b.jpg",
-            },
             {"https://kiszamolo.hu/masik-cikk/": "../masik-cikk.md"},
         )
         self.assertIn('href="../masik-cikk.md#resz"', rendered)
         self.assertIn('href="https://example.com/kulso#frag"', rendered)
-        self.assertIn('src="../../media/a.png"', rendered)
-        self.assertIn('srcset="../../media/a.jpg 1x, ../../media/b.jpg 2x"', rendered)
+        self.assertIn('src="https://kiszamolo.hu/wp-content/a.png?size=large"', rendered)
+        self.assertIn('srcset="https://kiszamolo.hu/wp/a.jpg 1x, https://kiszamolo.hu/wp/b.jpg 2x"', rendered)
         self.assertIn('src="https://video.example/watch"', rendered)
 
-    def test_iframe_assets_embeds_and_lazy_image_references_are_rewritten(self):
+    def test_iframe_embeds_and_lazy_image_references_are_rewritten(self):
         content = (
             '<iframe src="/files/report.pdf"></iframe>'
             '<iframe src="https://kiszamolo.hu/cikk/pelda/embed/"></iframe>'
@@ -153,33 +147,26 @@ class RenderTests(unittest.TestCase):
         rendered = rewrite_html(
             content,
             BASE,
-            {
-                "https://kiszamolo.hu/files/report.pdf": "../../media/report.pdf",
-                "https://kiszamolo.hu/images/lazy.jpg": "../../media/lazy.jpg",
-                "https://kiszamolo.hu/images/small.jpg": "../../media/small.jpg",
-                "https://kiszamolo.hu/images/large.jpg": "../../media/large.jpg",
-            },
             {},
             {"https://kiszamolo.hu/cikk/pelda/embed/": "../cikk.html"},
         )
-        self.assertIn('src="../../media/report.pdf"', rendered)
+        self.assertIn('src="https://kiszamolo.hu/files/report.pdf"', rendered)
         self.assertIn('src="../cikk.html"', rendered)
-        self.assertIn('data-src="../../media/lazy.jpg"', rendered)
-        self.assertIn('data-srcset="../../media/small.jpg 1x, ../../media/large.jpg 2x"', rendered)
+        self.assertIn('data-src="https://kiszamolo.hu/images/lazy.jpg"', rendered)
+        self.assertIn('data-srcset="https://kiszamolo.hu/images/small.jpg 1x, https://kiszamolo.hu/images/large.jpg 2x"', rendered)
 
     def test_lazy_only_image_is_promoted_for_markdown(self):
         source = '<img alt="Ábra" data-src="/images/figure.png" data-srcset="/images/figure.png 1x">'
         rewritten = rewrite_html(
             source,
             BASE,
-            {"https://kiszamolo.hu/images/figure.png": "../../media/figure.png"},
             {},
         )
-        self.assertIn('src="../../media/figure.png"', rewritten)
-        self.assertIn('srcset="../../media/figure.png 1x"', rewritten)
-        self.assertIn('data-src="../../media/figure.png"', rewritten)
+        self.assertIn('src="https://kiszamolo.hu/images/figure.png"', rewritten)
+        self.assertIn('srcset="https://kiszamolo.hu/images/figure.png 1x"', rewritten)
+        self.assertIn('data-src="https://kiszamolo.hu/images/figure.png"', rewritten)
         markdown = make_markdown({"title": "Cikk"}, rewritten)
-        self.assertIn("![Ábra](../../media/figure.png)", markdown)
+        self.assertIn("![Ábra](https://kiszamolo.hu/images/figure.png)", markdown)
 
     def test_markdown_omits_html_and_word_conditional_comments(self):
         content = """
@@ -436,16 +423,12 @@ class RenderTests(unittest.TestCase):
         source = f'<a href="{encoded}">Report</a><img src="{encoded}"><iframe src="{encoded}"></iframe>'
         self.assertEqual(discover_assets(source, BASE), {url.split("#")[0]})
         self.assertEqual(discover_embeds(source, BASE), {url.split("#")[0]})
-        rewritten = rewrite_html(source, BASE, {}, {})
+        rewritten = rewrite_html(source, BASE, {})
         soup = BeautifulSoup(rewritten, "html.parser")
         self.assertEqual(soup.a["href"], url)
         self.assertEqual(soup.img["src"], url)
         self.assertEqual(soup.iframe["src"], url)
         self.assertIn(f"[Report]({url})", make_markdown({"title": "Test"}, rewritten))
-        mapped = BeautifulSoup(rewrite_html(source, BASE,
-            {url.split("#")[0]: "assets/report.pdf"}, {}), "html.parser")
-        self.assertEqual(mapped.a["href"], "assets/report.pdf#part&copy;")
-        self.assertEqual(mapped.img["src"], "assets/report.pdf#part&copy;")
 
     def test_inline_formatting_preserves_whitespace_only_and_nbsp_boundaries(self):
         for tag, marker in (("strong", "**"), ("b", "**"), ("em", "*"),

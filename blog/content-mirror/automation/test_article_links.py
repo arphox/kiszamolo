@@ -56,13 +56,13 @@ class RepairMarkdownLinksTests(unittest.TestCase):
             result,
             '[Cikk](<../../2026/new%20page.md> "cím")\n')
 
-    def test_repairs_both_destinations_of_a_linked_image(self):
-        markdown = '[![cover](../../assets/old.png)](../../2024/old.md "title")'
+    def test_repairs_article_destination_of_a_linked_remote_image(self):
+        markdown = '[![cover](https://media.test/cover.png)](../../2024/old.md "title")'
         result = repair_markdown_links(
             markdown, "2025/04/ref.md",
-            {"assets/old.png": "assets/new.png", "2024/old.md": "2026/new.md"})
+            {"2024/old.md": "2026/new.md"})
         self.assertEqual(
-            result, '[![cover](../../assets/new.png)](../../2026/new.md "title")')
+            result, '[![cover](https://media.test/cover.png)](../../2026/new.md "title")')
 
     def test_repairs_link_with_inline_code_in_label_preserving_code_contents(self):
         markdown = '[Some `code [example](../../2024/old.md)` link](../../2024/old.md)'
@@ -104,20 +104,20 @@ class RepairMarkdownLinksTests(unittest.TestCase):
             "[external](https://example.test/2024/old.md) [anchor](#part) "
             "[media](../../2024/image.png) [other](../../2024/other.md)\n")
 
-    def test_maps_only_explicit_external_media_urls_to_local_assets(self):
+    def test_maps_only_explicit_remote_article_urls_to_local_articles(self):
         markdown = (
-            "[Now local](https://cdn.test/video.mp4?sig=abc#clip) "
-            "[Still external](https://cdn.test/other.mp4?sig=abc#clip)")
+            "[Now local](https://kiszamolo.hu/new-article/?ref=abc#part) "
+            "[Still external](https://kiszamolo.hu/other-article/?ref=abc#part)")
         result = repair_markdown_links(
             markdown,
             "2025/04/ref.md",
             {},
-            remote_targets={"https://cdn.test/video.mp4?sig=abc": "assets/video clip.mp4"},
+            remote_targets={"https://kiszamolo.hu/new-article/?ref=abc": "2026/new article.md"},
         )
         self.assertEqual(
             result,
-            "[Now local](../../assets/video%20clip.mp4#clip) "
-            "[Still external](https://cdn.test/other.mp4?sig=abc#clip)")
+            "[Now local](../../2026/new%20article.md#part) "
+            "[Still external](https://kiszamolo.hu/other-article/?ref=abc#part)")
 
     def test_maps_deleted_article_links_back_to_canonical_url(self):
         markdown = (

@@ -92,34 +92,24 @@ def image_variants(row, root):
     source_root = root / ".local-cache/blog/content-mirror"
     source = local_path(source_root, row["source_record"]) / "view-source.html"
     soup = BeautifulSoup(source.read_text(encoding="utf-8"), "html.parser")
-    assets = load_json(source_root / "state.json")["assets"]
-
-    def cached(target):
-        asset = assets.get(urljoin(row["url"], target), {})
-        return local_path(root / "blog/content-mirror/articles", asset["path"]) if asset.get("path") else None
-
-    for url, text in DECORATIVE_IMAGES.items():
-        if path := cached(url):
-            decorations[path] = text
-
     variants = {}
     for image in soup.find_all("img"):
         candidates = image_sources(image)
-        preferred = next((path for url in candidates if (path := cached(url))
-                          and path.is_file() and path.suffix.lower() in IMAGES), None)
-        if preferred:
+        candidates = [urljoin(row["url"], url) for url in candidates
+                      if Path(urlsplit(url).path).suffix.lower() in IMAGES]
+        if candidates:
+            preferred = candidates[0]
             for url in candidates:
-                if path := cached(url):
-                    variants[path] = preferred
+                variants[url] = preferred
     return variants, decorations
-def replace_decorative_images(body, path, articles_root, decorations):
-    """Replace only verified decoration URLs and their registered local copies."""
+def replace_decorative_images(body, decorations):
+    """Replace only exact absolute URLs registered as decorations."""
     def replacement(target):
         target = target.strip("<>")
         parts = urlsplit(target)
-        key = (urljoin("https://kiszamolo.hu/", target) if parts.scheme or parts.netloc
-               else local_path(path.parent, target, articles_root))
-        return decorations.get(key)
+        if parts.scheme.lower() not in {"http", "https"} or not parts.hostname:
+            return None
+        return decorations.get(target)
 
     def markdown_image(match):
         linked = re.match(r'\]\(' + LINK + r'\)', body[match.end():])

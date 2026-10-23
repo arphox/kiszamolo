@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
@@ -104,72 +104,100 @@ def _validate_review_case(value):
     return {"type": value["type"], "reason": value["reason"].strip()}
 
 
-def discover_media(body, path, articles_root, variants, article_url):
-    """Collect model inputs and unavailable-source notes from the same references."""
-    targets = [m.group(1) for m in topic_classifier.IMAGE_LINK.finditer(body)]
+def discover_media(body, variants):
+    """Return remote image URLs and notes for remote media the classifier cannot process."""
     soup = topic_classifier.BeautifulSoup(body, "html.parser")
-    image_targets = targets + [str(node.get("src", "")) for node in soup.find_all("img")]
-    for node in soup.find_all("img"):
-        candidates = topic_classifier.image_sources(node)
-        local = next((v for v in candidates if not urlsplit(v.strip("<>")).scheme and not urlsplit(v.strip("<>")).netloc and topic_classifier.local_path(path.parent, v, articles_root).is_file()), None)
-        targets.append(local or next(iter(candidates), ""))
+    image_suffixes = topic_classifier.IMAGES | {".gif", ".bmp", ".tif", ".tiff", ".avif"}
+    image_targets = [match.group(1) for match in topic_classifier.IMAGE_LINK.finditer(body)]
+    preferred_targets = list(image_targets)
+    for image in soup.find_all("img"):
+        candidates = topic_classifier.image_sources(image)
+        image_targets.extend(candidates)
+        if candidates:
+            preferred_targets.append(candidates[0])
+    for source in soup.find_all("source"):
+        parent = source.find_parent(["audio", "video", "picture"])
+        if (parent and parent.name == "picture"
+                or any(source.get(name) for name in ("srcset", "data-srcset", "imagesrcset"))):
+            candidates = topic_classifier.image_sources(source)
+            image_targets.extend(candidates)
+            if candidates:
+                preferred_targets.append(candidates[0])
+        elif any(Path(urlsplit(str(source.get(name, ""))).path).suffix.lower() in image_suffixes
+                 for name in ("src", "data-src")):
+            candidates = topic_classifier.image_sources(source)
+            image_targets.extend(candidates)
+            if candidates:
+                preferred_targets.append(candidates[0])
+    posters = [str(video["poster"]) for video in soup.find_all("video", poster=True)]
+    image_targets.extend(posters)
+    preferred_targets.extend(posters)
+
+    linked_originals = {}
     for match in re.finditer(r'\[(!\[[^\n]*?\]\([^)]*\))\]\(' + topic_classifier.LINK + r'\)', body):
         thumbnail = topic_classifier.IMAGE_LINK.fullmatch(match.group(1)).group(1).strip("<>")
         original = match.group(2).strip("<>")
-        parts = urlsplit(original)
-        if parts.scheme or parts.netloc or Path(parts.path).suffix.lower() not in topic_classifier.IMAGES | {".gif", ".bmp", ".tif", ".tiff", ".avif"}:
-            continue
-        original_path = topic_classifier.local_path(path.parent, original, articles_root)
-        if original_path.is_file():
-            targets = [original if target.strip("<>") == thumbnail else target for target in targets]
-    images, remote = [], []
-    for target in targets:
+        if Path(urlsplit(original).path).suffix.lower() in image_suffixes:
+            linked_originals[thumbnail] = original
+
+    def require_remote_image(target):
         target = target.strip("<>")
         parts = urlsplit(target)
-        if not target: continue
-        if parts.scheme or parts.netloc:
-            if parts.scheme in {"http", "https", ""}: remote.append(urljoin(article_url, target))
-            continue
-        local = topic_classifier.local_path(path.parent, target, articles_root)
-        local = variants.get(local, local)
-        if local.is_file(): images.append(local)
-    notes, videos = [], {}
+        if parts.scheme.lower() not in {"http", "https"} or not parts.hostname:
+            raise ClassificationError(f"A besoroló csak eredeti HTTP(S) képeket fogad el; helyi vagy relatív kép: {target}")
+        return target
+
     for target in image_targets:
-        target = target.strip("<>")
-        parts = urlsplit(target)
-        if not parts.scheme and not parts.netloc:
-            try:
-                if not topic_classifier.local_path(path.parent, target, articles_root).is_file():
-                    notes.append(f"A cikk helyi képe hiányzik: {target}")
-            except (ClassificationError, ReviewRequired) as error:
-                notes.append(f"A képforrás nem használható ({target}): {error}")
-    references = [m.group(1) for m in re.finditer(r'(?<!!)\[[^\]]*\]\(' + topic_classifier.LINK + r'\)', body)]
-    video_targets = references + [str(node.get("src", "")) for node in soup.find_all(["video", "source"])]
-    video_targets += [str(node.get("href", "")) for node in soup.find_all("a")]
-    tags = {}
+        require_remote_image(target)
+
+    images = []
+    for target in preferred_targets:
+        target = require_remote_image(target)
+        target = linked_originals.get(target, target)
+        images.append(target)
+    linked_original_urls = set(linked_originals.values())
+    remote_images = []
+    for target in images:
+        if target not in linked_original_urls:
+            target = variants.get(target, target)
+        target = require_remote_image(target)
+        remote_images.append(target)
+
+    notes, references, tagged = [], [], {}
+    references.extend(match.group(1) for match in re.finditer(r'(?<!!)\[[^\]]*\]\(' + topic_classifier.LINK + r'\)', body))
     for node in soup.find_all(["iframe", "video", "audio", "object", "embed", "source", "a"]):
-        for attribute in ("src", "href", "data"):
+        for attribute in ("src", "href", "data", "data-src"):
             if target := node.get(attribute):
                 references.append(str(target))
-                if node.name != "a" and attribute in {"src", "data"}:
-                    tags.setdefault(str(target), node.name)
-    for target in references:
-        raw_target, target = target, target.strip("<>")
+                if node.name == "a" and node.has_attr("download"):
+                    tagged.setdefault(str(target), "download")
+                elif node.name != "a" and attribute in {"src", "data", "data-src"}:
+                    tag = node.name
+                    if node.name == "source":
+                        parent = node.find_parent(["audio", "video", "picture"])
+                        suffix = Path(urlsplit(str(target)).path).suffix.lower()
+                        is_image_source = (parent and parent.name == "picture"
+                                           or suffix in image_suffixes
+                                           or any(node.get(name) for name in ("srcset", "data-srcset", "imagesrcset")))
+                        tag = "picture_image" if is_image_source else parent.name if parent else "source"
+                    if tag:
+                        tagged.setdefault(str(target), tag)
+    media_extensions = topic_classifier.MEDIA - image_suffixes
+    media_tags = {"iframe", "object", "embed", "audio", "video", "source", "download", "picture_image"}
+    for raw_target in dict.fromkeys(references):
+        target = raw_target.strip("<>")
         parts = urlsplit(target)
         suffix = Path(parts.path).suffix.lower()
+        is_tagged_media = tagged.get(raw_target) in media_tags
+        is_media = suffix in media_extensions or suffix in image_suffixes or is_tagged_media
+        if is_media and (parts.scheme.lower() not in {"http", "https"} or not parts.hostname):
+            raise ClassificationError(f"A besoroló csak eredeti HTTP(S) média-URL-eket fogad el; helyi vagy relatív média: {target}")
         host = (parts.hostname or "").lower().removeprefix("www.")
-        if suffix in {".mp4", ".m4v", ".webm", ".mov", ".mkv"} and not parts.scheme and not parts.netloc:
-            local = topic_classifier.local_path(path.parent, target, articles_root)
-            if local.is_file() and raw_target in video_targets:
-                videos[raw_target] = local
-            notes.append(f"A helyi videó hangját nem dolgoztuk fel: {target}" if local.is_file()
-                         else f"A helyi videó hiányzik: {target}")
-        elif tags.get(target) in {"iframe", "object", "embed", "audio"} or host in {
-            "youtube.com", "youtube-nocookie.com", "youtu.be", "vimeo.com", "player.vimeo.com", "fb.watch"
-        } or suffix in topic_classifier.MEDIA - topic_classifier.IMAGES - {".gif", ".avif", ".bmp", ".tif", ".tiff"}:
+        if (is_tagged_media and tagged.get(raw_target) != "picture_image"
+                or host in {"youtube.com", "youtube-nocookie.com", "youtu.be", "vimeo.com", "player.vimeo.com", "fb.watch"}
+                or suffix in media_extensions):
             notes.append(f"A hivatkozott videó vagy melléklet nincs feldolgozva: {target}")
-    return (list(dict.fromkeys(images)), list(dict.fromkeys(remote)),
-            list(dict.fromkeys(videos[target] for target in video_targets if target in videos)), notes)
+    return list(dict.fromkeys(remote_images)), notes
 
 
 def load_json(path):
@@ -241,9 +269,8 @@ def prepare_article(article_id, root=None):
             variants, decorations = topic_classifier.image_variants(row, root)
         except (FileNotFoundError, PermissionError):
             pass
-    body = topic_classifier.replace_decorative_images(body, path, root / "blog/content-mirror/articles", decorations)
-    images, remote_images, videos, source_notes = discover_media(
-        body, path, root / "blog/content-mirror/articles", variants, row.get("url", "https://kiszamolo.hu/"))
+    body = topic_classifier.replace_decorative_images(body, decorations)
+    remote_images, source_notes = discover_media(body, variants)
     for url in row.get("embed_urls", []):
         if url not in body:
             body += "\n\nBeágyazott hivatkozás: " + url
@@ -253,38 +280,20 @@ def prepare_article(article_id, root=None):
         normalized, notes = [], []
         if row.get("featured_media_error"):
             notes.append(f"A kiemelt kép nem tölthető le: {row['featured_media_error']}")
-        for failed in row.get("failed_assets", []):
-            if isinstance(failed, dict):
-                target = failed.get("url") or failed.get("path") or "ismeretlen forrás"
-                reason = failed.get("error") or failed.get("reason") or "letöltési hiba"
-                notes.append(f"Egy cikkmelléklet nem érhető el ({target}): {reason}")
         if row.get("acquisition_status") == "incomplete":
             notes.append("A letöltő a cikk valamelyik forrásrészét hiányosnak jelölte.")
-        for image in images:
-            try:
-                normalized.extend(media.normalize_local_image(image, scratch_path))
-            except media.MediaError as error:
-                notes.append(f"A helyi kép nem olvasható ({image.name}): {error}")
         for url in remote_images:
             try:
                 normalized.extend(media.fetch_remote_image(url, scratch_path))
             except media.MediaError as error:
                 notes.append(f"A hivatkozott kép nem érhető el ({url}): {error}")
-        for video in videos:
-            try:
-                frames = media.normalize_local_video(video, scratch_path)
-                normalized.extend(frames)
-                if frames:
-                    notes.append(f"A videó hangját és a ki nem vett képkockákat nem dolgoztuk fel: {video.name}")
-            except media.MediaError as error:
-                notes.append(f"A videó nem dolgozható fel ({video.name}): {error}")
         notes.extend(source_notes)
         for url in row.get("embed_urls", []):
             notes.append(f"A beágyazott tartalom nem lett letöltve vagy átiratként feldolgozva: {url}")
         # Unsupported embeds / attachments are disclosed so the model can decide if they matter.
         prepared = {"article_id": article_id, "row": row, "path": path, "body": body,
                     "images": media.compact_model_images(normalized, scratch_path) if normalized else [],
-                    "remote_images": remote_images, "videos": videos,
+                    "remote_images": remote_images,
                     "source_notes": notes, "scratch": scratch, "snapshots": {}}
         for dimension in DIMENSIONS:
             prepared["snapshots"][dimension] = _rules_snapshot(root, dimension)

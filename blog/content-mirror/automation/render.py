@@ -166,12 +166,10 @@ def _mapped_url(value: str, base_url: str, paths: dict[str, str]) -> str | None:
     return f"{path}{fragment}"
 
 
-def _rewrite_srcset(value: str, base_url: str, asset_paths: dict[str, str]) -> str:
+def _rewrite_srcset(value: str, base_url: str) -> str:
     candidates: list[str] = []
     for url, descriptor in _srcset_parts(value):
-        replacement = _mapped_url(url, base_url, asset_paths)
-        if replacement is None:
-            replacement = _absolute_http_reference(url, base_url) or url
+        replacement = _absolute_http_reference(url, base_url) or url
         candidates.append(replacement + (f" {descriptor}" if descriptor else ""))
     return ", ".join(candidates)
 
@@ -186,25 +184,21 @@ def _is_lazy_placeholder(value: str | None) -> bool:
 def rewrite_html(
     html: str,
     base_url: str,
-    asset_paths: dict[str, str],
     article_paths: dict[str, str],
     embed_paths: dict[str, str] | None = None,
 ) -> str:
-    """Rewrite known media and internal article references to local paths."""
+    """Keep media URLs absolute and rewrite known internal article references."""
     soup = BeautifulSoup(html or "", "html.parser")
     for tag in soup.find_all(True):
         for attribute in _RESOURCE_ATTRIBUTES.get(tag.name, ()):
             value = _tag_text(tag, attribute)
             if not value:
                 continue
-            replacement = _mapped_url(value, base_url, asset_paths)
-            if replacement is None:
-                replacement = _absolute_http_reference(value, base_url) or value
-            tag[attribute] = replacement
+            tag[attribute] = _absolute_http_reference(value, base_url) or value
         for attribute in (("srcset", "imagesrcset", "data-srcset") if tag.name in {"img", "source"} else ("srcset", "imagesrcset")):
             value = _tag_text(tag, attribute)
             if value:
-                tag[attribute] = _rewrite_srcset(value, base_url, asset_paths)
+                tag[attribute] = _rewrite_srcset(value, base_url)
         if tag.name in {"img", "source"}:
             lazy_src = _tag_text(tag, "data-src")
             current_src = _tag_text(tag, "src")
@@ -218,16 +212,12 @@ def rewrite_html(
         if tag.name == "iframe":
             src = _tag_text(tag, "src")
             if src:
-                replacement = _mapped_url(src, base_url, asset_paths)
-                if replacement is None and embed_paths:
-                    replacement = _mapped_url(src, base_url, embed_paths)
+                replacement = _mapped_url(src, base_url, embed_paths or {})
                 tag["src"] = replacement or _absolute_http_reference(src, base_url) or src
         if tag.name == "a":
             href = _tag_text(tag, "href")
             if href:
                 replacement = _mapped_url(href, base_url, article_paths)
-                if replacement is None:
-                    replacement = _mapped_url(href, base_url, asset_paths)
                 if replacement is None:
                     replacement = _absolute_http_reference(href, base_url) or href
                 tag["href"] = replacement
