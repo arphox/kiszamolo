@@ -10,15 +10,10 @@ A cikkek Markdown-változatát elsősorban sima szövegként és AI-eszközökke
 ## Mi működik már?
 
 - A gyűjteménybe válogatott nyilvános cikkek és oldalak letöltése, az eredeti források megőrzésével.
-- Olvasható Markdown-fájlok készítése, év és hónap szerinti mappákban. A Markdown egyszerű szöveges formátum, amely a címeket, listákat és hivatkozásokat is megőrzi.
+- Olvasható Markdown-fájlok készítése, év és hónap szerinti mappákban.
 - A blog saját tárhelyén elérhető képek és mellékletek letöltése, valamint a helyi cikkek közötti hivatkozások kialakítása.
 - Tartalomjegyzék és géppel feldolgozható cikklista készítése.
 - A helyi gyűjtemény, a témakörök és a tartalmi jelleg besorolásának közös, kézzel indítható frissítése.
-
-A [cikkek besorolásai](classification/README.md) a `classification/assignments.json`
-fájlban vannak, a témakörök neve és jelentése a `classification/topics.json` fájlban.
-Az összerendelések Gitben követhető szöveges adatok. A blog saját kategóriáit
-és címkéit a letöltő ettől függetlenül megőrzi.
 
 ## Mi hol található?
 
@@ -27,7 +22,7 @@ Az összerendelések Gitben követhető szöveges adatok. A blog saját kategór
 | `articles/` | Az olvasható cikkek és oldalak. A kiindulópont az `INDEX.md`. |
 | `articles/assets/` | A letöltött képek és mellékletek. |
 | `raw_source/content-mirror/` | Az eredeti webes források és a frissítés folytatásához szükséges adatok. |
-| `automation/content-mirror/` | A jelenleg használt letöltő és feldolgozó, a tesztjeivel együtt. |
+| `automation/content-mirror/` | A [letöltő és feldolgozó](automation/content-mirror/README.md), a tesztjeivel együtt. |
 | `classification/` | [Témakörök és tartalmi jelleg](classification/README.md), közös nyilvántartás és besoroló. |
 | `update.py` | A letöltést és a besorolást összefogó parancs. |
 
@@ -48,19 +43,11 @@ A teljes frissítéshez a Codex CLI és ChatGPT-előfizetéssel történő bejel
 .\.venv\Scripts\python.exe -u -B update.py
 ```
 
-A program előbb frissíti az `articles/` és a `raw_source/content-mirror/` mappát, majd elvégzi a témakörök és a tartalmi jelleg besorolását. A közös besoroló és nyilvántartás két külön célú modellhívást használ, közös tartalom-előkészítéssel. Legfeljebb öt módosult, már besorolt cikket automatikusan újra besorol; többnél kiírja az érintett cikkek együttes darabszámát, és az új besorolások feldolgozása után egyszer kér emberi jóváhagyást. Ehhez interaktív terminálban kifejezetten `igen` választ kell adni; átirányított bemenetről nem fogad el jóváhagyást.
+A program letölti a változásokat, majd besorolja a cikkeket témakör és tartalmi jelleg szerint. Legfeljebb öt módosult, már besorolt cikket automatikusan újra besorol. Többnél a hiányzó besorolások elkészítése után egyszer kér jóváhagyást az érintett cikkek együttes darabszámára. Ehhez interaktív terminálban kifejezetten `igen` választ kell adni; átirányított bemenetről nem fogad el jóváhagyást.
 
-A besorolásra váró cikkeket a letöltő cikknyilvántartása külön tartja számon a két szempont szerint. Egyik besorolás hibája sem akadályozza a másik feldolgozását; a sikeres részt nem kell a hibás rész miatt megismételni.
+A végén összesítés és teendőlista jelenik meg az `articles/update-report.json` fájlban is. Ha maradt teendő, a következő futtatáskor folytatható a feldolgozás. Kilépési kód: `0` siker, `2` maradt teendő vagy hiányos letöltés, `1` végzetes hiba, `130` megszakítás. A frissítést kézzel indítjuk.
 
-A letöltő a WordPress módosítási időbélyege alapján frissít. A helyi feldolgozás az új és módosult cikkekre korlátozódik. Pótolja a hiányzó helyi fájlokat, és csak az átmeneti letöltési hibákat próbálja újra a következő futáskor. Átnevezéskor külön javítja a rá mutató helyi hivatkozásokat.
-
-A hiányzó szükséges tartalom vagy hibás besorolás nem állítja le a többi cikk feldolgozását; az adott szempont korábbi eredménye megmarad, és a függő jelzés mutatja, hogy frissítésre vár. Az elutasított újrabesorolások és a hibák következő futáskor ismét sorra kerülnek. A közös tartalmi szabályokat és az emberi döntést igénylő eseteket a [besorolás leírása](classification/README.md#közös-szabályok) tartalmazza.
-
-A végén összesítés és teendőlista jelenik meg. A teljes folyamat riportja az `articles/update-report.json`, a letöltésé az `articles/last-report.json`. Kilépési kód: `0` siker, `2` maradt teendő vagy hiányos letöltés, `1` végzetes hiba, `130` megszakítás. Jelenleg igény szerint, kézzel indítjuk; nincs beállított automatikus frissítés.
-
-Csak letöltés: `python -u -B automation/content-mirror/sync.py`.
-
-A további kapcsolókat, a hibakódokat és a hálózat nélküli újragenerálás menetét a [letöltő részletes leírása](automation/content-mirror/README.md) tartalmazza.
+A csak letöltéshez és az újrageneráláshoz szükséges parancsokat a [letöltő leírása](automation/content-mirror/README.md), a besorolások működését és az emberi döntést igénylő eseteket a [besorolás leírása](classification/README.md) tartalmazza.
 
 ## Mit érdemes tudni a mentett tartalomról?
 
@@ -74,7 +61,7 @@ A további kapcsolókat, a hibakódokat és a hálózat nélküli újragenerál�
 
 Az automata tesztek nem érhetnek el külső hálózatot és nem hívhatnak valódi AI-szolgáltatást. A külső szolgáltatásokat mockok helyettesítik; helyi HTTP-tesztkiszolgáló használható.
 
-A projekt tesztjei:
+A teljes tesztkészlet futtatása:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r automation\content-mirror\requirements-test.txt
@@ -85,9 +72,6 @@ A projekt tesztjei:
 
 ## Dokumentáció és nyelvhasználat
 
-Minden szabályt és információt egy helyen dokumentálunk. Más dokumentumokból hivatkozunk rá, az ismétlés helyett.
-
-- **Angol:** az `AGENTS.md`, a Githez kapcsolódó szövegek (például commitüzenetek, branch- és Git-tag-nevek), a forráskód és a kódkommentek.
-- **Magyar:** a szöveges dokumentumok (például a README-k), a cikkek és a többi szöveges tartalom.
-
-A bevett technikai kifejezéseket (például branch, commit, Git-tag) magyar szövegben is megtartjuk; nem fordítjuk őket erőltetetten magyarra.
+- Minden szabályt és magyarázatot a hozzá tartozó dokumentumban tartunk fenn; máshonnan hivatkozunk rá, az ismétlés helyett.
+- A tartós döntéseket és a használathoz szükséges működést dokumentáljuk. A kódból kiolvasható apró részleteket és a lezárult fejlesztések történetét kihagyjuk.
+- Angolul írjuk a forráskódot, a kódkommenteket, a Githez kapcsolódó szövegeket és az `AGENTS.md` fájlt. A többi dokumentáció, a cikkek és a szöveges tartalom magyar nyelvű. A bevett technikai kifejezéseket megtartjuk, ha a fordításuk erőltetett lenne.

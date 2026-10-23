@@ -390,7 +390,7 @@
     {
       "id": "debt",
       "name": "Hitelek és tartozások",
-      "rule": "Hitelek és más tartozások felvétele, fennállása, visszafizetése vagy rendezése; lakossági, vállalkozási és állami eladósodás. Ide tartoznak a hitelfelvételi és törlesztési korlátok, a hitelkiváltás, az adósságrendezés, a hitelből vásárláshoz szükséges önerő és a hitelszerződések banki elszámolása miatti visszatérítések, tőke- és kamatkorrekciók is; ezekhez nem kell külön témakör. Konkrét hiteltípusok és adósságtémák, például az Előtörlesztés saját témakörei is megadhatók. Az állampapír befektetői szempontú tárgyalása önmagában nem eladósodási téma.",
+      "rule": "Hitelek és más tartozások felvétele, fennállása, visszafizetése vagy rendezése; lakossági, vállalkozási és állami eladósodás. Ide tartoznak a hitelfelvételi és törlesztési korlátok (adósságfék), a hitelkiváltás, a váltó, az adósságrendezés, a hitelből vásárláshoz szükséges önerő és a hitelszerződések banki elszámolása miatti visszatérítések, tőke- és kamatkorrekciók is; ezekhez nem kell külön témakör. Konkrét hiteltípusok és adósságtémák, például az Előtörlesztés saját témakörei is megadhatók. Az állampapír befektetői szempontú tárgyalása önmagában nem eladósodási téma.",
       "synonyms": [
         "Adósság",
         "Hitel",
@@ -979,7 +979,7 @@
     {
       "id": "consumer-groups",
       "name": "Vásárlói csoportok",
-      "rule": "Csoportos vásárlási vagy finanszírozási konstrukciók működése, tagi befizetése, vásárlási jogainak elosztása, kivárási rendje és kockázata. A közösségi médiás vásárlói csoport, a szokásos bankhitel vagy vállalati beszerzőcsapat önmagában nem elég. Csalást ne következtess pusztán a csoportos formából.",
+      "rule": "Csoportos vásárlási vagy finanszírozási konstrukciók működése, tagi befizetése, vásárlási jogainak elosztása, kivárási rendje és kockázata. A közösségi médiás vásárlói csoport, a szokásos bankhitel vagy vállalati beszerzőcsapat önmagában nem elég. Csalást ne következtess pusztán a csoportos formából. A csoporttagságból önmagában nem következtetünk jogi státuszra; a NOK nem automatikus szinonima.",
       "synonyms": [
         "fogyasztói csoport",
         "fogyasztói csoportok",

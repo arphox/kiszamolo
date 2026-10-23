@@ -3,7 +3,8 @@
 A közös besoroló két szempontból értékeli a cikkeket: a `topics` azt jelöli,
 miről szólnak, a `content_nature` a tartalmi jellegüket írja le. Két külön
 modellhívás dolgozik ugyanabból az előkészített cikkből és médiából;
-az eredmények egyetlen `assignments.json` fájlba kerülnek.
+az eredmények egyetlen `assignments.json` fájlba kerülnek. A blog saját
+kategóriáitól és címkéitől független besorolást készítünk.
 
 ## Közös szabályok
 
@@ -47,12 +48,9 @@ az eredmények egyetlen `assignments.json` fájlba kerülnek.
 - Egy cikk több, egymást átfedő témakörbe is besorolható. A tágabb témakört is a
   cikk tartalma és a definíció alapján válaszd ki; a `broader` kapcsolat nem
   jelent automatikus öröklést.
-- Az adósságfék, hitelkiváltás és váltó a **Hitelek és tartozások** témakörhöz
-  tartozik. A családon belüli anyagi segítséget, az etikus és vallási
+- A családon belüli anyagi segítséget, az etikus és vallási
   befektetést, valamint a garázsbefektetést is a meglévő témakörökkel soroljuk
   be, külön témakör nélkül.
-- Vásárlói csoportnál a csoporttagságból önmagában nem következtetünk jogi státuszra;
-  a NOK nem automatikus szinonima.
 - Régi és nem pénzügyi cikkeket is értékelünk.
 
 ## `content_nature`
@@ -179,7 +177,8 @@ szintén értékelni kell.
 
 ## Tárolás és működés
 
-Az `assignments.json` gyökerében az `articles` objektum kulcsai a cikkek
+A témakörök neve és jelentése a [topics.json](topics.json) fájlban van.
+Az [assignments.json](assignments.json) gyökerében az `articles` objektum kulcsai a cikkek
 WordPress-azonosítói. Cikkenként a `topics` és a `content_nature` rendezett,
 ismétlés nélküli listája szerepelhet:
 
@@ -193,31 +192,35 @@ a nyilvántartásba nem kerül.
 A fájl UTF-8 kódolású, LF sorvégű, záró soremeléssel; minden cikk egy sor,
 a cikkazonosítók számszerű sorrendben szerepelnek.
 
-A cím és a helyi Markdown-útvonal az `articles/index.jsonl` fájlban kereshető
-ki a cikkazonosító alapján; az útvonal az `articles/` mappán belüli fájlra mutat.
+A cím és a helyi Markdown-útvonal a letöltő [cikklistájában](../automation/content-mirror/README.md#tárolás) kereshető ki a cikkazonosító alapján.
+
+Az új és a tartalmilag módosult cikkek besorolásra várnak. A letöltő
+[jelzései](../automation/content-mirror/README.md#besorolási-teendők) külön tartják számon a két szempont teendőit.
+A sikeres besorolás csak a saját jelzését törli; a kihagyott, elutasított és sikertelen
+feladatok a következő futásra is függőben maradnak.
 
 A két szempont eredménye külön menthető. Ha az egyik hibázik vagy emberi
 döntést igényel, a másik sikeres eredménye megmarad. A következő futás csak
 a hiányzó vagy függő részt ismétli. Sikertelen újrabesoroláskor a régi érték
 megmarad, a cikknyilvántartás megfelelő függő jelzése mutatja az elavultságát.
-Az áttekintési esetek és hibák az `articles/update-report.json` riportban látszanak.
+A közös frissítő az áttekintési eseteket és hibákat az `articles/update-report.json`
+riportba menti; az egycikkes besoroló a terminálra írja őket.
 
 ## Használat
 
-Python 3.10+, a projekt Python-függőségei, a Codex CLI és ChatGPT-előfizetéssel
-történő bejelentkezés szükséges. A parancsokat a projekt gyökeréből futtasd.
+A [telepítés](../README.md#telepítés-és-frissítés) után a parancsokat a projekt gyökeréből futtasd.
 
 Egy már letöltött cikk mindkét besorolása:
 
 ```powershell
-python -B classification/classify.py 125610
+.\.venv\Scripts\python.exe -B classification/classify.py 125610
 ```
 
 Csak az egyik szempont, illetve kifejezett újraértékelés:
 
 ```powershell
-python -B classification/classify.py 125610 --dimension topics
-python -B classification/classify.py 125610 --dimension content_nature --force
+.\.venv\Scripts\python.exe -B classification/classify.py 125610 --dimension topics
+.\.venv\Scripts\python.exe -B classification/classify.py 125610 --dimension content_nature --force
 ```
 
 Meglévő, nem függő eredménynél nincs modellhívás. A `--force` a kiválasztott
@@ -233,28 +236,22 @@ a tartalmi jellegé `gpt-6-luna` / `high`. A `--model` és a
 A teljes gyűjteményt a [közös frissítő](../README.md#telepítés-és-frissítés)
 frissíti. A tömeges újrabesorolás jóváhagyásának szabálya ott található.
 Kilépési kód: `0` siker, `2` maradt áttekintést igénylő eset, `1` technikai
-vagy végzetes hiba, `130` megszakítás. Egy szempont hibája mellett a másik feldolgozása folytatódik.
+vagy végzetes hiba, `130` megszakítás.
 
 ## Képek és videók feldolgozása
 
-A két modellhívás ugyanazt az előkészített cikkszöveget és médiát kapja.
 A besoroló a helyi és a közvetlenül hivatkozott külső képeket is megkísérli
-feldolgozni, a hivatkozott anyagok tartalmát azonban nem találja ki.
-A nem feldolgozott médiáról a modell tájékoztatást kap, hogy megítélhesse,
-akadályozza-e a hiánya az adott besorolást.
+feldolgozni. A nem feldolgozott médiáról a modell tájékoztatást kap; a hiány kezelését
+a [közös szabályok](#közös-szabályok) írják le.
 
-Helyi videóból az `ffmpeg` és `ffprobe` segítségével időrendi képkockákat vesz.
-Hangátiratot nem készít, külső videót nem tölt le; a videó hangja így nem
-hozzáférhető tartalom. A képekből szükség esetén tömörített másolat készül,
+Helyi videóból időrendi képkockákat vesz; ehhez az `ffmpeg` és `ffprobe` telepítése szükséges.
+Hangátiratot nem készít, külső videót nem tölt le. A videó hangja így nem
+hozzáférhető tartalom. A képekből szükség esetén tömörített másolat készül;
 az eredeti források megmaradnak. Ha a képbemenet így is túl nagy, hibát jelez.
 
 Az ismert WordPress-szmájlit szöveges jellé alakítja, a blog ismert
-reklámképét kihagyja; ezeket forráscím és helyi fájlútvonal alapján ismeri fel.
+reklámképét kihagyja.
 
 ## Tesztek
 
-A modellhívás és külső hálózat nélküli tesztek:
-
-```powershell
-python -B -m unittest discover -s classification -p "test_*.py"
-```
+A tesztek futtatását a [projekt leírása](../README.md#tesztek) tartalmazza.
