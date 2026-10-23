@@ -271,20 +271,40 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(report["content_pending_article_ids"], [1])
         self.assertEqual(report["incomplete_downloads"], 0)
 
+    def test_cli_partial_success_survives_interrupt_review_and_timeout(self):
+        for error, code in ((KeyboardInterrupt(), 130), (update.classify.ReviewRequired("Review"), 2),
+                            (update.classify.subprocess.TimeoutExpired("codex", 1), 1)):
+            with self.subTest(error=type(error).__name__):
+                self.add_post(1, pending=True)
+                self.prepare()
+                def classify_or_fail(aid, *, dimension, **kwargs):
+                    if dimension == "content_nature":
+                        raise error
+                    return self.classify(aid, dimension=dimension)
+                self.model.side_effect = classify_or_fail
+                with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                    self.assertEqual(update.classify.main(["1"], root=self.root), code)
+                self.assertEqual(self.stored_assignments()["1"], {"topics": ["topic"]})
+                record = self.stored_state()["records"]["post:1"]
+                self.assertNotIn("classification_pending", record)
+                self.assertTrue(record["content_classification_pending"])
+                index = json.loads((self.articles / "index.jsonl").read_text(encoding="utf-8"))
+                self.assertNotIn("classification_pending", index)
+                self.assertTrue(index["content_classification_pending"])
+
     def test_state_write_failure_keeps_retry_flag_and_other_dimension_runs(self):
         self.add_post(1, pending=True)
-        original_write = update.sync.atomic_write
-        state_writes = 0
+        original_write = update.classify.atomic_write
+        failed = False
 
         def fail_first_dimension_state_save(path, data):
-            nonlocal state_writes
-            if Path(path).name == "state.json":
-                state_writes += 1
-                if state_writes == 2:
-                    raise OSError("State write failed.")
+            nonlocal failed
+            if Path(path).name == "state.json" and not failed:
+                failed = True
+                raise OSError("State write failed.")
             return original_write(path, data)
 
-        with mock.patch.object(update.sync, "atomic_write", side_effect=fail_first_dimension_state_save):
+        with mock.patch.object(update.classify, "atomic_write", side_effect=fail_first_dimension_state_save):
             report = self.run_update()
 
         self.assertEqual(report["errors"][0]["id"], 1)

@@ -2,7 +2,6 @@
 
 import argparse
 from pathlib import Path
-import subprocess
 import sys
 
 
@@ -13,10 +12,7 @@ import sync
 from classification import classify
 
 
-DIMENSIONS = ("topics", "content_nature")
-CLASSIFICATION_ERRORS = (classify.ClassificationError, OSError, ValueError, subprocess.TimeoutExpired)
-PENDING_FLAGS = {"topics": "classification_pending",
-                 "content_nature": "content_classification_pending"}
+DIMENSIONS = classify.DIMENSIONS
 REPORT_PREFIXES = {"topics": "", "content_nature": "content_"}
 
 
@@ -48,18 +44,15 @@ def run_update(root=ROOT, *, progress=print, confirm=None):
             classify.load_json(root / "classification/assignments.json"), allowed_topics)
         posts = sorted((item for item in state["records"].values() if item["type"] == "post"),
                        key=lambda item: int(item["id"]))
-        scheduled = {}
-        for dimension in DIMENSIONS:
-            flag = PENDING_FLAGS[dimension]
-            missing = {str(item["id"]) for item in posts if str(item["id"]) not in assignments
-                       or dimension not in assignments[str(item["id"])]}
-            changed = {str(item["id"]) for item in posts if str(item["id"]) in assignments
-                       and dimension in assignments[str(item["id"])] and item.get(flag)}
-            scheduled[dimension] = {"new": missing, "changed": changed}
-            # Persist retry state before any work so interruption cannot lose missing fields.
-            for item in posts:
-                if str(item["id"]) in missing:
-                    item[flag] = True
+        scheduled = {d: {"new": set(), "changed": set()} for d in DIMENSIONS}
+        for item in posts:
+            aid = str(item["id"])
+            assignment = assignments.get(aid, {})
+            for dimension in classify.pending_dimensions(item, assignment):
+                kind = "changed" if dimension in assignment else "new"
+                scheduled[dimension][kind].add(aid)
+                item[classify.PENDING_FLAGS[dimension]] = True
+        # Persist retry state before any work so interruption cannot lose missing fields.
         if any(scheduled[d]["new"] for d in DIMENSIONS):
             sync.atomic_write(source_root / "state.json", sync.json_bytes(state))
 
@@ -89,51 +82,16 @@ def run_update(root=ROOT, *, progress=print, confirm=None):
             title = item["title"]
             phase = "újrabesorolás" if reclassify else "besorolás"
             progress(f"Besorolás ({', '.join(dimensions)}), {phase}: {aid} · {title}")
-            def record_issue(dimension, error):
+            for dimension, outcome in classify.process_article(aid, root=root, state=state,
+                    assignments=assignments, dimensions=dimensions, force=reclassify):
                 prefix = REPORT_PREFIXES[dimension]
-                issue_kind = "review_required" if isinstance(error, classify.ReviewRequired) else "errors"
-                report[prefix + issue_kind].append(dict(id=item["id"], title=title, reason=str(error)))
-                progress(f"Teendő · {aid} · {title}: {error}")
-                save_report()
-
-            def process_prepared(prepared):
-                for dimension in dimensions:
-                    prefix = REPORT_PREFIXES[dimension]
-                    flag = PENDING_FLAGS[dimension]
-                    try:
-                        classify.classify_article(aid, root=root, dimension=dimension,
-                                                  force=reclassify, prepared=prepared)
-                        refreshed = classify.validate_assignments(
-                            classify.load_json(root / "classification/assignments.json"), allowed_topics)
-                        if aid not in refreshed or dimension not in refreshed[aid]:
-                            raise classify.ClassificationError(
-                                f"A(z) {dimension} besorolás mentése nem található a nyilvántartásban.")
-                        assignments[aid] = refreshed[aid]
-                        # Keep the retry flag if persisting its removal fails.
-                        had_flag = item.get(flag)
-                        item.pop(flag, None)
-                        try:
-                            sync.atomic_write(source_root / "state.json", sync.json_bytes(state))
-                        except Exception:
-                            item[flag] = had_flag if had_flag is not None else True
-                            raise
-                    except CLASSIFICATION_ERRORS as error:
-                        record_issue(dimension, error)
-                        continue
+                if isinstance(outcome, Exception):
+                    issue_kind = "review_required" if isinstance(outcome, classify.ReviewRequired) else "errors"
+                    report[prefix + issue_kind].append(dict(id=item["id"], title=title, reason=str(outcome)))
+                    progress(f"Teendő · {aid} · {title}: {outcome}")
+                else:
                     report[prefix + ("reclassified" if reclassify else "classified")].append(item["id"])
-                    save_report()
-
-            try:
-                entered = False
-                with classify.prepare_article(aid, root=root) as prepared:
-                    entered = True
-                    process_prepared(prepared)
-            except CLASSIFICATION_ERRORS as error:
-                if entered:
-                    # An exception leaving the prepared context indicates a cleanup failure.
-                    raise
-                for dimension in dimensions:
-                    record_issue(dimension, error)
+                save_report()
 
         save_report()
         try:

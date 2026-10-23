@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -24,6 +25,7 @@ DEFAULT_MODEL = "gpt-6-luna"
 DEFAULT_REASONING_EFFORT = "high"
 DIMENSION_DEFAULTS = {"topics": ("gpt-6.1-sol", "medium"), "content_nature": (DEFAULT_MODEL, DEFAULT_REASONING_EFFORT)}
 DIMENSIONS = ("topics", "content_nature")
+PENDING_FLAGS = {"topics": "classification_pending", "content_nature": "content_classification_pending"}
 NATURE_IDS = ("explanatory", "mindset", "news", "promotional", "announcement", "reporting", "curated")
 TOPICS_PATH = "classification/topics.json"
 REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
@@ -31,6 +33,7 @@ PROMPT_INSTRUCTIONS = "Értékeld az egyetlen mellékelt magyar cikket a megadot
 
 ClassificationError = topic_classifier.ClassificationError
 ReviewRequired = topic_classifier.ReviewRequired
+CLASSIFICATION_ERRORS = (ClassificationError, OSError, ValueError, subprocess.TimeoutExpired)
 
 class ContentReviewRequired(ReviewRequired):
     def __init__(self, review_case):
@@ -385,11 +388,10 @@ def classify_article(article_id, root=None, transport=None, *, dimension="conten
     existing = records.get(article_id, {})
     expected = existing.get(dimension)
     state_path = root / "raw_source/content-mirror/state.json"
-    pending_key = "classification_pending" if dimension == "topics" else "content_classification_pending"
     if not force and state_path.is_file():
         state = load_json(state_path)
         pending_record = state.get("records", {}).get(f"post:{article_id}", {})
-        force = isinstance(pending_record, dict) and pending_record.get(pending_key) is True
+        force = isinstance(pending_record, dict) and dimension in pending_dimensions(pending_record, existing, (dimension,))
     if expected is not None and not force:
         return {dimension: expected, "saved": False}
     if prepared is None:
@@ -411,30 +413,53 @@ def classify_article(article_id, root=None, transport=None, *, dimension="conten
     return result
 
 
-def acknowledge_saved(root, article_id, dimension):
-    key = "classification_pending" if dimension == "topics" else "content_classification_pending"
-    state_path = Path(root) / "raw_source/content-mirror/state.json"
-    if not state_path.is_file(): return False
-    state = load_json(state_path)
-    record = state.get("records", {}).get(f"post:{article_id}")
-    cleared = isinstance(record, dict) and record.pop(key, None) is True
-    if cleared: atomic_write(state_path, json_bytes(state))
-    publish_article_index(Path(root) / "articles", state)
-    return cleared
+def pending_dimensions(record, assignment, dimensions=DIMENSIONS, *, force=False):
+    return [d for d in dimensions if force or d not in assignment or record.get(PENDING_FLAGS[d])]
 
 
-def mark_pending(root, article_id, dimension):
-    key = "classification_pending" if dimension == "topics" else "content_classification_pending"
+def process_article(article_id, *, root, state, assignments, dimensions=DIMENSIONS, force=False,
+                    transport=None, model=None, reasoning_effort=None):
+    """Yield each dimension's result or error; callers hold both mirror locks."""
+    aid = str(article_id)
+    record = state.get("records", {}).get(f"post:{aid}", {})
+    work = pending_dimensions(record, assignments.get(aid, {}), dimensions, force=force)
+    if not work:
+        return
     state_path = Path(root) / "raw_source/content-mirror/state.json"
-    if not state_path.is_file(): return False
-    state = load_json(state_path)
-    record = state.get("records", {}).get(f"post:{article_id}")
-    if not isinstance(record, dict): return False
-    if record.get(key) is not True:
-        record[key] = True
+    if record and any(record.get(PENDING_FLAGS[d]) is not True for d in work):
+        record.update((PENDING_FLAGS[d], True) for d in work)
         atomic_write(state_path, json_bytes(state))
-        publish_article_index(Path(root) / "articles", state)
-    return True
+    entered = False
+    try:
+        with prepare_article(aid, root=root) as prepared:
+            entered = True
+            for dimension in work:
+                try:
+                    result = classify_article(aid, root=root, dimension=dimension, force=force,
+                                              prepared=prepared, transport=transport, model=model,
+                                              reasoning_effort=reasoning_effort)
+                    refreshed = validate_assignments(load_json(Path(root) / "classification/assignments.json"),
+                                                     _topic_ids(root))
+                    if dimension not in refreshed.get(aid, {}):
+                        raise ClassificationError(f"A(z) {dimension} besorolás mentése nem található a nyilvántartásban.")
+                    assignments[aid] = refreshed[aid]
+                    if record:
+                        flag = PENDING_FLAGS[dimension]
+                        record.pop(flag, None)
+                        try:
+                            atomic_write(state_path, json_bytes(state))
+                        except BaseException:
+                            record[flag] = True
+                            raise
+                except CLASSIFICATION_ERRORS as error:
+                    yield dimension, error
+                else:
+                    yield dimension, result
+    except CLASSIFICATION_ERRORS as error:
+        if entered:
+            raise
+        for dimension in work:
+            yield dimension, error
 
 
 def main(argv=None, root=None, transport=None):
@@ -446,64 +471,43 @@ def main(argv=None, root=None, transport=None):
     parser.add_argument("--reasoning-effort", choices=REASONING_EFFORTS)
     args = parser.parse_args(argv)
     root = Path(root or ROOT).resolve()
-    results, review_needed, failed = {}, False, False
-    republish_needed = False
+    review_needed, failed = False, False
     try:
         with exclusive_run(root / "raw_source/content-mirror"), exclusive_run(root / "articles"):
             dimensions = (args.dimension,) if args.dimension else DIMENSIONS
             records = validate_assignments(load_json(root / "classification/assignments.json"), _topic_ids(root))
-            record = records.get(args.article_id, {})
             state_path = root / "raw_source/content-mirror/state.json"
             state = load_json(state_path) if state_path.is_file() else {}
-            pending_record = state.get("records", {}).get(f"post:{args.article_id}", {})
-            pending_keys = {"topics": "classification_pending", "content_nature": "content_classification_pending"}
-            work = [d for d in dimensions if args.force or d not in record or
-                    (isinstance(pending_record, dict) and pending_record.get(pending_keys[d]) is True)]
-            for dimension in work:
-                mark_pending(root, args.article_id, dimension)
-            for dimension in dimensions:
-                if dimension not in work:
-                    results[dimension] = {dimension: record[dimension], "saved": False}
-            if work:
-                with prepare_article(args.article_id, root) as prepared:
-                    for dimension in work:
-                        try:
-                            result = classify_article(args.article_id, root, transport, dimension=dimension,
-                                                      force=args.force, model=args.model,
-                                                      reasoning_effort=args.reasoning_effort, prepared=prepared)
-                            results[dimension] = result
-                            if result.get("saved"):
-                                try:
-                                    acknowledge_saved(root, args.article_id, dimension)
-                                except OSError:
-                                    try:
-                                        acknowledge_saved(root, args.article_id, dimension)
-                                    except OSError:
-                                        republish_needed = True
-                                        raise
-                        except ReviewRequired as error:
-                            review_needed = True
-                            print(f"{dimension}: áttekintés szükséges: {error}", file=sys.stderr)
-                        except (ClassificationError, OSError, ValueError) as error:
-                            failed = True
-                            print(f"{dimension}: nem mentettem: {error}", file=sys.stderr)
-            if not work:
-                republish_needed = True
-            if republish_needed and state_path.is_file():
-                try:
-                    publish_article_index(root / "articles", load_json(state_path))
-                except OSError as error:
-                    failed = True
-                    print(f"Az index frissítése nem sikerült: {error}", file=sys.stderr)
+            results = {d: value for d, value in records.get(args.article_id, {}).items() if d in dimensions}
+            try:
+                for dimension, outcome in process_article(args.article_id, root=root, state=state,
+                        assignments=records, dimensions=dimensions, force=args.force, transport=transport,
+                        model=args.model, reasoning_effort=args.reasoning_effort):
+                    if isinstance(outcome, ReviewRequired):
+                        review_needed = True
+                        results.pop(dimension, None)
+                        print(f"{dimension}: áttekintés szükséges: {outcome}", file=sys.stderr)
+                    elif isinstance(outcome, Exception):
+                        failed = True
+                        results.pop(dimension, None)
+                        print(f"{dimension}: nem mentettem: {outcome}", file=sys.stderr)
+                    else:
+                        results[dimension] = outcome[dimension]
+            finally:
+                if state_path.is_file():
+                    try:
+                        publish_article_index(root / "articles", state)
+                    except OSError:
+                        publish_article_index(root / "articles", state)
         for dimension, result in results.items():
-            print(f"{dimension}: {', '.join(result[dimension])}")
+            print(f"{dimension}: {', '.join(result)}")
         return 1 if failed else 2 if review_needed else 0
     except KeyboardInterrupt:
         return 130
     except ReviewRequired as error:
         print(f"Áttekintés szükséges: {error}", file=sys.stderr)
         return 2
-    except (ClassificationError, OSError, ValueError) as error:
+    except CLASSIFICATION_ERRORS as error:
         print(f"Nem mentettem: {error}", file=sys.stderr)
         return 1
 

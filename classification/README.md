@@ -194,17 +194,12 @@ a cikkazonosítók számszerű sorrendben szerepelnek.
 
 A cím és a helyi Markdown-útvonal a letöltő [cikklistájában](../automation/content-mirror/README.md#tárolás) kereshető ki a cikkazonosító alapján.
 
-Az új és a tartalmilag módosult cikkek besorolásra várnak. A letöltő
-[jelzései](../automation/content-mirror/README.md#besorolási-teendők) külön tartják számon a két szempont teendőit.
-A sikeres besorolás csak a saját jelzését törli; a kihagyott, elutasított és sikertelen
-feladatok a következő futásra is függőben maradnak.
-
-A két szempont eredménye külön menthető. Ha az egyik hibázik vagy emberi
-döntést igényel, a másik sikeres eredménye megmarad. A következő futás csak
-a hiányzó vagy függő részt ismétli. Sikertelen újrabesoroláskor a régi érték
-megmarad, a cikknyilvántartás megfelelő függő jelzése mutatja az elavultságát.
-A közös frissítő az áttekintési eseteket és hibákat az `articles/update-report.json`
-riportba menti; az egycikkes besoroló a terminálra írja őket.
+Alapesetben mindkét parancs a hiányzó vagy [függő](../automation/content-mirror/README.md#besorolási-teendők)
+besorolásokat dolgozza fel, és szempontonként ment. Csak a sikeresen mentett
+szempont függő jelzését törli; hiba, kihagyás vagy emberi döntést igénylő eset
+után a feladat folytatható, korábbi értéke megmarad. Az egyik szempont hibája
+nem akadályozza a másikat. A teljes frissítő a teendőket az
+`articles/update-report.json` fájlba menti; az egycikkes parancs a terminálra írja.
 
 ## Használat
 
