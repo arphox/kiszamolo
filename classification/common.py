@@ -1,5 +1,4 @@
 """Classify one locally downloaded article and update its canonical assignment."""
-import argparse
 from contextlib import contextmanager
 import json
 import os
@@ -13,7 +12,6 @@ from urllib.parse import unquote, urljoin, urlsplit
 from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "automation/content-mirror"))
-from sync import exclusive_run
 MODEL = "gpt-6.1-sol"
 REASONING = "medium"
 MAX_REQUEST_BYTES = 200_000
