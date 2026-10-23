@@ -1,4 +1,4 @@
 - Read and follow the project guidance in [README.md](README.md) before starting work.
-- Before changing topics or topic-classification rules, read the topic-selection principles and user decisions in [topics/README.md](topics/README.md).
+- Before changing classification rules, read the shared rules, topic-selection principles, and user decisions in [classification/README.md](classification/README.md).
 - Keep the project simple.
 - Communicate with the user in simple, clear, everyday language.

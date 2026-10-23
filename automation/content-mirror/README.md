@@ -67,8 +67,9 @@ Ha a leltár és a célzott rekordlekérés között változik a módosítási i
 A nyilvános HTML és a kapcsolódó média újraellenőrzése az új, a WordPress szerint módosult vagy visszatért tartalmakra, valamint a hiányzó vagy korábban hibás cikkforrásokra terjed ki. Az átmeneti letöltési hibákat (például időtúllépést, kapcsolatmegszakadást vagy ideiglenes szerverhibát) a következő futás újrapróbálja. A végleg elérhetetlen vagy hibás fájl `unavailable` státuszt kap; többé nem próbálkozik vele újra. Ismert `unavailable` média vagy nyilvános HTML hiánya önmagában nem teszi hiányossá a cikket. Ha az API sem tartalmaz cikk szöveget, és a nyilvános HTML sem érhető el, a cikk olvasható nézete hiányos marad; a letöltő ezt csak a WordPress-tartalom vagy az URL változásakor vizsgálja újra. A média eredeti URL-je marad a Markdownban. Ha korábbi helyi másolat volt, a fájl megmarad, de a hivatkozás visszaáll az eredeti címre. A szerver ETag/Last-Modified támogatása esetén feltételes GET-et használ.
 
 A cikknyilvántartás `classification_pending` mezője a témakörök szerinti,
-a `content_classification_pending` a [tartalmi besorolásra](../../classification/README.md)
-váró cikkeket jelzi. Mindkettő szerepel az `index.jsonl` fájlban.
+a `content_classification_pending` a tartalmi jelleg szerinti
+[besorolásra](../../classification/README.md) váró cikkeket jelzi.
+Mindkettő szerepel az `index.jsonl` fájlban; a besorolások közös nyilvántartásba kerülnek.
 
 A sikeres besorolás csak a saját jelzését törli. A kihagyott és sikertelen
 feladatok függőben maradnak.

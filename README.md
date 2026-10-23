@@ -15,8 +15,8 @@ A cikkek Markdown-változatát elsősorban sima szövegként és AI-eszközökke
 - Tartalomjegyzék és géppel feldolgozható cikklista készítése.
 - A helyi gyűjtemény, a témakörök és a tartalmi jelleg besorolásának közös, kézzel indítható frissítése.
 
-A [cikkek témakörei](topics/README.md) a `topics/assignments.json` fájlban
-vannak, a témakörök neve és jelentése a `topics/topics.json` fájlban.
+A [cikkek besorolásai](classification/README.md) a `classification/assignments.json`
+fájlban vannak, a témakörök neve és jelentése a `classification/topics.json` fájlban.
 Az összerendelések Gitben követhető szöveges adatok. A blog saját kategóriáit
 és címkéit a letöltő ettől függetlenül megőrzi.
 
@@ -28,9 +28,8 @@ Az összerendelések Gitben követhető szöveges adatok. A blog saját kategór
 | `articles/assets/` | A letöltött képek és mellékletek. |
 | `raw_source/content-mirror/` | Az eredeti webes források és a frissítés folytatásához szükséges adatok. |
 | `automation/content-mirror/` | A jelenleg használt letöltő és feldolgozó, a tesztjeivel együtt. |
-| `topics/` | Cikk–témakör összerendelések, témakör-definíciók és a besoroló. |
-| `classification/` | [Tartalmi besorolások](classification/README.md) és a besoroló. |
-| `update.py` | A letöltést és a két független besorolást összefogó parancs. |
+| `classification/` | [Témakörök és tartalmi jelleg](classification/README.md), közös nyilvántartás és besoroló. |
+| `update.py` | A letöltést és a besorolást összefogó parancs. |
 
 ## Telepítés és frissítés
 
@@ -49,13 +48,13 @@ A teljes frissítéshez a Codex CLI és ChatGPT-előfizetéssel történő bejel
 .\.venv\Scripts\python.exe -u -B update.py
 ```
 
-A program előbb frissíti az `articles/` és a `raw_source/content-mirror/` mappát, majd elvégzi a témakörök és a tartalmi jelleg besorolását. A két rendszer külön modellhívást és nyilvántartást használ. Legfeljebb öt módosult, már besorolt cikket automatikusan újra besorol; többnél kiírja az érintett cikkek együttes darabszámát, és az új besorolások feldolgozása után egyszer kér emberi jóváhagyást. Ehhez interaktív terminálban kifejezetten `igen` választ kell adni; átirányított bemenetről nem fogad el jóváhagyást.
+A program előbb frissíti az `articles/` és a `raw_source/content-mirror/` mappát, majd elvégzi a témakörök és a tartalmi jelleg besorolását. A közös besoroló és nyilvántartás két külön célú modellhívást használ, közös tartalom-előkészítéssel. Legfeljebb öt módosult, már besorolt cikket automatikusan újra besorol; többnél kiírja az érintett cikkek együttes darabszámát, és az új besorolások feldolgozása után egyszer kér emberi jóváhagyást. Ehhez interaktív terminálban kifejezetten `igen` választ kell adni; átirányított bemenetről nem fogad el jóváhagyást.
 
-A besorolásra váró cikkeket a letöltő cikknyilvántartása külön tartja számon a két rendszerben. Egyik besorolás hibája sem akadályozza a másik feldolgozását; a sikeres részt nem kell a hibás rész miatt megismételni.
+A besorolásra váró cikkeket a letöltő cikknyilvántartása külön tartja számon a két szempont szerint. Egyik besorolás hibája sem akadályozza a másik feldolgozását; a sikeres részt nem kell a hibás rész miatt megismételni.
 
 A letöltő a WordPress módosítási időbélyege alapján frissít. A helyi feldolgozás az új és módosult cikkekre korlátozódik. Pótolja a hiányzó helyi fájlokat, és csak az átmeneti letöltési hibákat próbálja újra a következő futáskor. Átnevezéskor külön javítja a rá mutató helyi hivatkozásokat.
 
-A hiányzó szükséges tartalom vagy hibás besorolás nem állítja le a többi cikk feldolgozását; az adott rendszer korábbi eredménye megmarad. Az elutasított újrabesorolások és a hibák következő futáskor ismét sorra kerülnek. A tartalmi besorolás egyedi határeseteiben elfogadjuk a modell legjobb megítélését. Új témakörről és kizárásról továbbra is a felhasználó dönt.
+A hiányzó szükséges tartalom vagy hibás besorolás nem állítja le a többi cikk feldolgozását; az adott szempont korábbi eredménye megmarad, és a függő jelzés mutatja, hogy frissítésre vár. Az elutasított újrabesorolások és a hibák következő futáskor ismét sorra kerülnek. A közös tartalmi szabályokat és az emberi döntést igénylő eseteket a [besorolás leírása](classification/README.md#közös-szabályok) tartalmazza.
 
 A végén összesítés és teendőlista jelenik meg. A teljes folyamat riportja az `articles/update-report.json`, a letöltésé az `articles/last-report.json`. Kilépési kód: `0` siker, `2` maradt teendő vagy hiányos letöltés, `1` végzetes hiba, `130` megszakítás. Jelenleg igény szerint, kézzel indítjuk; nincs beállított automatikus frissítés.
 
@@ -69,7 +68,7 @@ A további kapcsolókat, a hibakódokat és a hálózat nélküli újragenerál�
 - A letöltő a jelenleg elérhető tartalmat követi; a cikkek korábbi változatairól nem készít történetet. Ha egy cikk eltűnik a blogról, a már mentett helyi példánya megmarad.
 - A hozzászólásokat külön nem gyűjti. A teljes weboldal mentett HTML-forrásában azonban szerepelhetnek hozzászólások.
 - Más webhelyek fájljai és a külső videólejátszók tartalmai hivatkozásként maradnak meg. A gyűjtemény ezért nem minden részében használható internet nélkül; a webes kalkulátorok működését sem másolja le.
-- A letöltött adatok és az előállított cikkfájlok nincsenek Gitben. A repó a kódot, a dokumentációt és a két besorolási nyilvántartást tartalmazza. A meglévő gyűjtemény megőrzéséhez az `articles/` és a `raw_source/` mappát külön is menteni kell.
+- A letöltött adatok és az előállított cikkfájlok nincsenek Gitben. A repó a kódot, a dokumentációt és a közös besorolási nyilvántartást tartalmazza. A meglévő gyűjtemény megőrzéséhez az `articles/` és a `raw_source/` mappát külön is menteni kell.
 
 ## Tesztek
 
@@ -80,7 +79,6 @@ A projekt tesztjei:
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r automation\content-mirror\requirements-test.txt
 .\.venv\Scripts\python.exe -B -m unittest discover -s automation\content-mirror -p "test_*.py"
-.\.venv\Scripts\python.exe -B -m unittest discover -s topics -p "test_*.py"
 .\.venv\Scripts\python.exe -B -m unittest discover -s classification -p "test_*.py"
 .\.venv\Scripts\python.exe -B -m unittest discover -s automation -p "test_update.py"
 ```

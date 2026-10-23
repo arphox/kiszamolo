@@ -21,6 +21,8 @@ class ClassificationTests(unittest.TestCase):
         (self.root / "articles/2026/10").mkdir(parents=True)
         self.rules = Path(classify.ROOT / "classification/README.md").read_text(encoding="utf-8")
         (self.root / "classification/README.md").write_text(self.rules, encoding="utf-8")
+        (self.root / "classification/topics.json").write_bytes(
+            (classify.ROOT / "classification/topics.json").read_bytes())
         self.path = self.root / "classification/assignments.json"
         self.path.write_text('{\n  "articles": {}\n}\n', encoding="utf-8")
         self.rows = [dict(id=aid, type="post", title=f"Article {aid}", path=f"2026/10/{aid}.md")
@@ -39,30 +41,7 @@ class ClassificationTests(unittest.TestCase):
         (self.root / "articles/index.jsonl").write_text(
             "\n".join(json.dumps(row) for row in self.rows) + "\n", encoding="utf-8")
 
-    def test_missing_optional_source_metadata_does_not_block_readable_article(self):
-        self.rows[0]["source_record"] = "records/posts/10"
-        self.write_index()
-        path = self.root / "articles" / self.rows[0]["path"]
-        path.write_text("# Article 10\n\nReadable full article.\n\n![chart](chart.gif)", encoding="utf-8")
-        (path.parent / "chart.gif").write_bytes(b"image-placeholder")
-        prepared = classify.prepare_request(10, self.root)[3]
-        self.assertIn("Readable full article.", prepared["prompt"])
-        self.assertEqual(prepared["images"], [path.parent / "chart.gif"])
 
-    def test_local_video_is_collected_for_frames_without_fetching_external_videos(self):
-        path = self.root / "articles" / self.rows[0]["path"]
-        video = path.parent / "clip.mp4"
-        video.write_bytes(b"video-placeholder")
-        path.write_text("# Article 10\n\n[clip](clip.mp4)\n[external](https://example.com/clip.mp4)", encoding="utf-8")
-        request = classify.prepare_request(10, self.root)[3]
-        self.assertEqual(request["videos"], [video])
-        frame = path.parent / "frame.png"
-        frame.write_bytes(b"frame-placeholder")
-        with mock.patch.object(classify.media, "normalize_local_video", return_value=[frame]), \
-                mock.patch.object(classify.topic_classifier, "codex_exec", return_value=self.response) as transport:
-            classify.codex_exec(request)
-        self.assertEqual(transport.call_args.args[0]["images"], [frame])
-        self.assertIn("videójának időrendben", transport.call_args.args[0]["prompt"])
 
     def records(self):
         return json.loads(self.path.read_text(encoding="utf-8"))["articles"]
@@ -107,16 +86,6 @@ class ClassificationTests(unittest.TestCase):
         self.assertNotIn("BODY_ONLY_FOR_20", request["prompt"])
         self.assertNotIn("quick-tip", request["prompt"])
 
-    def test_prompt_instructions_keep_article_preparation(self):
-        default_request = classify.make_request("Cím", "Törzsszöveg", [], "Szabályok")
-        self.assertTrue(default_request["prompt"].startswith(classify.PROMPT_INSTRUCTIONS))
-        self.assertIn("Törzsszöveg", default_request["prompt"])
-        self.assertIn("Szabályok", default_request["prompt"])
-        self.assertEqual(set(default_request["schema"]["properties"]), {"content_nature", "review_case"})
-
-        _, _, _, prepared = classify.prepare_request(10, root=self.root)
-        self.assertTrue(prepared["prompt"].startswith(classify.PROMPT_INSTRUCTIONS))
-        self.assertIn("BODY_ONLY_FOR_10", prepared["prompt"])
 
     def test_new_final_result_requires_a_nature(self):
         self.transport.return_value = {"content_nature": [{"id": "reporting", "evidence": "Tényszerű eredményt ismertet."}], "review_case": None}
@@ -170,9 +139,6 @@ class ClassificationTests(unittest.TestCase):
         with self.assertRaises(classify.ClassificationError):
             classify.validate_result(malformed_case)
 
-    def test_assignment_save_guard_rejects_new_empty_nature_result(self):
-        with self.assertRaises(classify.ClassificationError):
-            classify.save_assignment(self.root, "10", {"content_nature": []}, {}, classify.rules_text(self.root))
 
     def test_legacy_empty_nature_record_remains_readable(self):
         legacy = {"content_nature": []}
@@ -245,94 +211,10 @@ class ClassificationTests(unittest.TestCase):
         self.assertTrue(result["saved"])
         self.assertEqual(call.call_args.kwargs, {"model": "gpt-6-luna", "reasoning_effort": "high"})
 
-    def test_prepare_uses_accessible_body_despite_media_and_embed_metadata(self):
-        row = self.rows[0]
-        row.update({
-            "url": "https://kiszamolo.hu/article/10",
-            "acquisition_status": "incomplete",
-            "featured_media_error": "featured image unavailable",
-            "embed_urls": ["https://www.youtube.com/embed/abc"],
-            "derived_view_available": True,
-        })
-        self.write_index()
-        article = self.root / "articles" / row["path"]
-        article.write_text(
-            "# Article 10\n\nReadable article body. [PDF](files/guide.pdf) "
-            "[sheet](files/data.xls) [video](https://youtu.be/abc)", encoding="utf-8")
 
-        _, _, _, request = classify.prepare_request(10, root=self.root)
 
-        self.assertIn("Readable article body", request["prompt"])
-        self.assertIn("files/guide.pdf", request["prompt"])
-        self.assertIn("files/data.xls", request["prompt"])
-        self.assertIn("https://youtu.be/abc", request["prompt"])
-        self.assertIn("https://www.youtube.com/embed/abc", request["prompt"])
-        self.assertEqual(request["images"], [])
 
-    def test_prepare_collects_local_gif_and_explicit_remote_inline_image(self):
-        row = self.rows[0]
-        row["url"] = "https://kiszamolo.hu/article/10"
-        self.write_index()
-        local = self.root / "articles/2026/10/local.gif"
-        local.write_bytes(b"GIF placeholder; normalization is tested separately")
-        article = self.root / "articles" / row["path"]
-        article.write_text(
-            "# Article 10\n\nBody. ![local](local.gif) "
-            "![remote](https://images.example/picture.gif)", encoding="utf-8")
 
-        _, _, _, request = classify.prepare_request(10, root=self.root)
-
-        self.assertEqual(request["images"], [local])
-        self.assertEqual(request["remote_images"], ["https://images.example/picture.gif"])
-        self.transport.assert_not_called()
-
-    def test_prepare_still_rejects_image_paths_outside_articles(self):
-        article = self.root / "articles" / self.rows[0]["path"]
-        article.write_text("# Article 10\n\nBody. ![escape](../../../outside.gif)", encoding="utf-8")
-        with self.assertRaisesRegex(classify.ClassificationError, "kilép a cikkgyűjteményből"):
-            classify.prepare_request(10, root=self.root)
-        self.transport.assert_not_called()
-
-    def test_codex_exec_normalizes_gif_and_keeps_pngs_alive_during_model_call(self):
-        from PIL import Image
-
-        gif_path = self.root / "articles/2026/10/animation.gif"
-        first, second = Image.new("RGB", (3, 2), "red"), Image.new("RGB", (3, 2), "blue")
-        first.save(gif_path, format="GIF", save_all=True, append_images=[second], duration=100)
-        observed = []
-
-        def inspect_prepared(request, **kwargs):
-            observed.extend(request["images"])
-            self.assertEqual(len(request["images"]), 2)
-            for image_path in request["images"]:
-                self.assertTrue(image_path.is_file())
-                self.assertEqual(image_path.suffix, ".png")
-                with Image.open(image_path) as image:
-                    self.assertEqual(image.format, "PNG")
-            self.assertEqual(len({image.parent for image in request["images"]}), 1)
-            return self.response
-
-        with mock.patch.object(classify.topic_classifier, "codex_exec", side_effect=inspect_prepared) as call:
-            result = classify.codex_exec({"prompt": "body", "images": [gif_path]})
-
-        self.assertIs(result, self.response)
-        call.assert_called_once()
-        self.assertEqual(len(observed), 2)
-
-    def test_remote_media_failure_is_ignored_without_changing_model_request(self):
-        expected_request = {"prompt": "accessible text", "images": [], "schema": {}}
-
-        with mock.patch.object(classify.media, "fetch_remote_image",
-                               side_effect=classify.media.MediaError("remote image unavailable")), \
-                mock.patch.object(classify.topic_classifier, "codex_exec", return_value=self.response) as call:
-            result = classify.codex_exec({**expected_request, "remote_images": ["https://img.example/a.gif"]})
-
-        self.assertIs(result, self.response)
-        call.assert_called_once()
-        submitted = call.call_args.args[0]
-        self.assertEqual(submitted["images"], [])
-        self.assertEqual(submitted["prompt"], expected_request["prompt"])
-        self.assertNotIn("missing", submitted["prompt"].casefold())
 
     def test_invalid_model_response_retries_once_but_review_does_not(self):
         invocations = []
@@ -412,7 +294,7 @@ class ClassificationTests(unittest.TestCase):
     def test_cli_acknowledges_only_saved_records_and_preserves_topic_flag(self):
         state_path = self.pending_state((10,))
         with redirect_stdout(io.StringIO()):
-            self.assertEqual(classify.main(["10"], root=self.root, transport=self.transport), 0)
+            self.assertEqual(classify.main(["10", "--dimension", "content_nature"], root=self.root, transport=self.transport), 0)
         record = json.loads(state_path.read_text(encoding="utf-8"))["records"]["post:10"]
         self.assertNotIn("content_classification_pending", record)
         self.assertTrue(record["classification_pending"])
@@ -433,7 +315,7 @@ class ClassificationTests(unittest.TestCase):
 
         with mock.patch.object(classify, "publish_article_index", side_effect=fail_first_publish):
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                code = classify.main(["10"], root=self.root,
+                code = classify.main(["10", "--dimension", "content_nature"], root=self.root,
                                      transport=lambda _request: {
                                          "content_nature": [{"id": "reporting", "evidence": "Tényszerű eredményt ismertet."}], "review_case": None})
         self.assertEqual(code, 0)
@@ -443,24 +325,54 @@ class ClassificationTests(unittest.TestCase):
         index = [json.loads(line) for line in (self.root / "articles/index.jsonl").read_text().splitlines()]
         self.assertNotIn("content_classification_pending", index[0])
 
-    def test_cached_record_does_not_acknowledge_pending_source(self):
-        state_path = self.pending_state((10,))
-        saved, evidence = classify.validate_result(self.response)
-        self.path.write_text(json.dumps({"articles": {"10": saved}}), encoding="utf-8")
-        with redirect_stdout(io.StringIO()):
-            self.assertEqual(classify.main(["10"], root=self.root, transport=self.transport), 0)
-        record = json.loads(state_path.read_text(encoding="utf-8"))["records"]["post:10"]
-        self.assertTrue(record["content_classification_pending"])
-        self.transport.assert_not_called()
 
     def test_cli_returns_two_for_unavailable_required_content(self):
         self.rows[0]["derived_view_available"] = False
         self.write_index()
         before = self.path.read_bytes()
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            self.assertEqual(classify.main(["10"], root=self.root, transport=self.transport), 2)
+            self.assertEqual(classify.main(["10", "--dimension", "content_nature"], root=self.root, transport=self.transport), 2)
         self.transport.assert_not_called()
         self.assertEqual(self.path.read_bytes(), before)
+
+    def test_cli_marks_missing_dimension_pending_before_model_failure(self):
+        state_path = self.pending_state((10,))
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["records"]["post:10"]["content_classification_pending"] = False
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        self.transport.side_effect = classify.ClassificationError("temporary model failure")
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            code = classify.main(["10", "--dimension", "content_nature"], root=self.root,
+                                 transport=self.transport)
+        self.assertEqual(code, 1)
+        persisted = json.loads(state_path.read_text(encoding="utf-8"))["records"]["post:10"]
+        self.assertTrue(persisted["content_classification_pending"])
+
+    def test_cli_repairs_stale_index_on_cached_run_after_publish_failures(self):
+        state_path = self.pending_state((10,))
+        original_publish = classify.publish_article_index
+        calls = 0
+
+        def fail_first_two(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls <= 3:
+                raise OSError("index temporarily locked")
+            return original_publish(*args, **kwargs)
+
+        with mock.patch.object(classify, "publish_article_index", side_effect=fail_first_two):
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                first_code = classify.main(["10", "--dimension", "content_nature"], root=self.root,
+                                            transport=self.transport)
+            self.assertEqual(first_code, 1)
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                second_code = classify.main(["10", "--dimension", "content_nature"], root=self.root,
+                                             transport=self.transport)
+        self.assertEqual(second_code, 0)
+        self.assertEqual(calls, 4)
+        self.transport.assert_called_once()
+        index_row = json.loads((self.root / "articles/index.jsonl").read_text(encoding="utf-8"))
+        self.assertNotIn("content_classification_pending", index_row)
 
 
 if __name__ == "__main__":

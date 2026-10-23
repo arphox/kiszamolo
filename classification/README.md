@@ -1,43 +1,59 @@
-# Tartalmi jelleg
+# Cikkek besorolása
 
-A [témakörök](../topics/README.md) azt
-jelölik, miről szól egy cikk; a `content_nature` a tartalmi jellegét írja le.
-
-A `classify.py` a témaköröktől függetlenül, külön modellhívással határozza
-meg a jelöléseket, és az itteni `assignments.json` fájlba menti őket.
-A meglévő témaköröket és kizárásokat nem módosítja.
+A közös besoroló két szempontból értékeli a cikkeket: a `topics` azt jelöli,
+miről szólnak, a `content_nature` a tartalmi jellegüket írja le. Két külön
+modellhívás dolgozik ugyanabból az előkészített cikkből és médiából;
+az eredmények egyetlen `assignments.json` fájlba kerülnek.
 
 ## Közös szabályok
 
-- A besorolás többértékű: minden jelölést külön kell indokolni. Nincs
-  kötelező fő kategória, és egyik jelölés sem von maga után másikat.
-- Érdemi mellékrész is elegendő. Egy önállóan összefoglalható, a jelölés
-  feltételeit teljesítő tartalmi egységet kell találni; puszta említés,
-  odavetett mondat, kapcsolódó cikk ajánlója vagy reklámbetét nem elegendő.
-  Nincs szószám- vagy százalékhatár: egy rövid magyarázat is lehet teljes.
-- Minden megadott jelöléshez rögzíts rövid tartalmi indokot és visszakereshető
-  bizonyítékot: szövegrészt sorszámmal, vagy a tartalmat hordozó kép megfelelő
-  részét. A cím, a WordPress-kategória és a meglévő témakörök nem bizonyítékok.
-- A teljes hozzáférhető cikkszöveget és a hozzáférhető, mellékelt képeket
-  értékeld. Egy külső hivatkozás, melléklet vagy videó puszta jelenléte nem
-  akadály; más cikk tartalmát ne örökítsd át. Kisebb forráshiánynál a
-  hozzáférhető adatok alapján sorolj be, a hiány külön rögzítése nélkül.
-  Hiányzó tartalmat ne találj ki. Ha a fő tartalom ténylegesen nem
-  hozzáférhető, indokolt `source_unavailable` áttekintési esetet adj. Ha a
-  teljesen hozzáférhető tartalom egyik jellegbe sem sorolható megalapozottan,
-  indokolt `taxonomy_unmatched` esetet adj. Ezek nem kizárási döntések.
+- Mindkét besorolás többértékű: minden jelölés saját feltételeit külön kell
+  teljesíteni. Nincs kötelező fő kategória; egyik jelölés sem von maga után másikat.
+- Érdemi mellékrész is elegendő. Önállóan összefoglalható, a jelölés feltételeit
+  teljesítő tartalmi egység kell; puszta említés, reklámbetét, felsorolás vagy
+  kapcsolódó cikk ajánlója nem elegendő. Nincs szószám- vagy százalékhatár.
+- Minden jelöléshez rövid tartalmi indok és visszakereshető bizonyíték kell:
+  azonosítható szövegrész vagy a tartalmat hordozó kép megfelelő része.
+  A cím, a WordPress-kategória és a másik szempont besorolása nem bizonyíték.
+- A teljes hozzáférhető cikkszöveget és mellékelt médiát értékeld. Más cikk
+  tartalmát és besorolását ne örökítsd át; külső hivatkozás puszta jelenléte
+  nem akadály. A szerző által szándékosan meg nem jelentetett rész nem hiányzó bemenet.
+- Hiányzó, olvashatatlan vagy nem feldolgozható kép, videó vagy melléklet
+  önmagában nem akadály. Ha a hozzáférhető tartalom megalapozza az adott
+  besorolást, dönts abból. Ha a hiányzó rész érdemben befolyásolhatná a döntést,
+  adj indokolt `source_unavailable` áttekintési esetet; az érintett besorolást
+  ne véglegesítsd. Hiányzó tartalmat ne találj ki.
+- Ha nincs megfelelő kategória, adj indokolt `taxonomy_unmatched` esetet,
+  konkrétan jelezve, mi hiányzik. Ne erőltess besorolást. Új végleges döntéshez
+  legalább egy jelölés kell; az áttekintési eset függő feladat, nem üres végleges eredmény.
+- Meglévő kategóriák közötti határesetben a modell a legjobb megítélése szerint
+  dönt. A bizonytalan kategóriahatár önmagában nem ok emberi mérlegelésre,
+  újrapróbálkozásra vagy második elemzőre.
+- Új kategóriáról, meglévő kategória módosításáról vagy összevonásáról és cikk
+  kizárásáról a felhasználó dönt. A besoroló csak javasolhat, nem zár ki és nem töröl.
 - Egy elemző AI-session egyetlen cikket kaphat, más cikk szövege és korábbi
-  elemzése nélkül. Újraértékeléshez is új session kell.
-- Minden új végleges döntéshez legalább egy tartalmi jelleg kell. Csak
-  indokolt `taxonomy_unmatched` vagy `source_unavailable` esetben maradhat
-  címke nélkül; ne erőltess jelölést, és ne tekintsd kizárásnak.
-- Határesetben a modell a legjobb megítélése szerint dönt. A jelleg
-  bizonytalan határa önmagában nem indokol emberi mérlegelést,
-  újrapróbálkozást vagy második elemzőt. Érvénytelen formátumú modellválasz
-  egyszer újrapróbálható friss sessionben; ez nem tartalmi felülvizsgálat.
-- A jelölések nem igazolják az állítások helyességét, mai alkalmazhatóságát
-  vagy Miklós szerzőségét. Idézett és olvasói szövegnél az eredetet külön jelezd.
-- A besorolás szűrésre szolgál; nem indokol automatikus kizárást vagy törlést.
+  elemzése nélkül. A két szempont külön sessiont használ. Érvénytelen formátumú
+  válasz egyszer újrapróbálható, szintén friss sessionben; tartalmi döntést nem próbálunk újra.
+- A jelölések nem igazolják az állítások helyességét, mai alkalmazhatóságát vagy
+  Miklós szerzőségét. Idézett és olvasói szövegnél az eredetet az indoklásban jelezd.
+
+## Témakörválasztás
+
+- A `topics.json` definíciói az irányadók. Csak az ott szereplő
+  témakörazonosítókat használd.
+- A témakör a blog tudásanyagán belül hasznos, önálló keresési témát jelöljön.
+  Egyszeri, lazán kapcsolódó külső érdekesség miatt nem bővítjük a fogalomtárat;
+  az ilyen bejegyzésnél kizárást javasolj a felhasználónak.
+- Egy cikk több, egymást átfedő témakörbe is besorolható. A tágabb témakört is a
+  cikk tartalma és a definíció alapján válaszd ki; a `broader` kapcsolat nem
+  jelent automatikus öröklést.
+- Az adósságfék, hitelkiváltás és váltó a **Hitelek és tartozások** témakörhöz
+  tartozik. A családon belüli anyagi segítséget, az etikus és vallási
+  befektetést, valamint a garázsbefektetést is a meglévő témakörökkel soroljuk
+  be, külön témakör nélkül.
+- Vásárlói csoportnál a csoporttagságból önmagában nem következtetünk jogi státuszra;
+  a NOK nem automatikus szinonima.
+- Régi és nem pénzügyi cikkeket is értékelünk.
 
 ## `content_nature`
 
@@ -164,47 +180,81 @@ szintén értékelni kell.
 ## Tárolás és működés
 
 Az `assignments.json` gyökerében az `articles` objektum kulcsai a cikkek
-WordPress-azonosítói. Minden bejegyzés a rendezett, ismétlés nélküli
-`content_nature` listát tartalmazza, például:
+WordPress-azonosítói. Cikkenként a `topics` és a `content_nature` rendezett,
+ismétlés nélküli listája szerepelhet:
 
 ```json
-{"content_nature": ["explanatory"]}
+{"topics":["government-bonds"],"content_nature":["explanatory","news"]}
 ```
 
-Az indoklás a modellválasz ellenőrzéséhez kell; a nyilvántartásba nem kerül.
+A hiányzó mező még el nem készült besorolást jelent. Az átállás a korábbi
+eredményeket változatlanul egyesítette; a korábbról megmaradt üres listákat is
+megőrzi. Az indoklás a modellválasz ellenőrzéséhez kell, a nyilvántartásba nem kerül.
+A fájl UTF-8 kódolású, LF sorvégű, záró soremeléssel; minden cikk egy sor,
+a cikkazonosítók számszerű sorrendben szerepelnek.
 
-Egy helyi cikk besorolása a projekt gyökeréből:
+A cím és a helyi Markdown-útvonal az `articles/index.jsonl` fájlban kereshető
+ki a cikkazonosító alapján; az útvonal az `articles/` mappán belüli fájlra mutat.
+
+A két szempont eredménye külön menthető. Ha az egyik hibázik vagy emberi
+döntést igényel, a másik sikeres eredménye megmarad. A következő futás csak
+a hiányzó vagy függő részt ismétli. Sikertelen újrabesoroláskor a régi érték
+megmarad, a cikknyilvántartás megfelelő függő jelzése mutatja az elavultságát.
+Az áttekintési esetek és hibák az `articles/update-report.json` riportban látszanak.
+
+## Használat
+
+Python 3.10+, a projekt Python-függőségei, a Codex CLI és ChatGPT-előfizetéssel
+történő bejelentkezés szükséges. A parancsokat a projekt gyökeréből futtasd.
+
+Egy már letöltött cikk mindkét besorolása:
 
 ```powershell
 python -B classification/classify.py 125610
 ```
 
-Meglévő eredménynél nincs új modellhívás. Kifejezett újraértékelés:
-`python -B classification/classify.py 125610 --force`.
+Csak az egyik szempont, illetve kifejezett újraértékelés:
 
-Az alapbeállítás `gpt-6-luna`, `high` reasoning, a témakör-besorolótól
-függetlenül. A `--model` és `--reasoning-effort` kapcsolóval felülírható.
+```powershell
+python -B classification/classify.py 125610 --dimension topics
+python -B classification/classify.py 125610 --dimension content_nature --force
+```
 
-A gyűjtemény frissítését és a besorolást a
-[közös frissítő](../README.md#telepítés-és-frissítés) végzi.
+Meglévő, nem függő eredménynél nincs modellhívás. A `--force` a kiválasztott
+szempontokat újraértékeli; a korábbi érték csak siker esetén cserélődik.
+A parancs a letöltő zárolásával védi a cikkeket és forrásokat. Már futó letöltés
+vagy besorolás mellett hibával leáll. Hiányzó cikknél vagy helyi szövegfájlnál
+a letöltést külön kell elindítani.
 
-Kilépési kód: `0` siker, `2` szükséges tartalom hiánya vagy áttekintést igénylő
-eset, `1` végzetes hiba, `130` megszakítás.
+A modellbeállítások az összevonáskor megmaradtak: a témaköröknél
+`gpt-6.1-sol` / `medium`, a tartalmi jellegnél `gpt-6-luna` / `high`.
+Így az átszervezés önmagában nem változtat modellt. A `--model` és a
+`--reasoning-effort` a kiválasztott szempontok beállítását felülírja.
+
+A teljes gyűjteményt a [közös frissítő](../README.md#telepítés-és-frissítés)
+frissíti. A tömeges újrabesorolás jóváhagyásának szabálya ott található.
+Kilépési kód: `0` siker, `2` maradt áttekintést igénylő eset, `1` technikai
+vagy végzetes hiba, `130` megszakítás. Egy szempont hibája mellett a másik feldolgozása folytatódik.
 
 ## Képek és videók feldolgozása
 
+A két modellhívás ugyanazt az előkészített cikkszöveget és médiát kapja.
 A besoroló a helyi és a közvetlenül hivatkozott külső képeket is megkísérli
-feldolgozni. A nem feldolgozható média kimaradhat a modell bemenetéből.
+feldolgozni, a hivatkozott anyagok tartalmát azonban nem találja ki.
+A nem feldolgozott médiáról a modell tájékoztatást kap, hogy megítélhesse,
+akadályozza-e a hiánya az adott besorolást.
 
 Helyi videóból az `ffmpeg` és `ffprobe` segítségével időrendi képkockákat vesz.
-Hangátiratot nem készít, külső videót nem tölt le.
+Hangátiratot nem készít, külső videót nem tölt le; a videó hangja így nem
+hozzáférhető tartalom. A képekből szükség esetén tömörített másolat készül,
+az eredeti források megmaradnak. Ha a képbemenet így is túl nagy, hibát jelez.
 
-A modellnek szánt képekből szükség esetén tömörített másolat készül; az eredeti
-források megmaradnak. Ha a képbemenet így is túl nagy, hibát jelez.
+Az ismert WordPress-szmájlit szöveges jellé alakítja, a blog ismert
+reklámképét kihagyja; ezeket forráscím és helyi fájlútvonal alapján ismeri fel.
 
 ## Tesztek
 
-A modellhívás és hálózat nélküli tesztek:
+A modellhívás és külső hálózat nélküli tesztek:
 
 ```powershell
 python -B -m unittest discover -s classification -p "test_*.py"
