@@ -6,12 +6,10 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 from urllib.parse import unquote, urljoin, urlsplit
 from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "automation/content-mirror"))
 MODEL = "gpt-6.1-sol"
 REASONING = "medium"
 MAX_REQUEST_BYTES = 200_000

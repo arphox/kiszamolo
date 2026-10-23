@@ -14,15 +14,11 @@ from urllib.parse import urljoin, urlsplit
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "automation/content-mirror"))
 
 from classification import common as topic_classifier
 from classification import media
-# Import the project's script module when running from its standalone directory layout.
-try:
-    from sync import atomic_write, exclusive_run, json_bytes, publish_article_index
-except ImportError:
-    sys.path.insert(0, str(ROOT / "automation/content-mirror"))
-    from sync import atomic_write, exclusive_run, json_bytes, publish_article_index
+from sync import atomic_write, exclusive_run, json_bytes, publish_article_index
 
 DEFAULT_MODEL = "gpt-6-luna"
 DEFAULT_REASONING_EFFORT = "high"
