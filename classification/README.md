@@ -187,9 +187,9 @@ ismétlés nélküli listája szerepelhet:
 {"topics":["government-bonds"],"content_nature":["explanatory","news"]}
 ```
 
-A hiányzó mező még el nem készült besorolást jelent. Az átállás a korábbi
-eredményeket változatlanul egyesítette; a korábbról megmaradt üres listákat is
-megőrzi. Az indoklás a modellválasz ellenőrzéséhez kell, a nyilvántartásba nem kerül.
+A hiányzó mező még el nem készült besorolást jelent. A korábbról megmaradt
+üres listákat megőrizzük. Az indoklás a modellválasz ellenőrzéséhez kell,
+a nyilvántartásba nem kerül.
 A fájl UTF-8 kódolású, LF sorvégű, záró soremeléssel; minden cikk egy sor,
 a cikkazonosítók számszerű sorrendben szerepelnek.
 
@@ -226,9 +226,8 @@ A parancs a letöltő zárolásával védi a cikkeket és forrásokat. Már fut�
 vagy besorolás mellett hibával leáll. Hiányzó cikknél vagy helyi szövegfájlnál
 a letöltést külön kell elindítani.
 
-A modellbeállítások az összevonáskor megmaradtak: a témaköröknél
-`gpt-6.1-sol` / `medium`, a tartalmi jellegnél `gpt-6-luna` / `high`.
-Így az átszervezés önmagában nem változtat modellt. A `--model` és a
+A témakörök alapértelmezett modellje `gpt-6.1-sol` / `medium`,
+a tartalmi jellegé `gpt-6-luna` / `high`. A `--model` és a
 `--reasoning-effort` a kiválasztott szempontok beállítását felülírja.
 
 A teljes gyűjteményt a [közös frissítő](../README.md#telepítés-és-frissítés)
