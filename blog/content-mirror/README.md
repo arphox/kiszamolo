@@ -33,7 +33,7 @@ A frissítő beolvassa az indexet, és lekéri a blog könnyű leltárát. Csak 
 
 A cikkadatok közvetlenül az API-válaszból készülnek. Ha az API nem tartalmaz szöveget, a letöltő megpróbálja a nyilvános cikkoldalból kinyerni. A nyers API-válaszokat és HTML-forrásokat nem őrizzük meg külön archívumban. A blogról eltűnt cikk helyi példánya megmarad.
 
-Az [articles/exclusions.json](articles/exclusions.json) tartalmazza a kézzel kizárt rekordokat WordPress-ID → indoklás formában. Az ID önmagában azonosítja a bejegyzéseket és az oldalakat, típuselőtag nélkül. A frissítés eltávolítja ezeket a helyi gyűjteményből. A kizárásokról a felhasználó dönt, a besoroló önállóan nem zár ki cikket.
+Az [articles/exclusions.json](articles/exclusions.json) tartalmazza a kézzel kizárt rekordokat WordPress-ID → indoklás formában, az ID számszerű értéke szerint növekvő sorrendben. Az ID önmagában azonosítja a bejegyzéseket és az oldalakat, típuselőtag nélkül. A frissítés eltávolítja ezeket a helyi gyűjteményből. A kizárásokról a felhasználó dönt, a besoroló önállóan nem zár ki cikket.
 
 ## Kizárási szabályok
 
@@ -43,10 +43,12 @@ Kizárjuk:
 
 - a pusztán navigációs, cikkjegyzék-, adminisztratív és tesztoldalakat;
 - az önálló érdemi tartalom nélküli ajánlókat, átlinkeléseket, szolgáltatásajánlatokat és eszközfelületeket;
-- a pusztán alkalmi közleményeket és felhívásokat, például tanfolyam elmaradását vagy szolgáltatás újraindulását;
+- a pusztán alkalmi közleményeket és felhívásokat, például tanfolyam elmaradását, szolgáltatás újraindulását vagy havi biztosítási taglista és befizetési bizonylat közlését;
 - az elérhetetlen vagy jelszóval védett tartalmakat, ha a hozzáférhető részek önmagukban nem adnak érdemi információt.
 
 A rövidség, elavulás, hírjelleg, nem pénzügyi téma, külső eredet vagy hiányzó témakör önmagában nem kizárási ok.
+
+A szöveg alapján egyértelműen adminisztratív mellékleteket, például taglistát vagy utalási bizonylatot nem szükséges külön megnyitni, ha nincs utalás érdemi tudásanyagra. A biztosítási feltételeket vagy ügyintézést érdemben ismertető rész viszont megtartást indokolhat.
 
 ## Az index újraépítése
 
