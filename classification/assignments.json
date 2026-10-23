@@ -3418,6 +3418,7 @@
     "128024": {"topics":["costs","driving","heating","shopping","used-goods"],"content_nature":["explanatory","reporting"]},
     "128037": {"topics":["publishing","volunteering"],"content_nature":["announcement","curated"]},
     "128045": {"topics":["bank-card","fraud","payment-wallets","shopping"],"content_nature":["explanatory","reporting"]},
+    "128068": {"topics":["automation-ai","financial-education","home-purchase","investing","investment-advice","prepayment"],"content_nature":["explanatory"]},
     "128082": {"topics":["debt","home-construction","home-purchase","housing-savings","mortgage-loans","public-finances","real-estate-market","renovation","taxation"],"content_nature":["news","reporting"]}
   }
 }
