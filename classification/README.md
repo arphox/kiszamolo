@@ -235,14 +235,12 @@ vagy végzetes hiba, `130` megszakítás.
 
 ## Képek és videók feldolgozása
 
-A besoroló a helyi és a közvetlenül hivatkozott külső képeket is megkísérli
-feldolgozni. A nem feldolgozott médiáról a modell tájékoztatást kap; a hiány kezelését
-a [közös szabályok](#közös-szabályok) írják le.
-
-Helyi videóból időrendi képkockákat vesz; ehhez az `ffmpeg` és `ffprobe` telepítése szükséges.
-Hangátiratot nem készít, külső videót nem tölt le. A videó hangja így nem
-hozzáférhető tartalom. A képekből szükség esetén tömörített másolat készül;
-az eredeti források megmaradnak. Ha a képbemenet így is túl nagy, hibát jelez.
+A besoroló helyi és közvetlenül hivatkozott külső képeket dolgoz fel;
+helyi videóból az `ffmpeg` és `ffprobe` segítségével időrendi képkockákat vesz.
+Hangátiratot nem készít, külső videót nem tölt le. A modell értesül a kimaradt
+tartalomról, és a [közös szabályok](#közös-szabályok) szerint kezeli a hiányt.
+A képekből szükség esetén tömörített másolat készül, az eredeti megmarad;
+ha a képbemenet így is túl nagy, a besoroló hibát jelez.
 
 Az ismert WordPress-szmájlit szöveges jellé alakítja, a blog ismert
 reklámképét kihagyja.

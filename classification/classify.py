@@ -104,9 +104,11 @@ def _validate_review_case(value):
     return {"type": value["type"], "reason": value["reason"].strip()}
 
 
-def available_images(body, path, articles_root, variants, article_url):
+def discover_media(body, path, articles_root, variants, article_url):
+    """Collect model inputs and unavailable-source notes from the same references."""
     targets = [m.group(1) for m in topic_classifier.IMAGE_LINK.finditer(body)]
     soup = topic_classifier.BeautifulSoup(body, "html.parser")
+    image_targets = targets + [str(node.get("src", "")) for node in soup.find_all("img")]
     for node in soup.find_all("img"):
         candidates = topic_classifier.image_sources(node)
         local = next((v for v in candidates if not urlsplit(v.strip("<>")).scheme and not urlsplit(v.strip("<>")).netloc and topic_classifier.local_path(path.parent, v, articles_root).is_file()), None)
@@ -131,21 +133,43 @@ def available_images(body, path, articles_root, variants, article_url):
         local = topic_classifier.local_path(path.parent, target, articles_root)
         local = variants.get(local, local)
         if local.is_file(): images.append(local)
-    return list(dict.fromkeys(images)), list(dict.fromkeys(remote))
-
-
-def available_videos(body, path, articles_root):
-    soup = topic_classifier.BeautifulSoup(body, "html.parser")
-    targets = [m.group(1) for m in re.finditer(r'(?<!!)\[[^\]]*\]\(' + topic_classifier.LINK + r'\)', body)]
-    targets += [str(node.get("src", "")) for node in soup.find_all(["video", "source"])]
-    targets += [str(node.get("href", "")) for node in soup.find_all("a")]
-    videos = []
-    for target in targets:
-        parts = urlsplit(target.strip("<>"))
-        if not parts.scheme and not parts.netloc and Path(parts.path).suffix.lower() in {".mp4", ".m4v", ".webm", ".mov", ".mkv"}:
+    notes, videos = [], {}
+    for target in image_targets:
+        target = target.strip("<>")
+        parts = urlsplit(target)
+        if not parts.scheme and not parts.netloc:
+            try:
+                if not topic_classifier.local_path(path.parent, target, articles_root).is_file():
+                    notes.append(f"A cikk helyi képe hiányzik: {target}")
+            except (ClassificationError, ReviewRequired) as error:
+                notes.append(f"A képforrás nem használható ({target}): {error}")
+    references = [m.group(1) for m in re.finditer(r'(?<!!)\[[^\]]*\]\(' + topic_classifier.LINK + r'\)', body)]
+    video_targets = references + [str(node.get("src", "")) for node in soup.find_all(["video", "source"])]
+    video_targets += [str(node.get("href", "")) for node in soup.find_all("a")]
+    tags = {}
+    for node in soup.find_all(["iframe", "video", "audio", "object", "embed", "source", "a"]):
+        for attribute in ("src", "href", "data"):
+            if target := node.get(attribute):
+                references.append(str(target))
+                if node.name != "a" and attribute in {"src", "data"}:
+                    tags.setdefault(str(target), node.name)
+    for target in references:
+        raw_target, target = target, target.strip("<>")
+        parts = urlsplit(target)
+        suffix = Path(parts.path).suffix.lower()
+        host = (parts.hostname or "").lower().removeprefix("www.")
+        if suffix in {".mp4", ".m4v", ".webm", ".mov", ".mkv"} and not parts.scheme and not parts.netloc:
             local = topic_classifier.local_path(path.parent, target, articles_root)
-            if local.is_file(): videos.append(local)
-    return list(dict.fromkeys(videos))
+            if local.is_file() and raw_target in video_targets:
+                videos[raw_target] = local
+            notes.append(f"A helyi videó hangját nem dolgoztuk fel: {target}" if local.is_file()
+                         else f"A helyi videó hiányzik: {target}")
+        elif tags.get(target) in {"iframe", "object", "embed", "audio"} or host in {
+            "youtube.com", "youtube-nocookie.com", "youtu.be", "vimeo.com", "player.vimeo.com", "fb.watch"
+        } or suffix in topic_classifier.MEDIA - topic_classifier.IMAGES - {".gif", ".avif", ".bmp", ".tif", ".tiff"}:
+            notes.append(f"A hivatkozott videó vagy melléklet nincs feldolgozva: {target}")
+    return (list(dict.fromkeys(images)), list(dict.fromkeys(remote)),
+            list(dict.fromkeys(videos[target] for target in video_targets if target in videos)), notes)
 
 
 def load_json(path):
@@ -218,9 +242,8 @@ def prepare_article(article_id, root=None):
         except (FileNotFoundError, PermissionError):
             pass
     body = topic_classifier.replace_decorative_images(body, path, root / "articles", decorations)
-    images, remote_images = available_images(body, path, root / "articles", variants,
-                                              row.get("url", "https://kiszamolo.hu/"))
-    videos = available_videos(body, path, root / "articles")
+    images, remote_images, videos, source_notes = discover_media(
+        body, path, root / "articles", variants, row.get("url", "https://kiszamolo.hu/"))
     for url in row.get("embed_urls", []):
         if url not in body:
             body += "\n\nBeágyazott hivatkozás: " + url
@@ -255,46 +278,7 @@ def prepare_article(article_id, root=None):
                     notes.append(f"A videó hangját és a ki nem vett képkockákat nem dolgoztuk fel: {video.name}")
             except media.MediaError as error:
                 notes.append(f"A videó nem dolgozható fel ({video.name}): {error}")
-        soup = topic_classifier.BeautifulSoup(body, "html.parser")
-        image_targets = [match.group(1) for match in topic_classifier.IMAGE_LINK.finditer(body)]
-        image_targets += [str(node.get("src", "")) for node in soup.find_all("img")]
-        for target in image_targets:
-            target = target.strip("<>")
-            parts = urlsplit(target)
-            if not parts.scheme and not parts.netloc:
-                try:
-                    candidate = topic_classifier.local_path(path.parent, target, root / "articles")
-                    if not candidate.is_file():
-                        notes.append(f"A cikk helyi képe hiányzik: {target}")
-                except (ClassificationError, ReviewRequired) as error:
-                    notes.append(f"A képforrás nem használható ({target}): {error}")
-        references = [match.group(1) for match in re.finditer(
-            r'(?<!!)\[[^\]]*\]\(' + topic_classifier.LINK + r'\)', body)]
-        references += [str(node.get(attribute, "")) for node in soup.find_all(
-            ["iframe", "video", "audio", "object", "embed", "source", "a"])
-            for attribute in ("src", "href", "data") if node.get(attribute)]
-        for target in references:
-            target = target.strip("<>")
-            parts = urlsplit(target)
-            suffix = Path(parts.path).suffix.lower()
-            host = (parts.hostname or "").lower().removeprefix("www.")
-            tag = next((node.name for node in soup.find_all(["iframe", "video", "audio", "object", "embed", "source"])
-                        if target in {node.get("src"), node.get("data")}), None)
-            is_embed = tag in {"iframe", "object", "embed", "audio"} or host in {
-                "youtube.com", "youtube-nocookie.com", "youtu.be", "vimeo.com", "player.vimeo.com", "fb.watch"
-            } or suffix in topic_classifier.MEDIA - topic_classifier.IMAGES - {
-                ".gif", ".avif", ".bmp", ".tif", ".tiff"
-            }
-            if not is_embed:
-                continue
-            if suffix in {".mp4", ".m4v", ".webm", ".mov", ".mkv"} and not parts.scheme and not parts.netloc:
-                local_video = topic_classifier.local_path(path.parent, target, root / "articles")
-                if local_video.is_file():
-                    notes.append(f"A helyi videó hangját nem dolgoztuk fel: {target}")
-                else:
-                    notes.append(f"A helyi videó hiányzik: {target}")
-            else:
-                notes.append(f"A hivatkozott videó vagy melléklet nincs feldolgozva: {target}")
+        notes.extend(source_notes)
         for url in row.get("embed_urls", []):
             notes.append(f"A beágyazott tartalom nem lett letöltve vagy átiratként feldolgozva: {url}")
         # Unsupported embeds / attachments are disclosed so the model can decide if they matter.

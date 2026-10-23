@@ -146,6 +146,17 @@ class UnifiedClassifierTests(unittest.TestCase):
         self.assertTrue(result["saved"])
         succeeding.assert_called_once()
 
+    def test_media_discovery_preserves_video_order_and_missing_sources(self):
+        for name in ("first.mp4", "second.mp4"):
+            (self.article.parent / name).write_bytes(b"video")
+        body = '<a href="first.mp4">video</a><video src="second.mp4"></video><img src="missing.png">'
+        images, remote, videos, notes = classify.discover_media(body, self.article, self.root / "articles", {}, "")
+        self.assertEqual((images, remote), ([], []))
+        self.assertEqual([video.name for video in videos], ["second.mp4", "first.mp4"])
+        self.assertEqual(notes, ["A cikk helyi képe hiányzik: missing.png",
+                                "A helyi videó hangját nem dolgoztuk fel: first.mp4",
+                                "A helyi videó hangját nem dolgoztuk fel: second.mp4"])
+
     def test_runner_failures_do_not_retry_for_either_dimension(self):
         for dimension in ("topics", "content_nature"):
             with self.subTest(dimension=dimension):
