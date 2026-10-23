@@ -186,8 +186,8 @@ ismétlés nélküli listája szerepelhet:
 {"topics":["government-bonds"],"content_nature":["explanatory","news"]}
 ```
 
-A hiányzó mező még el nem készült besorolást jelent. A korábbról megmaradt
-üres listákat megőrizzük. Az indoklás a modellválasz ellenőrzéséhez kell,
+A hiányzó mező még el nem készült besorolást jelent; a meglévő mezőben
+legalább egy jelölésnek kell szerepelnie. Az indoklás a modellválasz ellenőrzéséhez kell,
 a nyilvántartásba nem kerül.
 A fájl UTF-8 kódolású, LF sorvégű, záró soremeléssel; minden cikk egy sor,
 a cikkazonosítók számszerű sorrendben szerepelnek.

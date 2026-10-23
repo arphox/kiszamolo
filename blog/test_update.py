@@ -58,7 +58,7 @@ class UpdateTests(unittest.TestCase):
         if assigned:
             record["topics"] = ["old"]
         if content_assigned:
-            record["content_nature"] = []
+            record["content_nature"] = ["reporting"]
         if not record:
             self.assignments.pop(str(aid), None)
 
@@ -170,7 +170,7 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(report["pending_article_ids"], [1])
         self.assertEqual(report["content_pending_article_ids"], [1])
         self.assertEqual(self.stored_assignments()["1"], {
-            "topics": ["old"], "content_nature": []})
+            "topics": ["old"], "content_nature": ["reporting"]})
 
     def test_five_changed_article_union_is_automatic(self):
         for aid in range(1, 6):
@@ -218,7 +218,7 @@ class UpdateTests(unittest.TestCase):
         for aid in range(1, 7):
             self.add_post(aid, assigned=True, pending=True,
                           content_assigned=True, content_pending=True)
-        original = {str(aid): {"topics": ["old"], "content_nature": []}
+        original = {str(aid): {"topics": ["old"], "content_nature": ["reporting"]}
                     for aid in range(1, 7)}
         self.confirm.return_value = False
         report = self.run_update()

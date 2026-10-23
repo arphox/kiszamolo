@@ -29,14 +29,21 @@ class UnifiedClassifierTests(unittest.TestCase):
         row = {"id": 10, "type": "post", "title": "Cím", "path": "2026/10/10.md"}
         (self.root / "blog/content-mirror/articles/index.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
 
-    def test_schema_accepts_legacy_empty_topics_and_partial_records(self):
+    def test_schema_accepts_partial_records(self):
         result = classify.validate_assignments({"articles": {
-            "10": {"topics": []},
+            "10": {"topics": ["costs"]},
             "20": {"content_nature": ["news"]},
             "30": {"topics": ["costs"], "content_nature": ["reporting"]},
         }}, {"costs"})
-        self.assertEqual(result["10"], {"topics": []})
+        self.assertEqual(result["10"], {"topics": ["costs"]})
         self.assertEqual(result["20"], {"content_nature": ["news"]})
+
+    def test_schema_rejects_empty_assignment_lists(self):
+        for record in ({"topics": []}, {"content_nature": []},
+                       {"topics": [], "content_nature": ["reporting"]},
+                       {"topics": ["costs"], "content_nature": []}):
+            with self.subTest(record=record), self.assertRaises(classify.ClassificationError):
+                classify.validate_assignments({"articles": {"10": record}}, {"costs"})
 
     def test_dimension_save_preserves_other_dimension_and_evidence_is_ephemeral(self):
         initial = {"articles": {"10": {"topics": ["costs"]}}}

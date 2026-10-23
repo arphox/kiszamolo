@@ -213,7 +213,7 @@ def validate_assignments(data, allowed=None):
             raise ClassificationError(f"Hibás besorolás: {aid}")
         for dimension, values in record.items():
             valid = topics_allowed if dimension == "topics" else set(NATURE_IDS)
-            if (not isinstance(values, list) or any(not isinstance(value, str) or value not in valid for value in values)
+            if (not isinstance(values, list) or not values or any(not isinstance(value, str) or value not in valid for value in values)
                     or values != sorted(set(values))):
                 raise ClassificationError(f"Hibás vagy ismétlődő {dimension}: {aid}")
     return data["articles"]

@@ -14,7 +14,7 @@ A cikkek Markdown-változatát elsősorban sima szövegként és AI-eszközökke
 - Az asseteket nem tároljuk helyben vagy Gitben: a képek és mellékletek az eredeti webes URL-jükön szerepelnek. Elérésük internetet és a forrás elérhetőségét igényli.
 - A közösségi tudásanyag külön, még nem létező részbe kerül majd; nem a forráscikkeket módosítja.
 
-Ezek az átállás célját rögzítik. Az alábbi használati leírás a jelenlegi működést mutatja be, amely még a cache-ben tárolt állapotot használ; a cikkgyűjtemény még nincs Gitben.
+Ezek az átállás célját rögzítik. Az alábbi használati leírás a jelenlegi működést mutatja be, amely még a cache-ben tárolt állapotot használ. A cikkgyűjtemény és a használatához szükséges nyilvántartások Gitbe vétele hátralévő feladat: addig várunk vele, amíg elég magabiztosak vagyunk a tartalmukban, és nem várható nagyobb módosítás.
 
 ## Feladatok és adatok
 

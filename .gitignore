@@ -1,7 +1,7 @@
 # Local downloads and processing cache.
 /.local-cache/
 
-# Generated archive; tracked Markdown will follow the asset-policy change.
+# Generated archive; tracking is deferred until article content stabilizes.
 /blog/content-mirror/articles/
 
 # Python bytecode and local virtual environments.

@@ -140,11 +140,6 @@ class ClassificationTests(unittest.TestCase):
             classify.validate_result(malformed_case)
 
 
-    def test_legacy_empty_nature_record_remains_readable(self):
-        legacy = {"content_nature": []}
-        self.path.write_text(json.dumps({"articles": {"10": legacy}}), encoding="utf-8")
-        self.assertEqual(classify.validate_assignments(json.loads(self.path.read_text())), {"10": legacy})
-
     def test_assignment_records_reject_unknown_fields(self):
         record = {"content_nature": ["reporting"], "unexpected": []}
         with self.assertRaises(classify.ClassificationError):
@@ -179,7 +174,7 @@ class ClassificationTests(unittest.TestCase):
 
     def test_concurrent_unrelated_assignment_is_preserved(self):
         def transport(request):
-            existing = {"content_nature": []}
+            existing = {"content_nature": ["reporting"]}
             self.path.write_text(json.dumps({"articles": {"20": existing}}), encoding="utf-8")
             return self.response
         classify.classify_article(10, root=self.root, transport=transport)
@@ -187,7 +182,7 @@ class ClassificationTests(unittest.TestCase):
 
     def test_same_article_change_during_model_call_prevents_save(self):
         def transport(request):
-            current = {"content_nature": []}
+            current = {"content_nature": ["reporting"]}
             self.path.write_text(json.dumps({"articles": {"10": current}}), encoding="utf-8")
             return self.response
         with self.assertRaisesRegex(classify.ClassificationError, "közben megváltozott"):
@@ -252,7 +247,7 @@ class ClassificationTests(unittest.TestCase):
 
     def test_assignment_replace_retries_permission_error_without_repeat_model_call(self):
         self.transport.return_value = {"content_nature": [{"id": "reporting", "evidence": "Tényszerű eredményt ismertet."}], "review_case": None}
-        prior = {"content_nature": []}
+        prior = {"content_nature": ["reporting"]}
         self.path.write_text(json.dumps({"articles": {"20": prior}}), encoding="utf-8")
         old = self.path.read_bytes()
         real_replace = os.replace
@@ -277,7 +272,7 @@ class ClassificationTests(unittest.TestCase):
 
     def test_permanent_assignment_replace_permission_error_is_bounded_and_preserves_file(self):
         self.transport.return_value = {"content_nature": [{"id": "reporting", "evidence": "Tényszerű eredményt ismertet."}], "review_case": None}
-        prior = {"content_nature": []}
+        prior = {"content_nature": ["reporting"]}
         self.path.write_text(json.dumps({"articles": {"20": prior}}), encoding="utf-8")
         old = self.path.read_bytes()
         with mock.patch.object(classify.os, "replace", side_effect=PermissionError("persistent lock")) as replace, \
