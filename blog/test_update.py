@@ -18,17 +18,17 @@ class UpdateTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        self.source = self.root / ".local-cache/blog/content-mirror"
         self.articles = self.root / "blog/content-mirror/articles"
-        self.source.mkdir(parents=True)
         self.articles.mkdir(parents=True)
+        self.index_path = self.root / update.catalog.INDEX_PATH
         (self.root / "blog/enrichment").mkdir(parents=True)
         self.records = {}
         self.assignments = {}
+        self.processing = {"articles": {}}
         self.write_json(self.root / "blog/enrichment/assignments.json", {"articles": {}})
         self.write_json(self.root / "blog/enrichment/topics.json", {"topics": [{"id": "topic"}, {"id": "old"}]})
         (self.root / "blog/enrichment/README.md").write_text("rules", encoding="utf-8")
-        sync_patch = mock.patch.object(update.sync, "run_sync", return_value={"incomplete_records": 0})
+        sync_patch = mock.patch.object(update.sync, "run_sync", return_value={"incomplete_records": 0, "post_ids": []})
         self.addCleanup(sync_patch.stop)
         self.sync_mock = sync_patch.start()
         self.model = mock.Mock(side_effect=self.classify)
@@ -46,21 +46,35 @@ class UpdateTests(unittest.TestCase):
     def write_json(self, path, value):
         path.write_text(json.dumps(value), encoding="utf-8")
 
-    def add_post(self, aid, *, assigned=False, pending=False, incomplete=False,
-                 content_assigned=False, content_pending=False, source_unavailable=False):
-        self.records[f"post:{aid}"] = dict(id=aid, key=f"post:{aid}", type="post", title=f"Title {aid}",
-            directory=f"records/posts/{aid}", path=f"{aid}.md", status="active", published_at="2026-10-21",
-            acquisition_status="incomplete" if incomplete else "complete",
-            derived_view_available=not source_unavailable,
-            classification_pending=pending, content_classification_pending=content_pending)
-        (self.articles / f"{aid}.md").write_text(f"# Title {aid}\n\nFull content for article {aid}.", encoding="utf-8")
+    def add_post(self, aid, *, assigned=False, topics_changed=False,
+                 content_assigned=False, content_changed=False, source_unavailable=False):
+        modified_gmt = "2026-10-21T08:00:00"
+        self.records[f"post:{aid}"] = dict(id=aid, type="post", title=f"Title {aid}",
+            url=f"https://kiszamolo.hu/p{aid}/", published_at="2026-10-21T10:00:00",
+            modified_at="2026-10-21T10:00:00", modified_at_gmt=modified_gmt,
+            derived_view_available=not source_unavailable)
+        body = f"# Title {aid}\n\nFull content for article {aid}.\n"
+        article_dir = self.articles / "2026" / "10"
+        update.catalog.write_article(article_dir / f"2026-10-21 10.00 Title {aid} [{aid}].md",
+                                     self.records[f"post:{aid}"], body)
         record = self.assignments.setdefault(str(aid), {})
+        markers = self.processing["articles"].setdefault(str(aid), {})
+        fingerprint = update.classify.processing_store.article_fingerprint(
+            self.records[f"post:{aid}"], body)
+        old_fingerprint = update.classify.processing_store.article_fingerprint(
+            self.records[f"post:{aid}"], f"# Title {aid}\n\nOld content for article {aid}.\n")
         if assigned:
             record["topics"] = ["old"]
+            markers["topics"] = {"modified_gmt": "2026-10-20T08:00:00" if topics_changed else modified_gmt,
+                                  "content_sha256": old_fingerprint if topics_changed else fingerprint}
         if content_assigned:
             record["content_nature"] = ["reporting"]
+            markers["content_nature"] = {
+                "modified_gmt": "2026-10-20T08:00:00" if content_changed else modified_gmt,
+                "content_sha256": old_fingerprint if content_changed else fingerprint}
         if not record:
             self.assignments.pop(str(aid), None)
+            self.processing["articles"].pop(str(aid), None)
 
     def prepare_article(self, article_id, root=None):
         record = self.records.get(f"post:{article_id}", {})
@@ -77,17 +91,21 @@ class UpdateTests(unittest.TestCase):
         return {dimension: record[dimension], "saved": True}
 
     def prepare(self):
-        state = {"schema_version": 1, "records": self.records, "articles_root": str(self.articles)}
-        self.write_json(self.source / "state.json", state)
         self.write_json(self.root / "blog/enrichment/assignments.json", {"articles": self.assignments})
-        update.sync.publish_article_index(self.articles, state)
+        update.catalog.save_index(self.root, {
+            str(record["id"]): record["modified_at_gmt"] for record in self.records.values()})
+        update.classify.processing_store.save_processing(self.root, self.processing)
 
     def run_update(self):
         self.prepare()
+        if isinstance(self.sync_mock.return_value, dict):
+            local_ids = [record["id"] for record in self.records.values() if record["type"] == "post"]
+            if local_ids and not self.sync_mock.return_value.get("post_ids"):
+                self.sync_mock.return_value["post_ids"] = local_ids
         return update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
 
     def stored_state(self):
-        return json.loads((self.source / "state.json").read_text(encoding="utf-8"))
+        return update.classify.processing_store.load_processing(self.root)
 
     def stored_assignments(self):
         return json.loads((self.root / "blog/enrichment/assignments.json").read_text(encoding="utf-8"))["articles"]
@@ -99,9 +117,23 @@ class UpdateTests(unittest.TestCase):
         self.confirm.assert_not_called()
         self.assertEqual(report["pending_article_ids"], [])
         self.assertEqual(report["content_pending_article_ids"], [])
+        self.assertEqual(json.loads(self.index_path.read_text(encoding="utf-8")),
+                         {"1": "2026-10-21T08:00:00"})
+        self.assertTrue(update.catalog.find_article(self.root, 1).name.endswith("[1].md"))
+
+    def test_download_failure_details_are_shown_without_report_file(self):
+        self.sync_mock.return_value = {
+            "incomplete_records": 1,
+            "post_ids": [42],
+            "errors": [{"record": "post:42", "error": "Timed out"}],
+        }
+        report = self.run_update()
+        self.assertEqual(report["incomplete_downloads"], 1)
+        self.assertTrue(any("post:42" in line and "Timed out" in line for line in self.output))
+        self.assertFalse((self.articles / "update-report.json").exists())
 
     def test_new_article_uses_two_dimension_calls_and_shared_preparation(self):
-        self.add_post(1, pending=True)
+        self.add_post(1)
         report = self.run_update()
         self.assertEqual(self.model.call_count, 2)
         self.assertEqual(self.prepare_mock.call_count, 1)
@@ -123,7 +155,7 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(report["content_classified"], [1])
 
     def test_partial_failure_retries_only_missing_dimension_and_preserves_success(self):
-        self.add_post(1, pending=True)
+        self.add_post(1)
         calls = []
 
         def model(article_id, *, dimension, **kwargs):
@@ -149,23 +181,24 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(second["classified"], [1])
         self.assertEqual(second["content_classified"], [])
 
-    def test_failed_reclassification_preserves_old_value_and_pending_flag(self):
-        self.add_post(1, assigned=True, pending=True, content_assigned=True)
+    def test_failed_reclassification_preserves_old_value_and_old_processing_marker(self):
+        self.add_post(1, assigned=True, topics_changed=True, content_assigned=True)
         self.model.side_effect = update.classify.ClassificationError("Model failed.")
         report = self.run_update()
         self.assertEqual(report["errors"][0]["id"], 1)
         self.assertEqual(self.stored_assignments()["1"]["topics"], ["old"])
-        self.assertTrue(self.stored_state()["records"]["post:1"]["classification_pending"])
-        self.assertFalse(self.stored_state()["records"]["post:1"].get("content_classification_pending"))
+        processing = self.stored_state()["articles"]["1"]
+        self.assertEqual(processing["topics"]["modified_gmt"], "2026-10-20T08:00:00")
+        self.assertEqual(processing["content_nature"]["modified_gmt"], "2026-10-21T08:00:00")
 
-    def test_model_failure_details_reach_console_and_saved_report(self):
-        self.add_post(1, assigned=True, pending=True, content_assigned=True, content_pending=True)
+    def test_model_failure_details_reach_console_without_report_files(self):
+        self.add_post(1, assigned=True, topics_changed=True, content_assigned=True, content_changed=True)
         details = "ERROR: Session expired; please log in."
         self.model.side_effect = update.classify.ClassificationError(details)
         report = self.run_update()
-        saved = json.loads((self.articles / "update-report.json").read_text(encoding="utf-8"))
-        self.assertIn(details, saved["errors"][0]["reason"])
-        self.assertIn(details, saved["content_errors"][0]["reason"])
+        self.assertIn(details, report["errors"][0]["reason"])
+        self.assertIn(details, report["content_errors"][0]["reason"])
+        self.assertFalse((self.articles / "update-report.json").exists())
         self.assertTrue(any(details in line for line in self.output))
         self.assertEqual(report["pending_article_ids"], [1])
         self.assertEqual(report["content_pending_article_ids"], [1])
@@ -174,7 +207,7 @@ class UpdateTests(unittest.TestCase):
 
     def test_five_changed_article_union_is_automatic(self):
         for aid in range(1, 6):
-            self.add_post(aid, assigned=True, pending=True, content_assigned=True, content_pending=True)
+            self.add_post(aid, assigned=True, topics_changed=True, content_assigned=True, content_changed=True)
         report = self.run_update()
         self.confirm.assert_not_called()
         self.assertEqual(report["reclassified"], list(range(1, 6)))
@@ -183,8 +216,8 @@ class UpdateTests(unittest.TestCase):
 
     def test_six_changed_union_asks_once_after_new_dimension_work(self):
         for aid in range(1, 7):
-            self.add_post(aid, assigned=True, pending=True, content_assigned=True, content_pending=True)
-        self.add_post(7, assigned=True, content_pending=True)
+            self.add_post(aid, assigned=True, topics_changed=True, content_assigned=True, content_changed=True)
+        self.add_post(7, assigned=True)
 
         def approve(count):
             self.assertEqual(count, 6)
@@ -201,8 +234,8 @@ class UpdateTests(unittest.TestCase):
 
     def test_disjoint_changed_dimensions_count_each_article_once(self):
         for aid in range(1, 7):
-            self.add_post(aid, assigned=True, pending=aid <= 3,
-                          content_assigned=True, content_pending=aid >= 4)
+            self.add_post(aid, assigned=True, topics_changed=aid <= 3,
+                          content_assigned=True, content_changed=aid >= 4)
 
         def approve(count):
             self.assertEqual(count, 6)
@@ -214,10 +247,10 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(report["reclassified"], [1, 2, 3])
         self.assertEqual(report["content_reclassified"], [4, 5, 6])
 
-    def test_declined_bulk_reclassification_preserves_both_values_and_pending_flags(self):
+    def test_declined_bulk_reclassification_preserves_values_and_processing_markers(self):
         for aid in range(1, 7):
-            self.add_post(aid, assigned=True, pending=True,
-                          content_assigned=True, content_pending=True)
+            self.add_post(aid, assigned=True, topics_changed=True,
+                          content_assigned=True, content_changed=True)
         original = {str(aid): {"topics": ["old"], "content_nature": ["reporting"]}
                     for aid in range(1, 7)}
         self.confirm.return_value = False
@@ -227,14 +260,14 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(report["content_reclassified"], [])
         self.assertEqual(self.model.call_count, 0)
         self.assertEqual(self.stored_assignments(), original)
-        for record in self.stored_state()["records"].values():
-            self.assertTrue(record["classification_pending"])
-            self.assertTrue(record["content_classification_pending"])
+        for record in self.stored_state()["articles"].values():
+            self.assertEqual(record["topics"]["modified_gmt"], "2026-10-20T08:00:00")
+            self.assertEqual(record["content_nature"]["modified_gmt"], "2026-10-20T08:00:00")
         self.assertEqual(report["pending_article_ids"], list(range(1, 7)))
         self.assertEqual(report["content_pending_article_ids"], list(range(1, 7)))
 
     def test_preparation_failure_is_reported_for_each_requested_dimension(self):
-        self.add_post(1, pending=True)
+        self.add_post(1)
         self.prepare_mock.side_effect = update.classify.ReviewRequired("No usable source.")
         report = self.run_update()
         self.assertEqual(report["review_required"][0]["id"], 1)
@@ -243,7 +276,7 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(report["content_pending_article_ids"], [1])
 
     def test_interrupted_work_persists_only_unfinished_dimension(self):
-        self.add_post(1, assigned=True, pending=True, content_assigned=True, content_pending=True)
+        self.add_post(1, assigned=True, topics_changed=True, content_assigned=True, content_changed=True)
         def interrupt_after_topics(article_id, *, dimension, **kwargs):
             if dimension == "content_nature":
                 raise KeyboardInterrupt()
@@ -252,19 +285,18 @@ class UpdateTests(unittest.TestCase):
         self.model.side_effect = interrupt_after_topics
         with self.assertRaises(KeyboardInterrupt):
             self.run_update()
-        state = self.stored_state()["records"]["post:1"]
-        self.assertFalse(state.get("classification_pending"))
-        self.assertTrue(state.get("content_classification_pending"))
-        index = [json.loads(line) for line in (self.articles / "index.jsonl").read_text(encoding="utf-8").splitlines()]
-        self.assertFalse(index[0].get("classification_pending"))
-        self.assertTrue(index[0].get("content_classification_pending"))
-        report = json.loads((self.articles / "update-report.json").read_text(encoding="utf-8"))
-        self.assertEqual(report["pending_article_ids"], [])
-        self.assertEqual(report["content_pending_article_ids"], [1])
+        state = self.stored_state()["articles"]["1"]
+        self.assertEqual(state["topics"]["modified_gmt"], "2026-10-21T08:00:00")
+        self.assertEqual(state["content_nature"]["modified_gmt"], "2026-10-20T08:00:00")
+        index = json.loads(self.index_path.read_text(encoding="utf-8"))
+        self.assertEqual(index, {"1": "2026-10-21T08:00:00"})
+        self.index_path.unlink()
+        rebuilt = update.catalog.load_index(self.root)
+        self.assertEqual(rebuilt, {"1": "2026-10-21T08:00:00"})
 
     def test_unavailable_main_source_does_not_block_other_articles(self):
-        self.add_post(1, pending=True, source_unavailable=True)
-        self.add_post(2, pending=True)
+        self.add_post(1, source_unavailable=True)
+        self.add_post(2)
         report = self.run_update()
         self.assertEqual(report["classified"], [2])
         self.assertEqual(report["pending_article_ids"], [1])
@@ -275,8 +307,9 @@ class UpdateTests(unittest.TestCase):
         for error, code in ((KeyboardInterrupt(), 130), (update.classify.ReviewRequired("Review"), 2),
                             (update.classify.subprocess.TimeoutExpired("codex", 1), 1)):
             with self.subTest(error=type(error).__name__):
-                self.add_post(1, pending=True)
+                self.add_post(1)
                 self.prepare()
+                self.sync_mock.return_value["post_ids"] = [1]
                 def classify_or_fail(aid, *, dimension, **kwargs):
                     if dimension == "content_nature":
                         raise error
@@ -285,43 +318,44 @@ class UpdateTests(unittest.TestCase):
                 with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
                     self.assertEqual(update.classify.main(["1"], root=self.root), code)
                 self.assertEqual(self.stored_assignments()["1"], {"topics": ["topic"]})
-                record = self.stored_state()["records"]["post:1"]
-                self.assertNotIn("classification_pending", record)
-                self.assertTrue(record["content_classification_pending"])
-                index = json.loads((self.articles / "index.jsonl").read_text(encoding="utf-8"))
-                self.assertNotIn("classification_pending", index)
-                self.assertTrue(index["content_classification_pending"])
+                record = self.stored_state()["articles"]["1"]
+                self.assertEqual(record["topics"]["modified_gmt"], "2026-10-21T08:00:00")
+                self.assertNotIn("content_nature", record)
+                index = json.loads(self.index_path.read_text(encoding="utf-8"))
+                self.assertEqual(index, {"1": "2026-10-21T08:00:00"})
 
-    def test_state_write_failure_keeps_retry_flag_and_other_dimension_runs(self):
-        self.add_post(1, pending=True)
-        original_write = update.classify.atomic_write
+    def test_processing_write_failure_keeps_old_marker_and_other_dimension_runs(self):
+        self.add_post(1)
+        original_write = update.classify.processing_store.save_processing
         failed = False
 
-        def fail_first_dimension_state_save(path, data):
+        def fail_first_dimension_processing_save(root, processing):
             nonlocal failed
-            if Path(path).name == "state.json" and not failed:
+            if not failed and processing["articles"].get("1", {}).get("topics"):
                 failed = True
-                raise OSError("State write failed.")
-            return original_write(path, data)
+                raise OSError("Processing write failed.")
+            return original_write(root, processing)
 
-        with mock.patch.object(update.classify, "atomic_write", side_effect=fail_first_dimension_state_save):
+        with mock.patch.object(update.classify.processing_store, "save_processing",
+                               side_effect=fail_first_dimension_processing_save):
             report = self.run_update()
 
         self.assertEqual(report["errors"][0]["id"], 1)
         self.assertEqual(report["content_classified"], [1])
-        state = self.stored_state()["records"]["post:1"]
-        self.assertTrue(state["classification_pending"])
-        self.assertFalse(state.get("content_classification_pending"))
+        state = self.stored_state()["articles"]["1"]
+        self.assertNotIn("topics", state)
+        self.assertEqual(state["content_nature"]["modified_gmt"], "2026-10-21T08:00:00")
         self.assertEqual(self.stored_assignments()["1"], {
             "topics": ["topic"], "content_nature": ["explanatory"]})
         self.model.reset_mock()
         retried = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
         self.assertEqual(retried["reclassified"], [1])
         self.assertEqual(retried["content_reclassified"], [])
-        self.assertFalse(self.stored_state()["records"]["post:1"].get("classification_pending"))
+        self.assertEqual(self.stored_state()["articles"]["1"]["topics"]["modified_gmt"],
+                         "2026-10-21T08:00:00")
 
     def test_technical_failure_in_first_dimension_does_not_block_second(self):
-        self.add_post(1, pending=True)
+        self.add_post(1)
 
         def fail_topics(article_id, *, dimension, **kwargs):
             if dimension == "topics":
@@ -333,13 +367,13 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(report["errors"][0]["id"], 1)
         self.assertEqual(report["content_classified"], [1])
         self.assertEqual(self.stored_assignments()["1"], {"content_nature": ["explanatory"]})
-        state = self.stored_state()["records"]["post:1"]
-        self.assertTrue(state["classification_pending"])
-        self.assertFalse(state.get("content_classification_pending"))
+        state = self.stored_state()["articles"]["1"]
+        self.assertNotIn("topics", state)
+        self.assertIn("content_nature", state)
 
     def test_unified_classifier_persists_both_dimensions_in_real_workflow(self):
-        self.add_post(1, pending=True)
-        self.prepare()
+        self.add_post(1)
+        self.sync_mock.return_value["post_ids"] = [1]
         actual_rules = (Path(__file__).resolve().parent.parent / "blog/enrichment/README.md").read_text(
             encoding="utf-8")
         (self.root / "blog/enrichment/README.md").write_text(actual_rules, encoding="utf-8")
@@ -369,6 +403,28 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(report["pending_article_ids"], [])
         self.assertEqual(report["content_pending_article_ids"], [])
 
+    def test_wp_metadata_only_change_advances_processing_without_model_or_approval(self):
+        self.add_post(1, assigned=True, content_assigned=True)
+        self.prepare()
+        record = self.records["post:1"]
+        record["modified_at_gmt"] = "2026-10-22T08:00:00"
+        article_path = update.catalog.find_article(self.root, 1)
+        metadata, body = update.catalog.read_article(article_path)
+        metadata["modified_at_gmt"] = "2026-10-22T08:00:00"
+        update.catalog.write_article(article_path, metadata, body)
+        update.catalog.save_index(self.root, {"1": "2026-10-22T08:00:00"})
+        self.sync_mock.return_value["post_ids"] = [1]
+
+        report = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
+
+        self.model.assert_not_called()
+        self.confirm.assert_not_called()
+        self.assertEqual(report["reclassified"], [])
+        self.assertEqual(report["content_reclassified"], [])
+        state = self.stored_state()["articles"]["1"]
+        self.assertEqual(state["topics"]["modified_gmt"], "2026-10-22T08:00:00")
+        self.assertEqual(state["content_nature"]["modified_gmt"], "2026-10-22T08:00:00")
+
     def test_real_sync_and_unified_assignment_integrate_without_network_or_ai(self):
         from test_sync import FakeClient, post
         from remote import Inventory
@@ -377,7 +433,7 @@ class UpdateTests(unittest.TestCase):
         client = FakeClient()
 
         def inventory(client, kind, **kwargs):
-            fields = ("id", "type", "status", "modified", "modified_gmt", "date_gmt")
+            fields = ("id", "type", "status", "modified", "modified_gmt", "date_gmt", "link")
             rows = [{key: row[key] for key in fields} for row in records] if kind == "posts" else []
             return Inventory(rows, [])
 
@@ -395,13 +451,13 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(first["content_classified"], [1])
         self.assertEqual(self.stored_assignments()["1"], {
             "topics": ["topic"], "content_nature": ["explanatory"]})
-        client.calls.clear()
+        client.page_calls.clear()
         self.model.reset_mock()
         second = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
         self.assertEqual(second["pending_article_ids"], [])
         self.assertEqual(second["content_pending_article_ids"], [])
         self.model.assert_not_called()
-        self.assertEqual(client.calls, [])
+        self.assertEqual(client.page_calls, [])
         records[0].update(modified="2026-10-21T11:00:00", modified_gmt="2026-10-21T11:00:00",
                           content={"rendered": "<p>Changed body.</p>", "protected": False})
         third = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
@@ -410,14 +466,13 @@ class UpdateTests(unittest.TestCase):
         self.model.assert_called()
         self.confirm.assert_not_called()
 
-    def test_sync_locks_are_held_during_classification(self):
+    def test_update_lock_is_held_during_classification(self):
         self.add_post(1)
 
         def model(article_id, *, dimension, **kwargs):
-            for directory in (self.source, self.articles):
-                with self.assertRaises(OSError):
-                    with update.sync.exclusive_run(directory):
-                        pass
+            with self.assertRaises(OSError):
+                with update.catalog.exclusive_run(self.root):
+                    pass
             return self.classify(article_id, dimension=dimension, **kwargs)
 
         self.model.side_effect = model
@@ -431,9 +486,10 @@ class UpdateTests(unittest.TestCase):
         self.confirm.assert_not_called()
 
     def test_cli_returns_two_for_dimension_failure(self):
-        self.add_post(1, assigned=True, content_pending=True)
+        self.add_post(1, assigned=True, content_assigned=True, content_changed=True)
         self.model.side_effect = update.classify.ClassificationError("Model failed.")
         self.prepare()
+        self.sync_mock.return_value["post_ids"] = [1]
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             self.assertEqual(update.main([], root=self.root), 2)
 

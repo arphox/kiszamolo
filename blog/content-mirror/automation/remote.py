@@ -377,6 +377,7 @@ def _validate_census_record(record, kind, previous_id):
             datetime.strptime(date_gmt, "%Y-%m-%dT%H:%M:%S")
         except ValueError as error:
             raise ValueError("WordPress census item has invalid date_gmt timestamp") from error
+    _validate_url(record.get("link"))
     return item_id
 
 
@@ -389,7 +390,7 @@ def fetch_census(client: HttpClient, kind: str, *, api_base=API_BASE,
         raise ValueError("page_size must be positive")
     endpoint = api_base.rstrip("/") + "/" + kind
     _validate_url(endpoint)
-    fields = "id,type,status,modified,modified_gmt,date_gmt"
+    fields = "id,type,status,modified,modified_gmt,date_gmt,link"
     records, responses = [], []
     expected_total = expected_pages = None
     previous_id = 0

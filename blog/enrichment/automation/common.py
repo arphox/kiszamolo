@@ -6,10 +6,15 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
-from urllib.parse import unquote, urljoin, urlsplit
+from urllib.parse import unquote, urlsplit
 from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parents[3]
+MIRROR_AUTOMATION = ROOT / "blog/content-mirror/automation"
+if str(MIRROR_AUTOMATION) not in sys.path:
+    sys.path.insert(0, str(MIRROR_AUTOMATION))
+import catalog
 MODEL = "gpt-6.1-sol"
 REASONING = "medium"
 MAX_REQUEST_BYTES = 200_000
@@ -43,18 +48,16 @@ def local_path(directory, target, boundary=None):
         raise ClassificationError(f"A helyi útvonal kilép a cikkgyűjteményből: {target}")
     return path
 def article_row(root, article_id):
-    matches = []
-    with (root / "blog/content-mirror/articles/index.jsonl").open(encoding="utf-8") as source:
-        for line in source:
-            row = json.loads(line)
-            if str(row["id"]) == article_id and row["type"] == "post":
-                matches.append(row)
-    if len(matches) != 1:
-        raise ClassificationError(f"A cikk nincs egyértelműen a helyi cikklistában: {article_id}. Előbb töltsd le.")
-    row = matches[0]
-    path = local_path(root / "blog/content-mirror/articles", row["path"])
+    try:
+        path = catalog.find_article(root, article_id)
+        metadata = catalog.read_metadata(path)
+    except (OSError, ValueError) as error:
+        raise ClassificationError(f"A cikk nem olvasható: {error}") from error
+    if metadata.get("type") != "post" or str(metadata.get("id")) != str(article_id):
+        raise ClassificationError(f"A helyi fájl nem a kért cikkhez tartozik: {article_id}.")
     if not path.is_file():
         raise ClassificationError(f"A cikk nincs letöltve helyben: {article_id}. Előbb töltsd le.")
+    row = dict(metadata, path=path.relative_to(Path(root) / "blog/content-mirror/articles").as_posix())
     return row, path
 def clean_markdown(markdown, title):
     text = re.sub(r"\A---\s*\n.*?\n---\s*(?:\n|\Z)", "", markdown.lstrip("\ufeff"), count=1, flags=re.S)
@@ -83,25 +86,6 @@ def image_sources(image):
     if parent and Path(urlsplit(str(parent["href"])).path).suffix.lower() in IMAGES:
         candidates.insert(0, str(parent["href"]))
     return candidates
-def image_variants(row, root):
-    decorations = dict(DECORATIVE_IMAGES)
-    if not row.get("source_record"):
-        return {}, decorations
-    if row["source_record"] != f"records/posts/{row['id']}":
-        raise ClassificationError("A forrásútvonal nem a besorolandó cikkhez tartozik.")
-    source_root = root / ".local-cache/blog/content-mirror"
-    source = local_path(source_root, row["source_record"]) / "view-source.html"
-    soup = BeautifulSoup(source.read_text(encoding="utf-8"), "html.parser")
-    variants = {}
-    for image in soup.find_all("img"):
-        candidates = image_sources(image)
-        candidates = [urljoin(row["url"], url) for url in candidates
-                      if Path(urlsplit(url).path).suffix.lower() in IMAGES]
-        if candidates:
-            preferred = candidates[0]
-            for url in candidates:
-                variants[url] = preferred
-    return variants, decorations
 def replace_decorative_images(body, decorations):
     """Replace only exact absolute URLs registered as decorations."""
     def replacement(target):

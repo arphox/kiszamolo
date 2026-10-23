@@ -74,41 +74,29 @@ class CommonHelpersTests(unittest.TestCase):
                 common.codex_exec({"prompt": "article", "images": [], "schema": {}})
         self.assertIn("login token expired", str(raised.exception))
 
-    def test_article_row_rejects_duplicate_and_escaping_index_paths(self):
+    def test_article_row_uses_id_filename_without_reading_mirror_index(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             articles = root / "blog/content-mirror/articles"
             articles.mkdir(parents=True)
-            (articles / "one.md").write_text("body", encoding="utf-8")
-            row = {"id": 42, "type": "post", "path": "one.md"}
-            index = articles / "index.jsonl"
-            index.write_text(json.dumps(row) + "\n" + json.dumps(row) + "\n", encoding="utf-8")
-            with self.assertRaisesRegex(common.ClassificationError, "egyértelműen"):
-                common.article_row(root, "42")
-            index.write_text(json.dumps({**row, "path": "../outside.md"}) + "\n", encoding="utf-8")
-            with self.assertRaisesRegex(common.ClassificationError, "kilép"):
+            row = {"id": 42, "type": "post", "title": "T", "url": "https://example.test"}
+            common.catalog.write_article(articles / "one [42].md", row, "# T\n\nBody")
+            loaded, path = common.article_row(root, "42")
+            self.assertEqual(loaded["id"], 42)
+            self.assertEqual(path, articles / "one [42].md")
+            (root / common.catalog.INDEX_PATH).write_text(
+                "this is intentionally not valid JSON", encoding="utf-8")
+            loaded, path = common.article_row(root, "42")
+            self.assertEqual(loaded["id"], 42)
+            self.assertEqual(path, articles / "one [42].md")
+            (articles / "two [42].md").write_text("duplicate", encoding="utf-8")
+            with self.assertRaisesRegex(common.ClassificationError, "nem olvasható"):
                 common.article_row(root, "42")
 
-    def test_image_sources_and_remote_variants_choose_linked_original_without_state_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            image = BeautifulSoup(
-                '<img src="small.png" srcset="small.png 100w, chart,full.png 1200w">', "html.parser").img
-            self.assertEqual(common.image_sources(image), ["chart,full.png", "small.png", "small.png"])
-
-            source_root = root / ".local-cache/blog/content-mirror/records/posts/42"
-            source_root.mkdir(parents=True)
-            (source_root / "view-source.html").write_text(
-                '<a href="https://media.test/original.png"><img src="https://media.test/small.png" '
-                'srcset="https://media.test/small.png 100w, https://media.test/chart,full.png 1200w"></a>',
-                encoding="utf-8")
-            row = {"id": 42, "url": "https://blog.test/article/", "source_record": "records/posts/42"}
-            variants, _ = common.image_variants(row, root)
-            original = "https://media.test/original.png"
-            self.assertEqual(variants["https://media.test/small.png"], original)
-            self.assertEqual(variants["https://media.test/chart,full.png"], original)
-            self.assertEqual(variants[original], original)
-            self.assertFalse((root / ".local-cache/blog/content-mirror/state.json").exists())
+    def test_image_sources_read_original_candidates_from_article_html(self):
+        image = BeautifulSoup(
+            '<img src="small.png" srcset="small.png 100w, chart,full.png 1200w">', "html.parser").img
+        self.assertEqual(common.image_sources(image), ["chart,full.png", "small.png", "small.png"])
 
     def test_decorative_replacement_only_changes_registered_sources(self):
         smile = "https://kiszamolo.hu/wp-includes/images/smilies/icon_smile.gif"

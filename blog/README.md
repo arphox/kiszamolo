@@ -9,12 +9,12 @@ A cikkek Markdown-változatát elsősorban sima szövegként és AI-eszközökke
 
 ## A GitHubra szánt tudásbázis alapelvei
 
-- A repó tartalmazza a cikkek Markdown-változatát és a használatukhoz szükséges nyilvántartásokat. A nyers HTML a `.local-cache/` mappába kerül. A letöltő pótolja a hiányzó forrásokat, ha azok még elérhetők a blogon.
+- A repó tartalmazza a cikkek Markdown-változatát, frissítési indexét és besorolásait.
 - A cikkek a kiszamolo.hu tartalmát követik. Szövegüket közvetlenül nem szerkesztjük; a blog változásai és az átalakító javításai alapján frissülnek.
 - Az asseteket nem tároljuk helyben vagy Gitben: a képek és mellékletek az eredeti webes URL-jükön szerepelnek. Elérésük internetet és a forrás elérhetőségét igényli.
 - A közösségi tudásanyag külön, még nem létező részbe kerül majd; nem a forráscikkeket módosítja.
 
-Ezek az átállás célját rögzítik. Az alábbi használati leírás a jelenlegi működést mutatja be, amely még a cache-ben tárolt állapotot használ. A cikkgyűjtemény és a használatához szükséges nyilvántartások Gitbe vétele hátralévő feladat: addig várunk vele, amíg elég magabiztosak vagyunk a tartalmukban, és nem várható nagyobb módosítás.
+Ezek az átállás célját rögzítik. A cikkgyűjtemény Gitbe vétele hátralévő feladat: addig várunk vele, amíg elég magabiztosak vagyunk a tartalmában, és nem várható nagyobb módosítás.
 
 ## Feladatok és adatok
 
@@ -22,22 +22,22 @@ A `content-mirror/` tölti le és tárolja a blog tartalmát. Az `enrichment/` a
 
 A cím, dátum, forrás-URL és WordPress-azonosító a cikkgyűjteményhez tartozik. A blog saját kategóriáit és címkéit [tudatosan kihagyjuk](content-mirror/README.md#tárolás). A saját témakörök és a tartalmi jelleg szerinti besorolások az `enrichment/` adatai; WordPress-azonosítóval kapcsolódnak a cikkekhez.
 
-A letöltési cache helye `.local-cache/blog/content-mirror/`, a repó gyökeréhez képest. A cél az, hogy a teljes `.local-cache/` törölhető legyen adatvesztés nélkül. Jelenleg az offline újragenerálás és a besorolás még használja az itt tárolt forrásokat és állapotot; ezeket egyelőre meg kell őrizni. Az enrichment saját feldolgozási állapota és a cache-független működés további átalakítást igényel.
+A frissítő a `content-mirror/articles/wordpress-modified.json` alapján dönti el, mely cikkeket kell letölteni: az index kizárólag WordPress-azonosítókat és UTC-módosítási időket tartalmaz. A helyi fájlok azonosítója a fájlnevükben is szerepel. A besorolások feldolgozási nyilvántartását külön az enrichment kezeli.
 
 ## Mi működik már?
 
-- A gyűjteménybe válogatott nyilvános cikkek és oldalak letöltése, az eredeti források megőrzésével.
+- A gyűjteménybe válogatott nyilvános cikkek és oldalak letöltése és frissítése.
 - Olvasható Markdown-fájlok készítése, év és hónap szerinti mappákban.
 - A képek és mellékletek eredeti URL-jeinek megőrzése, valamint a helyi cikkek közötti hivatkozások kialakítása.
-- Tartalomjegyzék és géppel feldolgozható cikklista készítése.
+- Újraépíthető frissítési index készítése.
 - A helyi gyűjtemény, a témakörök és a tartalmi jelleg besorolásának közös, kézzel indítható frissítése.
 
 ## Mi hol található?
 
 | Mappa vagy fájl | Tartalma |
 | --- | --- |
-| `blog/content-mirror/articles/` | Az olvasható cikkek és oldalak. A kiindulópont az `INDEX.md`. |
-| `.local-cache/blog/content-mirror/` | Az eredeti webes források és a frissítés folytatásához szükséges adatok. |
+| `blog/content-mirror/articles/` | Az olvasható cikkek és oldalak, saját metaadataikkal. |
+| `blog/content-mirror/articles/wordpress-modified.json` | A cikkek azonosítói és WP-módosítási idői a frissítéshez. |
 | `blog/content-mirror/automation/` | A [letöltő és feldolgozó](content-mirror/README.md), a tesztjeivel együtt. |
 | `blog/enrichment/` | [Témakörök és tartalmi jelleg](enrichment/README.md), közös nyilvántartás és besoroló. |
 | `blog/update.py` | A letöltést és a besorolást összefogó parancs. |
@@ -61,17 +61,17 @@ A teljes frissítéshez a Codex CLI és ChatGPT-előfizetéssel történő bejel
 
 A program letölti a változásokat, majd besorolja a cikkeket témakör és tartalmi jelleg szerint. Legfeljebb öt módosult, már besorolt cikket automatikusan újra besorol. Többnél a hiányzó besorolások elkészítése után egyszer kér jóváhagyást az érintett cikkek együttes darabszámára. Ehhez interaktív terminálban kifejezetten `igen` választ kell adni; átirányított bemenetről nem fogad el jóváhagyást.
 
-A végén összesítés és teendőlista jelenik meg a `blog/content-mirror/articles/update-report.json` fájlban is. Ha maradt teendő, a következő futtatáskor folytatható a feldolgozás. Kilépési kód: `0` siker, `2` maradt teendő vagy hiányos letöltés, `1` végzetes hiba, `130` megszakítás. A frissítést kézzel indítjuk.
+A végén összesítés és teendőlista jelenik meg a terminálon. Ha maradt teendő, a következő futtatáskor folytatható a feldolgozás. Kilépési kód: `0` siker, `2` maradt teendő vagy hiányos letöltés, `1` végzetes hiba, `130` megszakítás. A frissítést kézzel indítjuk.
 
-A csak letöltéshez és az újrageneráláshoz szükséges parancsokat a [letöltő leírása](content-mirror/README.md), a besorolások működését és az emberi döntést igénylő eseteket a [besorolás leírása](enrichment/README.md) tartalmazza.
+A csak letöltéshez és az index újraépítéséhez szükséges parancsokat a [letöltő leírása](content-mirror/README.md), a besorolások működését és az emberi döntést igénylő eseteket a [besorolás leírása](enrichment/README.md) tartalmazza.
 
 ## Mit érdemes tudni a mentett tartalomról?
 
-- Az eredeti webes forrásokat jelenleg külön őrizzük meg. Az olvasható Markdown-fájlok ezekből készülnek, és újra előállíthatók; közvetlenül nem szerkesztjük őket.
+- Az olvasható Markdown-fájlok az elsődleges helyi példányok; közvetlenül nem szerkesztjük őket. A frissítő a blog változásaiból készíti az új változatukat, külön nyersforrás-archívum nélkül.
 - A letöltő a jelenleg elérhető tartalmat követi; a cikkek korábbi változatairól nem készít történetet. Ha egy cikk eltűnik a blogról, a már mentett helyi példánya megmarad.
-- A hozzászólásokat külön nem gyűjti. A teljes weboldal mentett HTML-forrásában azonban szerepelhetnek hozzászólások.
+- A hozzászólásokat nem gyűjtjük.
 - A képek, mellékletek és a külső videólejátszók tartalmai webes hivatkozásként maradnak meg. A gyűjtemény ezért nem minden részében használható internet nélkül; a webes kalkulátorok működését sem másolja le.
-- A letöltött adatok és az előállított cikkfájlok nincsenek Gitben. A repó a kódot, a dokumentációt és a közös besorolási nyilvántartást tartalmazza. A meglévő gyűjtemény megőrzéséhez a `blog/content-mirror/articles/` és a `.local-cache/blog/content-mirror/` mappát külön is menteni kell.
+- A teljes `blog/content-mirror/articles/` mappa egyelőre ki van zárva a Gitből, az indexszel együtt; a cikkek tartalmának stabilizálódására várunk. Addig ezt a mappát külön is menteni kell. A besorolási nyilvántartás a repó része.
 
 ## Tesztek
 

@@ -25,21 +25,23 @@ class ClassificationTests(unittest.TestCase):
             (classify.ROOT / "blog/enrichment/topics.json").read_bytes())
         self.path = self.root / "blog/enrichment/assignments.json"
         self.path.write_text('{\n  "articles": {}\n}\n', encoding="utf-8")
-        self.rows = [dict(id=aid, type="post", title=f"Article {aid}", path=f"2026/10/{aid}.md")
+        self.rows = [dict(id=aid, type="post", title=f"Article {aid}", url=f"https://example.test/{aid}",
+                          modified_at="2026-10-01T00:00:00", modified_at_gmt="2026-10-01T00:00:00",
+                          path=f"2026/10/Article {aid} [{aid}].md")
                      for aid in (10, 20, 30)]
-        self.write_index()
         for row in self.rows:
-            (self.root / "blog/content-mirror/articles" / row["path"]).write_text(
-                f"# {row['title']}\n\nBODY_ONLY_FOR_{row['id']}", encoding="utf-8")
+            self.write_body(row, f"# {row['title']}\n\nBODY_ONLY_FOR_{row['id']}")
+        self.processing_path = self.root / "blog/enrichment/processing.json"
+        self.processing_path.write_text('{"articles": {}}\n', encoding="utf-8")
         self.response = {
             "content_nature": [{"id": "explanatory", "evidence": "A működést részletesen kifejti."}],
             "review_case": None,
         }
         self.transport = mock.Mock(return_value=self.response)
 
-    def write_index(self):
-        (self.root / "blog/content-mirror/articles/index.jsonl").write_text(
-            "\n".join(json.dumps(row) for row in self.rows) + "\n", encoding="utf-8")
+    def write_body(self, row, body):
+        classify.topic_classifier.catalog.write_article(
+            self.root / "blog/content-mirror/articles" / row["path"], row, body)
 
 
 
@@ -48,27 +50,21 @@ class ClassificationTests(unittest.TestCase):
 
     def add_articles(self, ids):
         for aid in ids:
-            row = dict(id=aid, type="post", title=f"Article {aid}", path=f"2026/10/{aid}.md")
+            row = dict(id=aid, type="post", title=f"Article {aid}", url=f"https://example.test/{aid}",
+                       modified_at="2026-10-01T00:00:00", modified_at_gmt="2026-10-01T00:00:00",
+                       path=f"2026/10/Article {aid} [{aid}].md")
             self.rows.append(row)
-            (self.root / "blog/content-mirror/articles" / row["path"]).write_text(
-                f"# {row['title']}\n\nBODY_ONLY_FOR_{row['id']}", encoding="utf-8")
-        self.write_index()
+            self.write_body(row, f"# {row['title']}\n\nBODY_ONLY_FOR_{row['id']}")
 
-    def pending_state(self, ids=(10, 20, 30)):
-        records = {}
-        for aid in ids:
-            key = f"post:{aid}"
-            records[key] = {
-                "id": aid, "key": key, "type": "post", "title": f"Article {aid}",
-                "path": f"2026/10/{aid}.md", "directory": f"records/posts/{aid}",
-                "published_at": f"2026-10-{aid:02d}T00:00:00Z", "status": "publish",
-                "acquisition_status": "complete", "classification_pending": True,
-                "content_classification_pending": True,
-            }
-        path = self.root / ".local-cache/blog/content-mirror/state.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"records": records}), encoding="utf-8")
-        return path
+    def write_processing(self, records):
+        progress = {"articles": records}
+        classify.processing_store.save_processing(self.root, progress)
+        return progress
+
+    def marker(self, row, body, *, modified_gmt=None):
+        metadata = {**row}
+        return {"modified_gmt": modified_gmt or row["modified_at_gmt"],
+                "content_sha256": classify.processing_store.article_fingerprint(metadata, body)}
 
     def run_article(self, aid=10, *, force=False):
         return classify.classify_article(aid, root=self.root, transport=self.transport, force=force)
@@ -286,88 +282,85 @@ class ClassificationTests(unittest.TestCase):
         self.assertFalse(list(self.path.parent.glob(".classification-*.tmp")))
         self.transport.assert_called_once()
 
-    def test_cli_acknowledges_only_saved_records_and_preserves_topic_flag(self):
-        state_path = self.pending_state((10,))
-        with redirect_stdout(io.StringIO()):
-            self.assertEqual(classify.main(["10", "--dimension", "content_nature"], root=self.root, transport=self.transport), 0)
-        record = json.loads(state_path.read_text(encoding="utf-8"))["records"]["post:10"]
-        self.assertNotIn("content_classification_pending", record)
-        self.assertTrue(record["classification_pending"])
-        published = json.loads((self.root / "blog/content-mirror/articles/index.jsonl").read_text(encoding="utf-8"))
-        self.assertNotIn("content_classification_pending", published)
-
-    def test_ack_retry_republishes_index_after_first_publish_failure(self):
-        state_path = self.pending_state((10,))
-        original_publish = classify.publish_article_index
-        publish_calls = 0
-
-        def fail_first_publish(*args, **kwargs):
-            nonlocal publish_calls
-            publish_calls += 1
-            if publish_calls == 1:
-                raise OSError("index publish failed once")
-            return original_publish(*args, **kwargs)
-
-        with mock.patch.object(classify, "publish_article_index", side_effect=fail_first_publish):
-            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                code = classify.main(["10", "--dimension", "content_nature"], root=self.root,
-                                     transport=lambda _request: {
-                                         "content_nature": [{"id": "reporting", "evidence": "Tényszerű eredményt ismertet."}], "review_case": None})
-        self.assertEqual(code, 0)
-        self.assertEqual(publish_calls, 2)
-        state = json.loads(state_path.read_text(encoding="utf-8"))["records"]
-        self.assertNotIn("content_classification_pending", state["post:10"])
-        index = [json.loads(line) for line in (self.root / "blog/content-mirror/articles/index.jsonl").read_text().splitlines()]
-        self.assertNotIn("content_classification_pending", index[0])
-
-
     def test_cli_returns_two_for_unavailable_required_content(self):
         self.rows[0]["derived_view_available"] = False
-        self.write_index()
+        self.write_body(self.rows[0], f"# {self.rows[0]['title']}\n\nBODY_ONLY_FOR_{self.rows[0]['id']}")
         before = self.path.read_bytes()
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             self.assertEqual(classify.main(["10", "--dimension", "content_nature"], root=self.root, transport=self.transport), 2)
         self.transport.assert_not_called()
         self.assertEqual(self.path.read_bytes(), before)
 
-    def test_cli_marks_missing_dimension_pending_before_model_failure(self):
-        state_path = self.pending_state((10,))
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-        state["records"]["post:10"]["content_classification_pending"] = False
-        state_path.write_text(json.dumps(state), encoding="utf-8")
-        self.transport.side_effect = classify.ClassificationError("temporary model failure")
-        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            code = classify.main(["10", "--dimension", "content_nature"], root=self.root,
-                                 transport=self.transport)
-        self.assertEqual(code, 1)
-        persisted = json.loads(state_path.read_text(encoding="utf-8"))["records"]["post:10"]
-        self.assertTrue(persisted["content_classification_pending"])
+    def test_unchanged_processing_marker_skips_article_lookup_body_and_model(self):
+        row = self.rows[0]
+        body = f"# {row['title']}\n\nBODY_ONLY_FOR_{row['id']}"
+        assignments = {"10": {"topics": ["costs"]}}
+        progress = self.write_processing({"10": {"topics": self.marker(row, body)}})
+        with mock.patch.object(classify.catalog, "find_article", side_effect=AssertionError("article lookup")), \
+                mock.patch.object(classify.catalog, "read_article", side_effect=AssertionError("body read")):
+            outcomes = list(classify.process_article("10", root=self.root, assignments=assignments,
+                processing=progress, dimensions=("topics",), modified_gmt=row["modified_at_gmt"],
+                transport=self.transport))
+        self.assertEqual(outcomes, [])
+        self.transport.assert_not_called()
 
-    def test_cli_repairs_stale_index_on_cached_run_after_publish_failures(self):
-        state_path = self.pending_state((10,))
-        original_publish = classify.publish_article_index
-        calls = 0
+    def test_timestamp_only_change_updates_marker_without_model_or_media_fetch(self):
+        row = self.rows[0]
+        body = f"# {row['title']}\n\nBODY_ONLY_FOR_{row['id']}"
+        old, current = "2026-09-01T00:00:00", "2026-11-01T00:00:00"
+        assignments = {"10": {"topics": ["costs"]}}
+        progress = self.write_processing({"10": {"topics": self.marker(row, body, modified_gmt=old)}})
+        with mock.patch.object(classify.media, "fetch_remote_image", side_effect=AssertionError("media fetch")):
+            source = classify.reconcile_source("10", root=self.root, assignments=assignments,
+                processing=progress, modified_gmt=current, dimensions=("topics",))
+        self.assertEqual(source["content_sha256"], self.marker(row, body)["content_sha256"])
+        self.assertEqual(progress["articles"]["10"]["topics"]["modified_gmt"], current)
+        self.transport.assert_not_called()
 
-        def fail_first_two(*args, **kwargs):
-            nonlocal calls
-            calls += 1
-            if calls <= 3:
-                raise OSError("index temporarily locked")
-            return original_publish(*args, **kwargs)
+    def test_failed_dimension_retries_without_repeating_successful_dimension(self):
+        row = self.rows[0]
+        body = f"# {row['title']}\n\nBODY_ONLY_FOR_{row['id']}"
+        version, old = "2026-11-01T00:00:00", {"modified_gmt": "2026-09-01T00:00:00", "content_sha256": "0" * 64}
+        assignments = {"10": {"topics": ["costs"], "content_nature": ["news"]}}
+        progress = self.write_processing({"10": {"topics": old, "content_nature": old}})
+        calls = []
 
-        with mock.patch.object(classify, "publish_article_index", side_effect=fail_first_two):
-            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                first_code = classify.main(["10", "--dimension", "content_nature"], root=self.root,
-                                            transport=self.transport)
-            self.assertEqual(first_code, 1)
-            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                second_code = classify.main(["10", "--dimension", "content_nature"], root=self.root,
-                                             transport=self.transport)
-        self.assertEqual(second_code, 0)
-        self.assertEqual(calls, 4)
-        self.transport.assert_called_once()
-        index_row = json.loads((self.root / "blog/content-mirror/articles/index.jsonl").read_text(encoding="utf-8"))
-        self.assertNotIn("content_classification_pending", index_row)
+        def first_run(request):
+            dimension = "topics" if "topics" in request["schema"]["properties"] else "content_nature"
+            calls.append(dimension)
+            if dimension == "topics":
+                return {"topics": [{"id": "costs", "evidence": "Költségeket tárgyal."}], "review_case": None}
+            raise classify.ClassificationError("temporary nature failure")
+
+        outcomes = list(classify.process_article("10", root=self.root, assignments=assignments,
+            processing=progress, modified_gmt=version, transport=first_run))
+        self.assertEqual(calls, ["topics", "content_nature"])
+        self.assertIsInstance(outcomes[1][1], classify.ClassificationError)
+        self.assertEqual(progress["articles"]["10"]["topics"]["modified_gmt"], version)
+        self.assertEqual(progress["articles"]["10"]["content_nature"], old)
+
+        def retry(request):
+            calls.append("topics" if "topics" in request["schema"]["properties"] else "content_nature")
+            return {"content_nature": [{"id": "reporting", "evidence": "Tényeket sorol fel."}], "review_case": None}
+
+        list(classify.process_article("10", root=self.root, assignments=assignments,
+            processing=progress, modified_gmt=version, transport=retry))
+        self.assertEqual(calls, ["topics", "content_nature", "content_nature"])
+
+    def test_processing_does_not_write_mirror_index_or_article_flags(self):
+        row = self.rows[0]
+        response = {"content_nature": [{"id": "news", "evidence": "Aktuális hírt közöl."}], "review_case": None}
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(classify.main(["10", "--dimension", "content_nature"], root=self.root,
+                                           transport=mock.Mock(return_value=response)), 0)
+        article_path = self.root / "blog/content-mirror/articles" / row["path"]
+        metadata, _body = classify.catalog.read_article(article_path)
+        self.assertNotIn("classification_pending", metadata)
+        self.assertNotIn("content_classification_pending", metadata)
+        self.assertFalse((self.root / classify.catalog.INDEX_PATH).exists())
+        progress_before = self.processing_path.read_bytes()
+        classify.catalog.rebuild_index(self.root)
+        self.assertEqual(self.processing_path.read_bytes(), progress_before)
 
 
 if __name__ == "__main__":

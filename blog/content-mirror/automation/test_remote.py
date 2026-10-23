@@ -46,11 +46,14 @@ class RemoteTests(unittest.TestCase):
     def test_census_uses_minimal_fields_pages_and_count_probe(self):
         census = [
             {"id": 2, "type": "post", "status": "publish", "modified": "2025-01-02T03:04:05",
-             "modified_gmt": "2025-01-02T02:04:05", "date_gmt": "2025-01-01T02:04:05"},
+             "modified_gmt": "2025-01-02T02:04:05", "date_gmt": "2025-01-01T02:04:05",
+             "link": "https://example.test/2/"},
             {"id": 5, "type": "post", "status": "publish", "modified": "2025-02-02T03:04:05",
-             "modified_gmt": "2025-02-02T02:04:05", "date_gmt": None},
+             "modified_gmt": "2025-02-02T02:04:05", "date_gmt": None,
+             "link": "https://example.test/5/"},
             {"id": 7, "type": "post", "status": "publish", "modified": "2025-03-02T03:04:05",
-             "modified_gmt": "2025-03-02T02:04:05", "date_gmt": None},
+             "modified_gmt": "2025-03-02T02:04:05", "date_gmt": None,
+             "link": "https://example.test/7/"},
         ]
 
         class Client:
@@ -76,13 +79,14 @@ class RemoteTests(unittest.TestCase):
                                  page_size=2)
         self.assertEqual(inventory.records, census)
         self.assertEqual(len(client.calls), 3)
-        self.assertEqual(client.calls[0]["_fields"], ["id,type,status,modified,modified_gmt,date_gmt"])
-        self.assertEqual(client.calls[1]["_fields"], ["id,type,status,modified,modified_gmt,date_gmt"])
+        self.assertEqual(client.calls[0]["_fields"], ["id,type,status,modified,modified_gmt,date_gmt,link"])
+        self.assertEqual(client.calls[1]["_fields"], ["id,type,status,modified,modified_gmt,date_gmt,link"])
         self.assertEqual(client.calls[2]["_fields"], ["id"])
 
     def test_census_rejects_bad_timestamps_duplicate_ids_and_count_races(self):
         valid = {"id": 1, "type": "page", "status": "publish", "modified": "2025-01-01T00:00:00",
-                 "modified_gmt": "2025-01-01T00:00:00", "date_gmt": None}
+                 "modified_gmt": "2025-01-01T00:00:00", "date_gmt": None,
+                 "link": "https://example.test/page/"}
 
         class Client:
             def __init__(self, pages):

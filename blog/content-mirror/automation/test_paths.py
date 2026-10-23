@@ -11,7 +11,7 @@ class PathPlanningTests(unittest.TestCase):
         self.assertEqual(normalize_title("Árvíztűrő tükörfúrógép"), "Árvíztűrő tükörfúrógép")
         self.assertEqual(normalize_title("... - "), "")
 
-    def test_unique_path_matches_old_date_and_filename_convention(self):
+    def test_path_includes_date_title_and_wordpress_id(self):
         record = {
             "id": 123,
             "type": "post",
@@ -20,7 +20,7 @@ class PathPlanningTests(unittest.TestCase):
         }
         self.assertEqual(
             plan_article_paths([record]),
-            {"post:123": "2024/02/2024-02-03 04.05 A Simple Title.md"},
+            {"post:123": "2024/02/2024-02-03 04.05 A Simple Title [123].md"},
         )
 
     def test_title_date_corrections_change_path_and_untrusted_title_stays_local(self):
@@ -32,12 +32,12 @@ class PathPlanningTests(unittest.TestCase):
         }
         self.assertEqual(
             plan_article_paths([record])["page:8"],
-            "2025/09/2025-09-10 11.12 CON - report.md",
+            "2025/09/2025-09-10 11.12 CON - report [8].md",
         )
         corrected = {**record, "title": {"rendered": "Corrected"}, "date": "2025-09-11T11:12:13"}
         self.assertEqual(
             plan_article_paths([corrected])["page:8"],
-            "2025/09/2025-09-11 11.12 Corrected.md",
+            "2025/09/2025-09-11 11.12 Corrected [8].md",
         )
 
     def test_case_insensitive_collisions_suffix_every_member_independent_of_order(self):
@@ -50,14 +50,14 @@ class PathPlanningTests(unittest.TestCase):
         self.assertEqual(plan_article_paths([first, second]), expected)
         self.assertEqual(plan_article_paths([second, first]), expected)
 
-    def test_retained_path_is_kept_unless_it_collides_with_active_record(self):
+    def test_ids_keep_active_and_retained_paths_distinct(self):
         retained = {
             "key": "post:1",
             "id": 1,
             "type": "post",
             "title": "A title",
             "published_at": "2024-01-02T03:04:05",
-            "path": "2024/01/2024-01-02 03.04 A title.md",
+            "path": "2024/01/2024-01-02 03.04 A title [1].md",
         }
         self.assertEqual(
             plan_article_paths([], [retained]),

@@ -1,81 +1,64 @@
 # Kiszámoló tartalom-mirror
 
-A letöltő a Kiszámoló blog nyilvános cikkeit és önálló oldalait menti el, majd olvasható Markdown-fájlokat készít belőlük.
+A letöltő a Kiszámoló blog nyilvános cikkeit és önálló oldalait olvasható Markdown-fájlokként tartja naprakészen.
 
 ## Futtatás
 
-A [telepítés](../README.md#telepítés-és-frissítés) után csak a letöltő futtatásához, a projekt gyökeréből:
+A [telepítés](../README.md#telepítés-és-frissítés) után, a projekt gyökeréből:
 
 ```powershell
-.\.venv\Scripts\python.exe -u -B .\blog\content-mirror\automation\sync.py
+.\.venv\Scripts\python.exe -u -B blog/content-mirror/automation/sync.py
 ```
 
-Alapértelmezés szerint az olvasható fájlok a `blog/content-mirror/articles/`, a nyers források és a folytatáshoz szükséges állapot a `.local-cache/blog/content-mirror/` mappába kerülnek. A teljes frissítés besorolja a cikkeket is; ennek menetét a [besorolás leírása](../enrichment/README.md) ismerteti.
-
-Más célmappákat a `--output PATH` és `--source-output PATH` kapcsolóval lehet megadni. A két mappa nem fedheti egymást. A párhuzamos letöltések száma `--workers 1..8` kapcsolóval állítható; alapértéke 4.
-
-Mintafuttatáshoz használd a `--sample ID ID ... --output KÜLÖN_CIKK_KÖNYVTÁR --source-output KÜLÖN_FORRÁS_KÖNYVTÁR` alakot. Ez teljes távoli leltárt kér, de csak a megadott cikkeket és oldalakat dolgozza fel. Nem jelöl távoli eltűnést, és nem lépteti a szinkronizálás időbélyegét.
-
-## Hálózat nélküli újragenerálás
-
-A `--rebuild` a nyers archívumban megőrzött forrásokból újra elkészíti a Markdown-nézeteket és az indexeket:
-
-```powershell
-.\.venv\Scripts\python.exe -u -B .\blog\content-mirror\automation\sync.py --rebuild
-```
-
-A nyers archívumban rögzített cikkmappát használja. A korábban mentett források meglétét és lenyomatait ellenőrzi; sérülésüknél vagy hiányuknál hibával leáll. A már ismert letöltési hiányok ettől nem szűnnek meg.
-
-Az offline újragenerálás nem ellenőrzi a távoli állapotot és nem változtatja meg a szinkronizálás időbélyegét.
+A [teljes frissítés](../README.md#telepítés-és-frissítés) a cikkek besorolását is elvégzi.
 
 ## Tárolás
 
-- `blog/content-mirror/articles/YYYY/MM/YYYY-MM-DD HH.MM Cím.md`: cikkenkénti olvasható Markdown-nézet, metaadatokkal és helyi hivatkozásokkal.
-- `blog/content-mirror/articles/INDEX.md` és `blog/content-mirror/articles/index.jsonl`: emberi navigáció, illetve a helyi cikknyilvántartás.
-- `.local-cache/blog/content-mirror/records/posts/ID/` és `records/pages/ID/`: WordPress-ID alapján megőrzött nyers rekordok. A `source.json` a teljes API-rekordot, a `source.html` annak `content.rendered` mezőjét, a `source-page.html` pedig a nyilvános cikkoldal válaszát őrzi. A kiemelt kép metaadatai a `source-featured-media.json` fájlba kerülnek.
-- `view-source.html`: a Markdown-nézet előállításához használt HTML. Üres API-törzsű oldalnál a felismert nyilvános tartalmat tartalmazza; az `index.jsonl` `derived_source` mezője jelzi, ha ez az oldalból származik.
-- `.local-cache/blog/content-mirror/sources/api/`: az utolsó futás API-válaszai és leltárai, a lekérdezések adataival.
-- `.local-cache/blog/content-mirror/state.json`: a folytatáshoz szükséges állapot, köztük a forrásfájlok lenyomatai.
-- `blog/content-mirror/articles/last-report.json`: az utolsó hálózati futás összesítése és részletes hibái.
+- `articles/YYYY/MM/YYYY-MM-DD HH.MM Cím [ID].md`: a cikkek, saját JSON-értékeket használó front matter fejléccel. Az ID alapján a fájl a fejléc beolvasása nélkül megtalálható.
+- `articles/wordpress-modified.json`: frissítési index, WordPress-ID → `modified_gmt` párokkal, azonosító szerinti sorrendben, kétszóközös behúzással.
 
-Az `index.jsonl` `path` mezője a `blog/content-mirror/articles/` alatti Markdown-fájlra mutat. A `source_record` (például `records/posts/123`) a nyers archívum logikai rekordazonosítója; nem a `blog/content-mirror/articles/` alatti fájlútvonal.
+```json
+{
+  "66976": "2021-12-14T14:36:31"
+}
+```
 
-A blog eredeti WordPress-kategóriáit és -címkéit nem vesszük át az olvasható cikkekbe és a cikknyilvántartásba: ezek nem illeszkednek a tudásbázis tematikus keresési és rendszerezési igényeihez. Erre a célra az [enrichment saját témaköreit](../enrichment/README.md) használjuk.
+Az index értéke pontosan a cikk `modified_at_gmt` mezőjében is elmentett WordPress-időbélyeg. A frissítő ezt az UTC-ben megadott forrásidőt hasonlítja az API válaszához. Előbb a cikket menti, és csak sikeres mentés után frissíti az indexbejegyzést. Sikertelen frissítéskor a következő futás újrapróbálja a letöltést.
 
-## Gyűjtemény és kizárások
+A blog eredeti WordPress-kategóriáit és -címkéit nem vesszük át a cikkekbe és az indexbe: ezek nem illeszkednek a tudásbázis tematikus keresési és rendszerezési igényeihez. Erre a célra az [enrichment saját témaköreit](../enrichment/README.md) használjuk.
 
-Az [exclusions.json](automation/exclusions.json) tartalmazza a kézzel kizárt rekordokat. A kulcs a rekord típusa és WordPress-ID-ja, például `post:104197` vagy `page:2`; az érték a kizárás indoka. A sync és a `--rebuild` törli a kizárt rekord helyi cikkét és forrásmappáját, és frissíti az indexeket.
+## Frissítés
+
+A frissítő beolvassa az indexet, és lekéri a blog könnyű leltárát. Csak az új, módosult vagy helyben hiányzó cikkeket tölti le és alakítja át. Ez a régi cikkek utólagos módosításait is követi; a változatlan cikkfájlokat nem olvassa végig.
+
+A cikkadatok közvetlenül az API-válaszból készülnek. Ha az API nem tartalmaz szöveget, a letöltő megpróbálja a nyilvános cikkoldalból kinyerni. A nyers API-válaszokat és HTML-forrásokat nem őrizzük meg külön archívumban. A blogról eltűnt cikk helyi példánya megmarad.
+
+Az [exclusions.json](automation/exclusions.json) tartalmazza a kézzel kizárt rekordokat és az indoklást. A frissítés eltávolítja ezeket a helyi gyűjteményből. A kizárásokról a felhasználó dönt, a besoroló önállóan nem zár ki cikket.
 
 A gyűjtemény a blog tudásanyagát fedi le. Kizárjuk a navigációs, cikkjegyzék-, szolgáltatás-, eszköz- és adminisztratív oldalakat, a tesztanyagokat és a külön kiválasztott alkalmi közleményeket. Szintén kizárjuk a saját érdemi szöveg nélküli bejegyzéseket akkor is, ha a beágyazott videó vagy ábra hozzáférhető, feldolgozható tudásanyagot tartalmaz. Kizárjuk továbbá az elérhetetlenné vált érdemi tartalomra mutató bejegyzéseket, valamint a blog tudásanyagához lazán kapcsolódó, saját magyarázat nélküli egyszeri külső érdekességeket. Az új WordPress-oldalak nem záródnak ki automatikusan; a témakör-besorolás állapota és a szöveghossz önmagában nem kizárási ok.
 
-## Frissítés és hiányzó tartalom
+## Az index újraépítése
 
-Minden hálózati futás teljes WordPress-leltárt kér, és a módosítási időbélyegek alapján frissít. Az új vagy módosult rekordok teljes adatait tölti le; a változatlan rekordok korábban mentett forrását használja. A leltár és a részletes lekérés közötti módosítás vagy eltűnés esetén a futás leáll, és újrafuttatást kér. Eltűntnek csak a teljes leltár után, az adott rekordra kapott külön API-404 alapján jelöl tartalmat. A lapozott leltár nem egyetlen adatbázis-pillanatkép, ezért folyamatos szerkesztés közben újrafuttatásra lehet szükség.
+Hiányzó index esetén az első futás automatikusan újraépíti azt a cikkek fejlécéből. Kifejezetten is kérhető:
 
-A normál futás pótolja a hiányzó forrást és a hiányzó Markdown-fájlt. Távoli eltűnéskor a már mentett rekord és fájljai megmaradnak `remote_missing` státusszal; a visszatérő tartalom újra `active` lesz. A letöltési hiba nem cseréli le a korábbi jó fájlt. Az átmeneti hibákat `failed` státusszal jelzi, és a következő futás újrapróbálja. A végleges HTTP-hibát, hibás URL-t vagy nem megfelelő fájlt `unavailable` állapotként rögzíti, és nem próbálja újra ugyanazt az URL-t.
+```powershell
+.\.venv\Scripts\python.exe -B blog/content-mirror/automation/sync.py --rebuild-index
+```
 
-Ha az API nem tartalmaz cikkszöveget, a nyilvános HTML-ből megpróbál olvasható nézetet készíteni. Ha az sem érhető el véglegesen, a nézet hiányos marad, és csak a WordPress-tartalom vagy az URL változásakor vizsgálja újra. A védett API-tartalmat szintén hiányként jelzi. Ismert `unavailable` nyilvános HTML hiánya önmagában nem teszi hiányossá a cikket, és nem okoz ismétlődő hibajelentést.
-
-A szinkronizálás időbélyege csak a teljes leltár feldolgozása és az állapot mentése után lép előre; az átmeneti letöltési hibák ezt nem akadályozzák. Végzetes hiba, megszakítás és mintafuttatás nem lépteti. A fájlok külön-külön atomikusan cserélődnek, de a teljes archívum nem egyetlen tranzakció; megszakítás után indítsd újra a futást.
+Ez hálózati kérés és cikkszöveg-újragenerálás nélkül működik. Normál frissítéskor nincs szükség a cikkek fejlécének újbóli beolvasására.
 
 ## Markdown, hivatkozások és média
 
-A Markdown a megőrzött forrásból újragenerálható olvasási nézet. A képek, dokumentumok, hang- és videófájlok az eredeti, abszolút webes URL-jükön szerepelnek; a letöltő nem tölti le és nem ellenőrzi ezeket. Elérésük internetet és a forrás elérhetőségét igényli. Ismert helyi cikkek hivatkozásait és beágyazásait helyi Markdown-hivatkozássá alakítja; ezek a cikkmappán belül maradnak.
+A Markdown a blog tartalmát követi; közvetlenül nem szerkesztjük. A fájlnév a létrehozáskori címet, dátumot és a WordPress-ID-t tartalmazza, és később változatlan marad. A forrás aktuális címe és dátuma a front matterben szerepel, így a helyi hivatkozások a forrás szerkesztésekor is stabilak.
 
-A médiaforrások listája a `blog/content-mirror/articles/MEDIA-SOURCES.md` és `blog/content-mirror/articles/media-sources.json` fájlban található; ezeket csak a `--rebuild` frissíti, a normál letöltés nem. Hostonként az egyedi URL-eket és az érintett cikkeket számolja, nem a különálló ábrákat vagy a webszerver összes fájlját.
-
-Cím vagy publikálási dátum változásakor új Markdown-útvonal készül, és a helyi hivatkozások célját is frissíti. A kézzel módosított régi Markdown-fájl megmarad, és a riport jelzi. Ha az átnevezés egy másik rekord korábbi fájlnevét venné át, a kézzel módosított fájlt a forrásarchívum `preserved-markdown/` mappájába menti felülírás előtt.
+A képek, dokumentumok, hang- és videófájlok az eredeti, abszolút webes URL-jükön szerepelnek. A letöltő nem tölti le és nem ellenőrzi ezeket; elérésük internetet és a forrás elérhetőségét igényli. Feldolgozáskor az ismert helyi cikkekre mutató hivatkozásokat helyi Markdown-hivatkozássá alakítjuk. Egy új cikk megjelenése miatt a korábbi cikkeket nem olvassuk újra; azok meglévő webes hivatkozásai megmaradhatnak. Kizáráskor az érintett helyi hivatkozásokat a forrás webes címére javítjuk; ez a ritkább művelet a meglévő cikkek átnézését igényli.
 
 ## Besorolási teendők
 
-A `blog/content-mirror/articles/index.jsonl` `classification_pending` mezője a témaköri, a `content_classification_pending` mezője a tartalmi jelleg szerinti besorolásra váró cikket jelzi. A sync akkor jelöl újrabesorolást, ha változik a cím, a cikk törzse, a védett tartalom állapota vagy a kiemelt kép, illetve annak URL-je, típusa, alternatív szövege vagy képaláírása. Az azonos URL-en megváltozott média tartalmát a sync nem ellenőrzi, ezért az önmagában nem indít újrabesorolást. Más API-metaadat vagy a WordPress módosítási idejének változása önmagában nem indít újrabesorolást. A részletes állapotkezelést és az eredmények tárolását a [besorolás leírása](../enrichment/README.md#tárolás-és-működés) ismerteti.
+A besorolás eredményeit és feldolgozási nyilvántartását az [enrichment](../enrichment/README.md#tárolás-és-működés) kezeli.
 
-## Riportok és kilépési kódok
-
-A hálózati futás riportja a `blog/content-mirror/articles/last-report.json`; az offline újragenerálásé a `blog/content-mirror/articles/rebuild-report.json`. A futás végén összesítés és teendőlista jelenik meg. Kilépési kód: `0` befejezett, hiánytalan hálózati futás vagy sikeres offline újragenerálás; `2` befejezett hálózati futás ismert tartalmi vagy letöltési hiánnyal; `1` végzetes hiba; `130` megszakítás. A sikeres offline újragenerálás nem jelent új távoli ellenőrzést.
-
-A párhuzamos futások külön zárral védik a nyers forrás- és a Markdown-célmappát. Így különböző forrásmappa megadásakor sem írhat két futás egyszerre ugyanabba a Markdown-célba.
+A hibák és az összesítés a terminálra kerülnek; külön riportfájlok, cikkjegyzékek és médiastatisztikák nem készülnek. A kilépési kód `0` siker, `2` befejezett futás megmaradt teendővel, `1` végzetes hiba, `130` megszakítás. Egy közös folyamatközi zár védi a frissítést és a besorolást; a zárolási fájl az `articles/` mappán kívül van.
 
 ## Ellenőrzés
 
-A tesztfüggőségek telepítését és a tesztek futtatását a [projekt leírása](../README.md#tesztek) tartalmazza.
+A tesztfüggőségeket és a tesztparancsokat a [projekt leírása](../README.md#tesztek) tartalmazza.

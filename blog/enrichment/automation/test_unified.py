@@ -24,10 +24,14 @@ class UnifiedClassifierTests(unittest.TestCase):
             (classify.ROOT / "blog/enrichment/topics.json").read_bytes())
         self.assignments = self.root / "blog/enrichment/assignments.json"
         self.assignments.write_text('{\n  "articles": {}\n}\n', encoding="utf-8")
-        self.article = self.root / "blog/content-mirror/articles/2026/10/10.md"
-        self.article.write_text("# Cím\n\nA cikk érdemi szövege.", encoding="utf-8")
-        row = {"id": 10, "type": "post", "title": "Cím", "path": "2026/10/10.md"}
-        (self.root / "blog/content-mirror/articles/index.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+        self.article = self.root / "blog/content-mirror/articles/2026/10/Cím [10].md"
+        self.row = {"id": 10, "type": "post", "title": "Cím", "url": "https://example.test/cikk",
+                    "modified_at": "2026-10-01T00:00:00", "modified_at_gmt": "2026-10-01T00:00:00",
+                    "path": "2026/10/Cím [10].md"}
+        self.write_article("# Cím\n\nA cikk érdemi szövege.")
+
+    def write_article(self, body):
+        classify.topic_classifier.catalog.write_article(self.article, self.row, body)
 
     def test_schema_accepts_partial_records(self):
         result = classify.validate_assignments({"articles": {
@@ -63,7 +67,7 @@ class UnifiedClassifierTests(unittest.TestCase):
         self.assertEqual(classify.load_json(self.assignments)["articles"]["10"]["topics"], ["costs"])
 
     def test_prepared_input_is_reused_and_media_failures_are_disclosed(self):
-        self.article.write_text("# Cím\n\nA cikk szövege.\n\n![ábra](https://example.com/chart.png)", encoding="utf-8")
+        self.write_article("# Cím\n\nA cikk szövege.\n\n![ábra](https://example.com/chart.png)")
         with mock.patch.object(classify.media, "fetch_remote_image", side_effect=classify.media.MediaError("offline")) as fetch:
             with classify.prepare_article(10, self.root) as prepared:
                 topics_request = classify._dimension_request(prepared, "topics", self.root)
@@ -76,28 +80,13 @@ class UnifiedClassifierTests(unittest.TestCase):
             fetch.assert_called_once()
 
     def test_remote_linked_original_is_processed_without_persistent_assets_or_state(self):
-        self.article.write_text(
+        self.write_article(
             "# Cím\n\nA cikk szövege.\n\n[![ábra](https://media.example/thumb.png)]"
-            "(https://media.example/original.png)", encoding="utf-8")
-        remote, _notes = classify.discover_media(
-            self.article.read_text(encoding="utf-8"), {})
+            "(https://media.example/original.png)")
+        _metadata, markdown = classify.topic_classifier.catalog.read_article(self.article)
+        remote, _notes = classify.discover_media(markdown)
         self.assertEqual(remote, ["https://media.example/original.png"])
-        remote_with_variant, _notes = classify.discover_media(
-            self.article.read_text(encoding="utf-8"), {
-                "https://media.example/original.png": "https://media.example/thumb.png"})
-        self.assertEqual(remote_with_variant, ["https://media.example/original.png"])
         self.assertEqual(_notes, [])
-        index = self.root / "blog/content-mirror/articles/index.jsonl"
-        index.write_text(json.dumps({"id": 10, "type": "post", "title": "Cím", "path": "2026/10/10.md",
-                                     "url": "https://blog.example/cikk/",
-                                     "source_record": "records/posts/10"}) + "\n", encoding="utf-8")
-        source = self.root / ".local-cache/blog/content-mirror/records/posts/10"
-        source.mkdir(parents=True)
-        (source / "view-source.html").write_text(
-            '<a href="https://media.example/original.png"><img src="https://media.example/thumb.png" '
-            'srcset="https://media.example/thumb.png 100w, https://media.example/large.png 1200w"></a>',
-            encoding="utf-8")
-
         fetched = []
         with mock.patch.object(classify.media, "fetch_remote_image",
                                side_effect=lambda url, _directory: fetched.append(url) or []) as fetch:
@@ -158,29 +147,26 @@ class UnifiedClassifierTests(unittest.TestCase):
         self.assertIn("--dimension", result.stdout)
 
     def test_local_image_reference_is_rejected_clearly(self):
-        self.article.write_text("# Cím\n\n![ábra](assets/chart.png)", encoding="utf-8")
+        self.write_article("# Cím\n\n![ábra](assets/chart.png)")
         with self.assertRaisesRegex(classify.ClassificationError, r"csak eredeti HTTP\(S\) képeket"):
             with classify.prepare_article(10, self.root):
                 pass
 
     def test_pending_failed_force_reclassification_retries_and_preserves_old_value(self):
-        state_path = self.root / ".local-cache/blog/content-mirror/state.json"
-        state_path.parent.mkdir(parents=True)
-        state_path.write_text(json.dumps({"records": {"post:10": {
-            "content_classification_pending": True}}}), encoding="utf-8")
+        self.write_article("# Cím\n\nA cikk érdemi szövege.")
         self.assignments.write_text(json.dumps({"articles": {"10": {"content_nature": ["news"]}}}), encoding="utf-8")
         failing = mock.Mock(side_effect=classify.ClassificationError("temporary error"))
         with self.assertRaises(classify.ClassificationError):
-            classify.classify_article(10, self.root, failing, dimension="content_nature")
+            classify.classify_article(10, self.root, failing, dimension="content_nature", force=True)
         self.assertEqual(classify.load_json(self.assignments)["articles"]["10"]["content_nature"], ["news"])
         succeeding = mock.Mock(return_value={"content_nature": [{"id": "reporting", "evidence": "A cikk eredményeket mutat."}], "review_case": None})
-        result = classify.classify_article(10, self.root, succeeding, dimension="content_nature")
+        result = classify.classify_article(10, self.root, succeeding, dimension="content_nature", force=True)
         self.assertTrue(result["saved"])
         succeeding.assert_called_once()
 
     def test_local_video_reference_is_rejected_and_remote_media_is_disclosed(self):
         with self.assertRaisesRegex(classify.ClassificationError, r"csak eredeti HTTP\(S\) média-URL-eket"):
-            classify.discover_media('[videó](clip.mp4)', {})
+            classify.discover_media('[videó](clip.mp4)')
         for body in (
             '[![kép](../../assets/thumb.png)](https://media.example/original.png)',
             '<img src="chart.png" srcset="https://media.example/chart.png 2x">',
@@ -195,19 +181,19 @@ class UnifiedClassifierTests(unittest.TestCase):
             '<a download href="report">letöltés</a>',
         ):
             with self.subTest(body=body), self.assertRaises(classify.ClassificationError):
-                classify.discover_media(body, {})
+                classify.discover_media(body)
         images, notes = classify.discover_media(
-            '<video poster="https://media.example/poster.png" src="https://media.example/clip.mp4"></video>', {})
+            '<video poster="https://media.example/poster.png" src="https://media.example/clip.mp4"></video>')
         self.assertEqual(images, ["https://media.example/poster.png"])
         self.assertEqual(notes, ["A hivatkozott videó vagy melléklet nincs feldolgozva: https://media.example/clip.mp4"])
         self.assertEqual(classify.discover_media(
-            '<picture><source srcset="https://media.example/chart.png 2x"><img src="https://media.example/chart-small.png"></picture>', {}),
+            '<picture><source srcset="https://media.example/chart.png 2x"><img src="https://media.example/chart-small.png"></picture>'),
             (["https://media.example/chart.png"], []))
-        self.assertEqual(classify.discover_media('<source src="https://media.example/file">', {}),
+        self.assertEqual(classify.discover_media('<source src="https://media.example/file">'),
                          ([], ["A hivatkozott videó vagy melléklet nincs feldolgozva: https://media.example/file"]))
-        self.assertEqual(classify.discover_media('<a download href="https://media.example/report">letöltés</a>', {}),
+        self.assertEqual(classify.discover_media('<a download href="https://media.example/report">letöltés</a>'),
                          ([], ["A hivatkozott videó vagy melléklet nincs feldolgozva: https://media.example/report"]))
-        self.assertEqual(classify.discover_media('[cikk](other.md) [rész](#resz)', {}), ([], []))
+        self.assertEqual(classify.discover_media('[cikk](other.md) [rész](#resz)'), ([], []))
 
     def test_runner_failures_do_not_retry_for_either_dimension(self):
         for dimension in ("topics", "content_nature"):

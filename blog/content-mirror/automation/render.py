@@ -622,6 +622,7 @@ def make_markdown(record: dict[str, Any], content_html: str, *, retained_anchors
         "published_at": record.get("date"),
         "published_at_gmt": record.get("date_gmt"),
         "modified_at": record.get("modified"),
+        "modified_at_gmt": record.get("modified_gmt"),
     }
     metadata = {key: value for key, value in metadata.items() if value is not None}
     front_matter = "\n".join(f"{key}: {json.dumps(value, ensure_ascii=False)}" for key, value in metadata.items())

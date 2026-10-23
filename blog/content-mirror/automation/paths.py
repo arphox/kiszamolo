@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from collections import defaultdict
 from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
@@ -61,12 +60,11 @@ def _identity(record: dict[str, Any]) -> tuple[str, int, str]:
     return key, record_id, record_type
 
 
-def _generated_path(title: str, timestamp: datetime, record_id: int | None = None) -> str:
+def _generated_path(title: str, timestamp: datetime, record_id: int) -> str:
     normalized = normalize_title(title)
     if not normalized:
         raise ValueError("Title is empty after filename normalization")
-    suffix = f" [{record_id}]" if record_id is not None else ""
-    return f"{timestamp:%Y}/{timestamp:%m}/{timestamp:%Y-%m-%d %H.%M} {normalized}{suffix}.md"
+    return f"{timestamp:%Y}/{timestamp:%m}/{timestamp:%Y-%m-%d %H.%M} {normalized} [{record_id}].md"
 
 
 def _retained_path(record: dict[str, Any], timestamp: datetime) -> str | None:
@@ -84,6 +82,8 @@ def _retained_path(record: dict[str, Any], timestamp: datetime) -> str | None:
         raise ValueError(f"Retained path date folders do not match its publication date: {value!r}")
     if not path.name.startswith(f"{timestamp:%Y-%m-%d %H.%M} "):
         raise ValueError(f"Retained filename date does not match its publication date: {value!r}")
+    if not path.name.endswith(f" [{record['id']}].md"):
+        raise ValueError(f"Retained filename must include its WordPress ID: {value!r}")
     return path.as_posix()
 
 
@@ -102,19 +102,14 @@ def plan_article_paths(
     retained: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
     articles_root: Path | None = None,
 ) -> dict[str, str]:
-    """Plan active and retained article paths without writing or renaming files.
-
-    A non-colliding retained record keeps its validated existing path. If that
-    path collides with another active or retained record, every record in the
-    collision group receives the deterministic ``[WordPress ID]`` suffix.
-    """
+    """Plan readable paths with a stable WordPress ID in every filename."""
     root = Path(articles_root) if articles_root is not None else None
-    entries: dict[str, dict[str, Any]] = {}
+    paths: dict[str, str] = {}
     seen_ids: set[int] = set()
     for is_retained, group in ((False, records), (True, retained)):
         for record in group:
             key, record_id, _ = _identity(record)
-            if key in entries:
+            if key in paths:
                 raise ValueError(f"Duplicate WordPress record key: {key}")
             if record_id in seen_ids:
                 raise ValueError(f"WordPress IDs must be globally unique: {record_id}")
@@ -124,47 +119,8 @@ def plan_article_paths(
             title = _plain_title(title_value)
             timestamp_value = record.get("published_at") if is_retained else record.get("date")
             timestamp = _timestamp(timestamp_value, "published_at" if is_retained else "date")
-            generated = _generated_path(title, timestamp)
+            generated = _generated_path(title, timestamp, record_id)
             existing = _retained_path(record, timestamp) if is_retained else None
-            entries[key] = {
-                "timestamp": timestamp,
-                "generated": generated,
-                "generated_with_id": _generated_path(title, timestamp, record_id),
-                "candidate": existing or generated,
-            }
-
-    if root is not None:
-        # Also check path length before collision resolution, then validate the
-        # final suffixed names below.
-        for entry in entries.values():
-            _check_path_lengths(entry["candidate"], root)
-
-    suffixed: set[str] = set()
-    while True:
-        paths: dict[str, str] = {}
-        for key, entry in entries.items():
-            path = entry["generated"]
-            if key in suffixed:
-                path = entry["generated_with_id"]
-            elif entry["candidate"] != entry["generated"]:
-                path = entry["candidate"]
-            paths[key] = path
-
-        groups: dict[str, list[str]] = defaultdict(list)
-        for key, path in paths.items():
-            groups[path.casefold()].append(key)
-        collisions = [keys for keys in groups.values() if len(keys) > 1]
-        if not collisions:
-            break
-        added = False
-        for keys in collisions:
-            for key in keys:
-                if key not in suffixed:
-                    suffixed.add(key)
-                    added = True
-        if not added:
-            raise ValueError("Path collision remains after adding stable ID suffixes")
-
-    for path in paths.values():
-        _check_path_lengths(path, root)
+            paths[key] = existing or generated
+            _check_path_lengths(paths[key], root)
     return paths

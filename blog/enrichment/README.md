@@ -192,14 +192,11 @@ a nyilvántartásba nem kerül.
 A fájl UTF-8 kódolású, LF sorvégű, záró soremeléssel; minden cikk egy sor,
 a cikkazonosítók számszerű sorrendben szerepelnek.
 
-A cím és a helyi Markdown-útvonal a letöltő [cikklistájában](../content-mirror/README.md#tárolás) kereshető ki a cikkazonosító alapján.
+A helyi cikket a fájlnévben szereplő WordPress-ID alapján keressük ki; a cím és a többi forrásadat a cikk fejlécében van.
 
-Alapesetben mindkét parancs a hiányzó vagy [függő](../content-mirror/README.md#besorolási-teendők)
-besorolásokat dolgozza fel, és szempontonként ment. Csak a sikeresen mentett
-szempont függő jelzését törli; hiba, kihagyás vagy emberi döntést igénylő eset
-után a feladat folytatható, korábbi értéke megmarad. Az egyik szempont hibája
-nem akadályozza a másikat. A teljes frissítő a teendőket az
-`blog/content-mirror/articles/update-report.json` fájlba menti; az egycikkes parancs a terminálra írja.
+A saját `processing.json` nyilvántartás cikkenként és besorolási szempontonként megőrzi a sikeresen feldolgozott bemenet WP-módosítási idejét és tartalmi lenyomatát. A fájlt a besorolásokkal együtt verziókezeljük. Egyező forrásidőnél nincs cikkbeolvasás; újabb forrásidőnél a tartalmi lenyomat alapján eldönthető, kell-e ténylegesen új elemzés. Pusztán egyéb WordPress-metaadat változása nem okoz új modellhívást.
+
+Alapesetben mindkét parancs a hiányzó vagy elavult besorolásokat dolgozza fel, és szempontonként ment. Hiba vagy emberi döntést igénylő eset után a korábbi eredmény és annak feldolgozási jelölője megmarad, így a feladat folytatható. Az egyik szempont hibája nem akadályozza a másikat. Mindkét parancs a terminálra írja a teendőket.
 
 ## Használat
 
@@ -220,7 +217,7 @@ Csak az egyik szempont, illetve kifejezett újraértékelés:
 
 Meglévő, nem függő eredménynél nincs modellhívás. A `--force` a kiválasztott
 szempontokat újraértékeli; a korábbi érték csak siker esetén cserélődik.
-A parancs a letöltő zárolásával védi a cikkeket és forrásokat. Már futó letöltés
+A parancs a letöltő közös zárolásával védi a cikkeket és az indexet. Már futó letöltés
 vagy besorolás mellett hibával leáll. Hiányzó cikknél vagy helyi szövegfájlnál
 a letöltést külön kell elindítani.
 

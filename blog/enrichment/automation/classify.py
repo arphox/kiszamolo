@@ -19,13 +19,13 @@ sys.path.insert(0, str(ROOT / "blog/content-mirror/automation"))
 
 from blog.enrichment.automation import common as topic_classifier
 from blog.enrichment.automation import media
-from sync import atomic_write, exclusive_run, json_bytes, publish_article_index
+from blog.enrichment.automation import processing as processing_store
+import catalog
 
 DEFAULT_MODEL = "gpt-6-luna"
 DEFAULT_REASONING_EFFORT = "high"
 DIMENSION_DEFAULTS = {"topics": ("gpt-6.1-sol", "medium"), "content_nature": (DEFAULT_MODEL, DEFAULT_REASONING_EFFORT)}
 DIMENSIONS = ("topics", "content_nature")
-PENDING_FLAGS = {"topics": "classification_pending", "content_nature": "content_classification_pending"}
 NATURE_IDS = ("explanatory", "mindset", "news", "promotional", "announcement", "reporting", "curated")
 TOPICS_PATH = "blog/enrichment/topics.json"
 REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
@@ -104,7 +104,7 @@ def _validate_review_case(value):
     return {"type": value["type"], "reason": value["reason"].strip()}
 
 
-def discover_media(body, variants):
+def discover_media(body):
     """Return remote image URLs and notes for remote media the classifier cannot process."""
     soup = topic_classifier.BeautifulSoup(body, "html.parser")
     image_suffixes = topic_classifier.IMAGES | {".gif", ".bmp", ".tif", ".tiff", ".avif"}
@@ -155,11 +155,8 @@ def discover_media(body, variants):
         target = require_remote_image(target)
         target = linked_originals.get(target, target)
         images.append(target)
-    linked_original_urls = set(linked_originals.values())
     remote_images = []
     for target in images:
-        if target not in linked_original_urls:
-            target = variants.get(target, target)
         target = require_remote_image(target)
         remote_images.append(target)
 
@@ -261,37 +258,25 @@ def prepare_article(article_id, root=None):
     row, path = topic_classifier.article_row(root, article_id)
     if row.get("derived_view_available") is False:
         raise ContentReviewRequired({"type": "source_unavailable", "reason": "A cikk fő szövege nem érhető el."})
-    markdown = path.read_text(encoding="utf-8")
-    body = topic_classifier.clean_markdown(markdown, row["title"])
-    variants, decorations = {}, dict(topic_classifier.DECORATIVE_IMAGES)
-    if topic_classifier.IMAGE_LINK.search(body) or topic_classifier.BeautifulSoup(body, "html.parser").find("img"):
-        try:
-            variants, decorations = topic_classifier.image_variants(row, root)
-        except (FileNotFoundError, PermissionError):
-            pass
+    article_metadata, body = catalog.read_article(path)
+    title = article_metadata.get("title", row.get("title", ""))
+    body = topic_classifier.clean_markdown(body, title)
+    decorations = dict(topic_classifier.DECORATIVE_IMAGES)
     body = topic_classifier.replace_decorative_images(body, decorations)
-    remote_images, source_notes = discover_media(body, variants)
-    for url in row.get("embed_urls", []):
-        if url not in body:
-            body += "\n\nBeágyazott hivatkozás: " + url
+    remote_images, source_notes = discover_media(body)
     scratch = tempfile.TemporaryDirectory(prefix="kiszamolo-classifier-input-")
     try:
         scratch_path = Path(scratch.name)
         normalized, notes = [], []
-        if row.get("featured_media_error"):
-            notes.append(f"A kiemelt kép nem tölthető le: {row['featured_media_error']}")
-        if row.get("acquisition_status") == "incomplete":
-            notes.append("A letöltő a cikk valamelyik forrásrészét hiányosnak jelölte.")
         for url in remote_images:
             try:
                 normalized.extend(media.fetch_remote_image(url, scratch_path))
             except media.MediaError as error:
                 notes.append(f"A hivatkozott kép nem érhető el ({url}): {error}")
         notes.extend(source_notes)
-        for url in row.get("embed_urls", []):
-            notes.append(f"A beágyazott tartalom nem lett letöltve vagy átiratként feldolgozva: {url}")
         # Unsupported embeds / attachments are disclosed so the model can decide if they matter.
-        prepared = {"article_id": article_id, "row": row, "path": path, "body": body,
+        prepared = {"article_id": article_id, "row": row, "metadata": article_metadata,
+                    "path": path, "body": body,
                     "images": media.compact_model_images(normalized, scratch_path) if normalized else [],
                     "remote_images": remote_images,
                     "source_notes": notes, "scratch": scratch, "snapshots": {}}
@@ -380,11 +365,12 @@ def classify_article(article_id, root=None, transport=None, *, dimension="conten
     records = validate_assignments(load_json(root / "blog/enrichment/assignments.json"), _topic_ids(root))
     existing = records.get(article_id, {})
     expected = existing.get(dimension)
-    state_path = root / ".local-cache/blog/content-mirror/state.json"
-    if not force and state_path.is_file():
-        state = load_json(state_path)
-        pending_record = state.get("records", {}).get(f"post:{article_id}", {})
-        force = isinstance(pending_record, dict) and dimension in pending_dimensions(pending_record, existing, (dimension,))
+    if prepared is not None:
+        row = prepared["row"]
+    else:
+        row, path = topic_classifier.article_row(root, article_id)
+        metadata = catalog.read_metadata(path)
+        row = dict(catalog.metadata_from_row(metadata), path=row["path"])
     if expected is not None and not force:
         return {dimension: expected, "saved": False}
     if prepared is None:
@@ -406,51 +392,80 @@ def classify_article(article_id, root=None, transport=None, *, dimension="conten
     return result
 
 
-def pending_dimensions(record, assignment, dimensions=DIMENSIONS, *, force=False):
-    return [d for d in dimensions if force or d not in assignment or record.get(PENDING_FLAGS[d])]
+def pending_dimensions(article_id, modified_gmt, assignment, processing, dimensions=DIMENSIONS, *, force=False):
+    return processing_store.pending_dimensions(article_id, modified_gmt, assignment, processing,
+                                               dimensions, force=force)
 
 
-def process_article(article_id, *, root, state, assignments, dimensions=DIMENSIONS, force=False,
-                    transport=None, model=None, reasoning_effort=None):
-    """Yield each dimension's result or error; callers hold both mirror locks."""
+def reconcile_source(article_id, *, root, assignments, processing, modified_gmt=None,
+                     dimensions=DIMENSIONS):
+    """Refresh successful timestamps when the source edit left classifier input unchanged."""
     aid = str(article_id)
-    record = state.get("records", {}).get(f"post:{aid}", {})
-    work = pending_dimensions(record, assignments.get(aid, {}), dimensions, force=force)
+    row, path = topic_classifier.article_row(root, aid)
+    metadata, body = catalog.read_article(path)
+    if catalog.record_key(metadata) != f"post:{aid}":
+        raise ClassificationError(f"A cikkazonosító eltér a fájlnévtől: {aid}.")
+    version = modified_gmt if modified_gmt is not None else metadata.get("modified_at_gmt")
+    fingerprint = processing_store.article_fingerprint(metadata, body)
+    markers = processing["articles"].get(aid, {})
+    for dimension in dimensions:
+        marker = markers.get(dimension)
+        if (dimension in assignments.get(aid, {}) and marker
+                and marker["content_sha256"] == fingerprint and marker["modified_gmt"] != version):
+            processing_store.save_marker(root, processing, aid, dimension,
+                                         {"modified_gmt": version, "content_sha256": fingerprint})
+    return {"metadata": metadata, "body": body, "modified_gmt": version,
+            "content_sha256": fingerprint}
+
+
+def process_article(article_id, *, root, assignments, processing, dimensions=DIMENSIONS,
+                    modified_gmt=None, force=False, transport=None, model=None, reasoning_effort=None):
+    """Yield per-dimension outcomes while recording each successfully processed input."""
+    aid = str(article_id)
+    try:
+        if modified_gmt is not None:
+            candidates = processing_store.pending_dimensions(
+                aid, modified_gmt, assignments.get(aid, {}), processing, dimensions, force=force)
+            if not candidates:
+                return
+        source = reconcile_source(aid, root=root, assignments=assignments,
+                                  processing=processing, modified_gmt=modified_gmt,
+                                  dimensions=dimensions)
+        version = source["modified_gmt"]
+        candidates = processing_store.pending_dimensions(
+            aid, version, assignments.get(aid, {}), processing, dimensions, force=force)
+        if not candidates:
+            return
+        fingerprint = source["content_sha256"]
+        work = candidates
+    except CLASSIFICATION_ERRORS as error:
+        for dimension in dimensions:
+            yield dimension, error
+        return
+
     if not work:
         return
-    state_path = Path(root) / ".local-cache/blog/content-mirror/state.json"
-    if record and any(record.get(PENDING_FLAGS[d]) is not True for d in work):
-        record.update((PENDING_FLAGS[d], True) for d in work)
-        atomic_write(state_path, json_bytes(state))
-    entered = False
     try:
         with prepare_article(aid, root=root) as prepared:
-            entered = True
             for dimension in work:
+                stale_assignment = dimension in assignments.get(aid, {})
                 try:
-                    result = classify_article(aid, root=root, dimension=dimension, force=force,
-                                              prepared=prepared, transport=transport, model=model,
+                    result = classify_article(aid, root=root, dimension=dimension,
+                                              force=force or stale_assignment, prepared=prepared,
+                                              transport=transport, model=model,
                                               reasoning_effort=reasoning_effort)
                     refreshed = validate_assignments(load_json(Path(root) / "blog/enrichment/assignments.json"),
                                                      _topic_ids(root))
                     if dimension not in refreshed.get(aid, {}):
                         raise ClassificationError(f"A(z) {dimension} besorolás mentése nem található a nyilvántartásban.")
                     assignments[aid] = refreshed[aid]
-                    if record:
-                        flag = PENDING_FLAGS[dimension]
-                        record.pop(flag, None)
-                        try:
-                            atomic_write(state_path, json_bytes(state))
-                        except BaseException:
-                            record[flag] = True
-                            raise
+                    processing_store.save_marker(root, processing, aid, dimension,
+                                           {"modified_gmt": version, "content_sha256": fingerprint})
                 except CLASSIFICATION_ERRORS as error:
                     yield dimension, error
                 else:
                     yield dimension, result
     except CLASSIFICATION_ERRORS as error:
-        if entered:
-            raise
         for dimension in work:
             yield dimension, error
 
@@ -466,32 +481,26 @@ def main(argv=None, root=None, transport=None):
     root = Path(root or ROOT).resolve()
     review_needed, failed = False, False
     try:
-        with exclusive_run(root / ".local-cache/blog/content-mirror"), exclusive_run(root / "blog/content-mirror/articles"):
+        with catalog.exclusive_run(root):
             dimensions = (args.dimension,) if args.dimension else DIMENSIONS
             records = validate_assignments(load_json(root / "blog/enrichment/assignments.json"), _topic_ids(root))
-            state_path = root / ".local-cache/blog/content-mirror/state.json"
-            state = load_json(state_path) if state_path.is_file() else {}
+            progress = processing_store.load_processing(root)
+            row, _path = topic_classifier.article_row(root, args.article_id)
             results = {d: value for d, value in records.get(args.article_id, {}).items() if d in dimensions}
-            try:
-                for dimension, outcome in process_article(args.article_id, root=root, state=state,
-                        assignments=records, dimensions=dimensions, force=args.force, transport=transport,
-                        model=args.model, reasoning_effort=args.reasoning_effort):
-                    if isinstance(outcome, ReviewRequired):
-                        review_needed = True
-                        results.pop(dimension, None)
-                        print(f"{dimension}: áttekintés szükséges: {outcome}", file=sys.stderr)
-                    elif isinstance(outcome, Exception):
-                        failed = True
-                        results.pop(dimension, None)
-                        print(f"{dimension}: nem mentettem: {outcome}", file=sys.stderr)
-                    else:
-                        results[dimension] = outcome[dimension]
-            finally:
-                if state_path.is_file():
-                    try:
-                        publish_article_index(root / "blog/content-mirror/articles", state)
-                    except OSError:
-                        publish_article_index(root / "blog/content-mirror/articles", state)
+            for dimension, outcome in process_article(args.article_id, root=root, assignments=records,
+                    processing=progress, dimensions=dimensions, modified_gmt=row.get("modified_at_gmt"),
+                    force=args.force, transport=transport,
+                    model=args.model, reasoning_effort=args.reasoning_effort):
+                if isinstance(outcome, ReviewRequired):
+                    review_needed = True
+                    results.pop(dimension, None)
+                    print(f"{dimension}: áttekintés szükséges: {outcome}", file=sys.stderr)
+                elif isinstance(outcome, Exception):
+                    failed = True
+                    results.pop(dimension, None)
+                    print(f"{dimension}: nem mentettem: {outcome}", file=sys.stderr)
+                else:
+                    results[dimension] = outcome[dimension]
         for dimension, result in results.items():
             print(f"{dimension}: {', '.join(result)}")
         return 1 if failed else 2 if review_needed else 0

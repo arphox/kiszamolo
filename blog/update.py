@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "blog/content-mirror/automation"))
 
 import sync
+import catalog
 from blog.enrichment.automation import classify
 
 
@@ -31,34 +32,43 @@ def confirm_reclassification(count):
 
 def run_update(root=ROOT, *, progress=print, confirm=None):
     root = Path(root).resolve()
-    source_root = root / ".local-cache/blog/content-mirror"
-    articles_root = root / "blog/content-mirror/articles"
     progress("Cikkgyűjtemény frissítése…")
-    sync_report = sync.run_sync(source_root, articles_root=articles_root, progress=progress)
+    sync_report = sync.run_sync(root, progress=progress)
+    for error in sync_report.get("errors", []):
+        progress(f"Letöltési hiba · {error['record']}: {error['error']}")
 
-    # Hold both locks while preparing input, calling the model, and saving progress.
-    with sync.exclusive_run(source_root), sync.exclusive_run(articles_root):
-        state = sync.load_state(source_root)
+    with catalog.exclusive_run(root):
+        source_versions = catalog.load_index(root)
+        processing = classify.processing_store.load_processing(root)
         vocabulary = classify.load_json(root / "blog/enrichment/topics.json")
         allowed_topics = {topic["id"] for topic in vocabulary["topics"]}
         assignments = classify.validate_assignments(
             classify.load_json(root / "blog/enrichment/assignments.json"), allowed_topics)
-        posts = sorted((item for item in state["records"].values() if item["type"] == "post"),
-                       key=lambda item: int(item["id"]))
+        posts = sorted(article_id for article_id in sync_report["post_ids"]
+                       if str(article_id) in source_versions)
+
+        def pending(article_id):
+            return classify.processing_store.pending_dimensions(
+                article_id, source_versions[str(article_id)],
+                assignments.get(str(article_id), {}), processing)
+
         scheduled = {d: {"new": set(), "changed": set()} for d in DIMENSIONS}
-        for item in posts:
-            aid = str(item["id"])
+        for article_id in posts:
+            aid = str(article_id)
             assignment = assignments.get(aid, {})
-            for dimension in classify.pending_dimensions(item, assignment):
+            work = pending(article_id)
+            if any(dimension in assignment for dimension in work):
+                try:
+                    classify.reconcile_source(article_id, root=root, assignments=assignments, processing=processing)
+                except classify.CLASSIFICATION_ERRORS:
+                    pass  # Per-article processing reports the failure without blocking other articles.
+                else:
+                    work = pending(article_id)
+            for dimension in work:
                 kind = "changed" if dimension in assignment else "new"
                 scheduled[dimension][kind].add(aid)
-                item[classify.PENDING_FLAGS[dimension]] = True
-        # Persist retry state before any work so interruption cannot lose missing fields.
-        if any(scheduled[d]["new"] for d in DIMENSIONS):
-            sync.atomic_write(source_root / "state.json", sync.json_bytes(state))
 
-        report = dict(started_at=sync.utc_now().isoformat(),
-                      new_candidates=len(scheduled["topics"]["new"]),
+        report = dict(new_candidates=len(scheduled["topics"]["new"]),
                       changed_candidates=len(scheduled["topics"]["changed"]),
                       classified=[], reclassified=[], review_required=[], errors=[],
                       reclassification_approved=None,
@@ -68,64 +78,53 @@ def run_update(root=ROOT, *, progress=print, confirm=None):
                       content_review_required=[], content_errors=[],
                       incomplete_downloads=sync_report["incomplete_records"])
 
-        def save_report():
-            report["pending_article_ids"] = [item["id"] for item in posts
-                if item.get("classification_pending") or "topics" not in assignments.get(str(item["id"]), {})]
-            report["content_pending_article_ids"] = [item["id"] for item in posts
-                if item.get("content_classification_pending") or "content_nature" not in assignments.get(str(item["id"]), {})]
-            report["updated_at"] = sync.utc_now().isoformat()
-            sync.atomic_write(articles_root / "update-report.json", sync.json_bytes(report))
+        def refresh_report():
+            report["pending_article_ids"] = [article_id for article_id in posts if "topics" in pending(article_id)]
+            report["content_pending_article_ids"] = [article_id for article_id in posts if "content_nature" in pending(article_id)]
 
-        def process_article(item, dimensions, *, reclassify):
+        def process_article(article_id, dimensions, *, reclassify):
             if not dimensions:
                 return
-            aid = str(item["id"])
-            title = item["title"]
+            aid = str(article_id)
             phase = "újrabesorolás" if reclassify else "besorolás"
-            progress(f"Besorolás ({', '.join(dimensions)}), {phase}: {aid} · {title}")
-            for dimension, outcome in classify.process_article(aid, root=root, state=state,
-                    assignments=assignments, dimensions=dimensions, force=reclassify):
+            progress(f"Besorolás ({', '.join(dimensions)}), {phase}: {aid}")
+            for dimension, outcome in classify.process_article(aid, root=root, processing=processing,
+                    assignments=assignments, dimensions=dimensions):
                 prefix = REPORT_PREFIXES[dimension]
                 if isinstance(outcome, Exception):
                     issue_kind = "review_required" if isinstance(outcome, classify.ReviewRequired) else "errors"
-                    report[prefix + issue_kind].append(dict(id=item["id"], title=title, reason=str(outcome)))
-                    progress(f"Teendő · {aid} · {title}: {outcome}")
-                else:
-                    report[prefix + ("reclassified" if reclassify else "classified")].append(item["id"])
-                save_report()
+                    report[prefix + issue_kind].append(dict(id=article_id, reason=str(outcome)))
+                    progress(f"Teendő · {aid}: {outcome}")
+                elif outcome.get("saved"):
+                    report[prefix + ("reclassified" if reclassify else "classified")].append(article_id)
+                refresh_report()
 
-        save_report()
-        try:
-            # Complete all missing dimensions before asking about bulk reclassification.
-            for item in posts:
-                aid = str(item["id"])
-                work = [d for d in DIMENSIONS if aid in scheduled[d]["new"]]
-                process_article(item, work, reclassify=False)
+        refresh_report()
+        # Complete missing dimensions before asking about bulk reclassification.
+        for article_id in posts:
+            aid = str(article_id)
+            work = [d for d in DIMENSIONS if aid in scheduled[d]["new"]]
+            process_article(article_id, work, reclassify=False)
 
-            changed_ids = set().union(*(scheduled[d]["changed"] for d in DIMENSIONS))
-            if changed_ids:
-                approved = len(changed_ids) <= 5 or (confirm or confirm_reclassification)(len(changed_ids))
-                report["reclassification_approved"] = approved
-                save_report()
-                if approved:
-                    for item in posts:
-                        aid = str(item["id"])
-                        work = [d for d in DIMENSIONS if aid in scheduled[d]["changed"]]
-                        process_article(item, work, reclassify=True)
-                else:
-                    progress(f"Újbóli besorolás elhalasztva: {len(changed_ids)} cikk függőben maradt.")
-        finally:
-            sync.publish_article_index(articles_root, state)
+        changed_ids = set().union(*(scheduled[d]["changed"] for d in DIMENSIONS))
+        if changed_ids:
+            approved = len(changed_ids) <= 5 or (confirm or confirm_reclassification)(len(changed_ids))
+            report["reclassification_approved"] = approved
+            if approved:
+                for article_id in posts:
+                    aid = str(article_id)
+                    work = [d for d in DIMENSIONS if aid in scheduled[d]["changed"]]
+                    process_article(article_id, work, reclassify=True)
+            else:
+                progress(f"Újbóli besorolás elhalasztva: {len(changed_ids)} cikk függőben maradt.")
 
-        report["finished_at"] = sync.utc_now().isoformat()
-        save_report()
+        refresh_report()
         progress(f"Kész: {len(report['classified'])} besorolva, {len(report['reclassified'])} újra besorolva; "
                  f"{len(report['pending_article_ids'])} cikk függőben, "
                  f"{report['incomplete_downloads']} hiányos letöltés.")
         progress(f"Tartalmi besorolás: {len(report['content_classified'])} új, "
                  f"{len(report['content_reclassified'])} frissített, "
                  f"{len(report['content_pending_article_ids'])} függőben.")
-        progress(f"Részletek: {articles_root / 'update-report.json'}")
         return report
 
 

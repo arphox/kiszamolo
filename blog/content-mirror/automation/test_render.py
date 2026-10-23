@@ -189,6 +189,7 @@ class RenderTests(unittest.TestCase):
             "date": "2026-01-02T03:04:05",
             "date_gmt": "2026-01-02T02:04:05",
             "modified": "2026-01-03T03:04:05",
+            "modified_gmt": "2026-01-03T02:04:05",
             "category_names": ["Megtakarítás", "Kezdőknek"],
             "tag_names": ["adózás", "tervezés"],
         }
@@ -207,6 +208,7 @@ class RenderTests(unittest.TestCase):
         markdown = make_markdown(record, body)
         self.assertIn('title: "Pénzügy egyszerűen"', markdown)
         self.assertIn('modified_at: "2026-01-03T03:04:05"', markdown)
+        self.assertIn('modified_at_gmt: "2026-01-03T02:04:05"', markdown)
         self.assertNotIn("category_names:", markdown)
         self.assertNotIn("tag_names:", markdown)
         self.assertIn("Első bekezdés", markdown)
