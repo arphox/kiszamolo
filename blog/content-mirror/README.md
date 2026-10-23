@@ -12,7 +12,7 @@ A [telepítés](../README.md#telepítés-és-frissítés) után csak a letöltő
 
 Alapértelmezés szerint az olvasható fájlok a `blog/content-mirror/articles/`, a nyers források és a folytatáshoz szükséges állapot a `.local-cache/blog/content-mirror/` mappába kerülnek. A teljes frissítés besorolja a cikkeket is; ennek menetét a [besorolás leírása](../enrichment/README.md) ismerteti.
 
-Más célmappákat a `--output PATH` és `--source-output PATH` kapcsolóval lehet megadni. A két mappa nem fedheti egymást. A párhuzamos letöltések száma `--workers 1..8` kapcsolóval állítható; alapértéke 4. A média méretkorlát nélkül töltődik le; a `--max-asset-mib N` kapcsolóval korlátozható. A korlátnál nagyobb fájl letöltési hibaként jelenik meg.
+Más célmappákat a `--output PATH` és `--source-output PATH` kapcsolóval lehet megadni. A két mappa nem fedheti egymást. A párhuzamos letöltések száma `--workers 1..8` kapcsolóval állítható; alapértéke 4. A média méretkorlát nélkül töltődik le; a `--max-asset-mib N` kapcsolóval korlátozható. A korlátnál nagyobb fájl `unavailable` állapotot kap: a Markdown az eredeti URL-re hivatkozik, a letöltő pedig nem próbálja újra automatikusan.
 
 Mintafuttatáshoz használd a `--sample ID ID ... --output KÜLÖN_CIKK_KÖNYVTÁR --source-output KÜLÖN_FORRÁS_KÖNYVTÁR` alakot. Ez teljes távoli leltárt kér, de csak a megadott cikkeket és oldalakat dolgozza fel. Nem jelöl távoli eltűnést, és nem lépteti a szinkronizálás időbélyegét.
 
