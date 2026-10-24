@@ -48,7 +48,7 @@ Kizárjuk:
 
 A rövidség, elavulás, hírjelleg, nem pénzügyi téma, külső eredet vagy hiányzó témakör önmagában nem kizárási ok.
 
-A szöveg alapján egyértelműen adminisztratív mellékleteket, például taglistát vagy utalási bizonylatot nem szükséges külön megnyitni, ha nincs utalás érdemi tudásanyagra. A biztosítási feltételeket vagy ügyintézést érdemben ismertető rész viszont megtartást indokolhat.
+A szöveg alapján egyértelműen adminisztratív mellékleteket, például taglistát vagy utalási bizonylatot nem szükséges külön megnyitni, ha nincs utalás érdemi tudásanyagra. A biztosítási feltételeket vagy általánosan hasznosítható biztosítási ismereteket érdemben ismertető rész viszont megtartást indokolhat. A Kiszámoló saját biztosításának jelentkezési és befizetési útmutatói önmagukban adminisztratív tartalomnak számítanak.
 
 ## Az index újraépítése
 
