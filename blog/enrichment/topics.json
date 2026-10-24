@@ -63,7 +63,7 @@
     {
       "id": "business",
       "name": "Vállalkozás",
-      "rule": "Vállalkozás indításának, működtetésének, pénzügyeinek vagy adóterheinek érdemi tárgyalása. Egy cég neve vagy egy szolgáltató vállalati volta nem elég.",
+      "rule": "Vállalkozás indításának, működtetésének, pénzügyeinek vagy adóterheinek érdemi tárgyalása. Ide tartozik a vállalatok termelésének és működési eredményeinek érdemi bemutatása és összehasonlítása is. Egy cég neve vagy egy szolgáltató vállalati volta nem elég.",
       "synonyms": []
     },
     {
@@ -1458,6 +1458,36 @@
         "Hatósági ár",
         "Árrésstop",
         "Árréskorlátozás"
+      ]
+    },
+    {
+      "id": "software-use",
+      "name": "Szoftverek használata",
+      "rule": "Felhasználói szoftverek és alkalmazások kiválasztásának, telepítésének, beállításának, futtatásának vagy gyakorlati használatának érdemi tárgyalása, beleértve a különböző eszközök és operációs rendszerek közötti kompatibilitást. Egy alkalmazás puszta említése vagy egy weboldalra mutató hivatkozás nem elég; weboldal fejlesztése önmagában a Weboldalkészítés témához tartozik.",
+      "synonyms": [
+        "szoftverhasználat",
+        "alkalmazások használata",
+        "programok telepítése"
+      ]
+    },
+    {
+      "id": "internet-use",
+      "name": "Internethasználati szokások",
+      "rule": "Az internethasználat és az online tevékenységek fajtáinak, gyakoriságának, volumenének, illetve időbeli vagy csoportok közötti különbségeinek érdemi bemutatása vagy értelmezése. Egy webes szolgáltatás puszta említése nem elég; kizárólag az internet-előfizetés feltételei az Internet- és TV-előfizetés témához tartoznak.",
+      "synonyms": [
+        "internetezési szokások",
+        "online aktivitás",
+        "internethasználat"
+      ]
+    },
+    {
+      "id": "social-prejudice",
+      "name": "Társadalmi előítéletek",
+      "rule": "Társadalmi csoportokkal szembeni előítéletek, hátrányos megkülönböztetés vagy társadalmi elfogadás érdemi bemutatása, összehasonlítása, okainak vagy következményeinek tárgyalása. Ide tartozik például a rasszizmus és az idegenellenesség. Egy társadalmi csoport vagy a bevándorlás puszta említése nem elég; általános pénzügyi döntési torzítás önmagában nem ilyen téma.",
+      "synonyms": [
+        "előítéletesség",
+        "társadalmi elfogadás",
+        "diszkrimináció"
       ]
     }
   ]
