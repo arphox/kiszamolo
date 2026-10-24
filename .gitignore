@@ -4,9 +4,3 @@
 # Generated archive; keep the hand-maintained exclusions tracked.
 /blog/content-mirror/articles/*
 !/blog/content-mirror/articles/exclusions.json
-
-# Python bytecode and local virtual environments.
-__pycache__/
-*.py[cod]
-.venv/
-venv/
