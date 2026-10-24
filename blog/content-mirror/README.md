@@ -39,6 +39,8 @@ Az [articles/exclusions.json](articles/exclusions.json) tartalmazza a kézzel ki
 
 Azt hagyjuk ki, amiben nincs a későbbi tudásbázisban hasznosítható érdemi információ. A szöveg mellett a hozzáférhető képek, beágyazott videók és mellékletek is számítanak. Egy érdemi rész elegendő a megtartáshoz, reklám vagy közlemény mellett is.
 
+A videók és mellékletek teljes feldolgozása nem feltétele a beválogatásnak. Ha a kísérőszöveg alapján hasznos tudásanyag várható bennük, a cikket megtartjuk, és a tartalmat később dolgozzuk fel.
+
 Kizárjuk:
 
 - a pusztán navigációs, cikkjegyzék-, adminisztratív és tesztoldalakat;
