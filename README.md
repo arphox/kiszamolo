@@ -4,6 +4,8 @@ Közösségi tudásbázist építünk a [Kiszámoló blog](https://kiszamolo.hu/
 
 A blog cikkgyűjteménye és feldolgozó eszközei a [blog/](blog/README.md) alatt találhatók. A közösségi tudásanyag külön rész lesz; még nem létezik.
 
+A [CONTRIBUTING.md](CONTRIBUTING.md) leírja, hogyan segíthetsz a projektben.
+
 ## Licenc
 
 A projekt saját anyagai az [MIT-licenc](LICENSE) alatt használhatók, ha nincs másként jelezve.
