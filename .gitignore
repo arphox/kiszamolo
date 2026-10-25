@@ -1,6 +1,2 @@
 # Local downloads and processing cache.
 /.local-cache/
-
-# Generated archive; keep the hand-maintained exclusions tracked.
-/blog/content-mirror/articles/*
-!/blog/content-mirror/articles/exclusions.json

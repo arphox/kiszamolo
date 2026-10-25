@@ -14,8 +14,6 @@ A cikkek Markdown-változatát elsősorban sima szövegként és AI-eszközökke
 - Az asseteket nem tároljuk helyben vagy Gitben: a képek és mellékletek az eredeti webes URL-jükön szerepelnek. Elérésük internetet és a forrás elérhetőségét igényli.
 - A közösségi tudásanyag külön, még nem létező részbe kerül majd; nem a forráscikkeket módosítja.
 
-Ezek az átállás célját rögzítik. A cikkgyűjtemény Gitbe vétele hátralévő feladat: addig várunk vele, amíg elég magabiztosak vagyunk a tartalmában, és nem várható nagyobb módosítás.
-
 ## Feladatok és adatok
 
 A `content-mirror/` tölti le és tárolja a blog tartalmát. Az `enrichment/` a mentett cikkekhez saját metaadatokat ad. Mindkettőnek saját automatizációja és tesztjei vannak; a `blog/update.py` együtt indítja őket.
@@ -69,10 +67,9 @@ A csak letöltéshez és az index újraépítéséhez szükséges parancsokat a 
 ## Mit érdemes tudni a mentett tartalomról?
 
 - Az olvasható Markdown-fájlok az elsődleges helyi példányok; közvetlenül nem szerkesztjük őket. A frissítő a blog változásaiból készíti az új változatukat, külön nyersforrás-archívum nélkül.
-- A letöltő a jelenleg elérhető tartalmat követi; a cikkek korábbi változatairól nem készít történetet. Ha egy cikk eltűnik a blogról, a már mentett helyi példánya megmarad.
+- A letöltő a jelenleg elérhető tartalmat követi; a blog korábbi változatait nem kéri le. Ha egy cikk eltűnik a blogról, a már mentett helyi példánya megmarad.
 - A hozzászólásokat nem gyűjtjük.
 - A képek, mellékletek és a külső videólejátszók tartalmai webes hivatkozásként maradnak meg. A gyűjtemény ezért nem minden részében használható internet nélkül; a webes kalkulátorok működését sem másolja le.
-- A `blog/content-mirror/articles/` mappában a cikkek és a frissítési index egyelőre ki vannak zárva a Gitből; a cikkek tartalmának stabilizálódására várunk. Addig ezt a mappát külön is menteni kell. A kézzel karbantartott kizárási lista és a besorolási nyilvántartás a repó része.
 
 ## Tesztek
 

@@ -66,6 +66,8 @@ Ez hálózati kérés és cikkszöveg-újragenerálás nélkül működik. Norm�
 
 A Markdown a blog tartalmát követi; közvetlenül nem szerkesztjük. A fájlnév a létrehozáskori címet, dátumot és a WordPress-ID-t tartalmazza, és később változatlan marad. A forrás aktuális címe és dátuma a front matterben szerepel, így a helyi hivatkozások a forrás szerkesztésekor is stabilak.
 
+Az aláhúzást `<u>…</u>` HTML-elemmel őrizzük meg, mert a Markdownnak nincs saját aláhúzásjele.
+
 A képek, dokumentumok, hang- és videófájlok az eredeti, abszolút webes URL-jükön szerepelnek. A letöltő nem tölti le és nem ellenőrzi ezeket; elérésük internetet és a forrás elérhetőségét igényli. Feldolgozáskor az ismert helyi cikkekre mutató hivatkozásokat helyi Markdown-hivatkozássá alakítjuk. Egy új cikk megjelenése miatt a korábbi cikkeket nem olvassuk újra; azok meglévő webes hivatkozásai megmaradhatnak. Kizáráskor az érintett helyi hivatkozásokat a forrás webes címére javítjuk; ez a ritkább művelet a meglévő cikkek átnézését igényli.
 
 ## Besorolási teendők

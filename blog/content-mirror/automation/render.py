@@ -24,6 +24,7 @@ _ASSET_EXTENSIONS = frozenset(
     ".avif .bmp .csv .doc .docx .gif .jpeg .jpg .m4a .m4v .mp3 .mp4 .odt .ogg .pdf "
     ".mkv .mov .png .ppt .pptx .rar .rtf .svg .tif .tiff .txt .wav .webm .webp .xls .xlsx .zip .7z".split()
 )
+_SUBSCRIPT_DIGITS = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 _RESOURCE_ATTRIBUTES = {
     "img": ("src", "data-src"),
     "source": ("src", "data-src"),
@@ -229,6 +230,11 @@ def plain_title(rendered: Any) -> str:
     if isinstance(rendered, dict):
         rendered = rendered.get("rendered", "")
     soup = BeautifulSoup(str(rendered or ""), "html.parser")
+    for subscript in soup.find_all("sub"):
+        value = subscript.get_text()
+        if not subscript.find(True) and re.fullmatch(r"\s*[0-9]+\s*", value):
+            subscript.replace_with(value.translate(_SUBSCRIPT_DIGITS))
+    soup.smooth()
     return soup.get_text(" ", strip=True)
 
 
@@ -282,6 +288,24 @@ def _neighbor_character(node, before: bool) -> str:
     return "\n"
 
 
+def _text_decorations(tag: Tag) -> set[str]:
+    values = re.findall(r"(?:^|;)\s*text-decoration(?:-line)?\s*:\s*([^;]*)",
+                        str(tag.get("style", "")), re.I)
+    important = [value for value in values if re.search(r"!\s*important\s*$", value, re.I)]
+    value = (important or values or [""])[-1]
+    value = re.sub(r"!\s*important\s*$", "", value, flags=re.I)
+    return set(value.lower().split())
+
+
+def _is_centered_image(tag) -> bool:
+    if not isinstance(tag, Tag):
+        return False
+    if tag.name == "img":
+        return "aligncenter" in tag.get("class", []) and tag.find_parent("a") is None
+    return (tag.name == "a" and not tag.get_text(strip=True)
+            and tag.find("img", class_="aligncenter") is not None)
+
+
 class _MirrorMarkdownConverter(MarkdownConverter):
     """Markdown converter that keeps structures Markdown cannot represent."""
 
@@ -331,12 +355,18 @@ class _MirrorMarkdownConverter(MarkdownConverter):
             node.parent = original.parent
             node.previous_sibling = original.previous_sibling
             node.next_sibling = original.next_sibling
-            # Spans and presentation attributes do not survive Markdown conversion.
-            # Remove only immediate transparent wrappers on this converter copy.
+            # Preserve CSS text decorations before removing transparent wrappers.
+            # Changes stay on this converter copy so retained HTML is untouched.
             while spans := [tag for tag in node.children if isinstance(tag, Tag) and
                             tag.name == "span" and not tag.has_attr("id") and not tag.has_attr("name")]:
                 for tag in spans:
-                    tag.unwrap()
+                    decorations = _text_decorations(tag)
+                    if "underline" in decorations and tag.get_text(strip=True):
+                        tag.name = "u"
+                    elif "line-through" in decorations:
+                        tag.name = "del"
+                    else:
+                        tag.unwrap()
             for tag in list(node.children):
                 sibling = tag.next_sibling
                 while mergeable(tag, sibling):
@@ -370,8 +400,39 @@ class _MirrorMarkdownConverter(MarkdownConverter):
 
     convert_s = convert_del
 
+    def convert_span(self, el: Tag, text: str, parent_tags: set[str]) -> str:
+        decorations = _text_decorations(el)
+        if "underline" in decorations:
+            return self.convert_u(el, text, parent_tags)
+        return self.convert_del(el, text, parent_tags) if "line-through" in decorations else text
+
+    def convert_u(self, el: Tag, text: str, parent_tags: set[str]) -> str:
+        if "_noformat" in parent_tags:
+            return text
+        decorations = _text_decorations(el)
+        if (el.find(["p", "div", "ul", "ol", "table", "pre", "blockquote", "h1", "h2", "h3"])
+                or re.search(r"\n[ \t]*\n", text)
+                or (el.name == "u" and decorations and "underline" not in decorations)):
+            retained = copy.deepcopy(el)
+            retained.name = "u"
+            return str(retained)
+        if "line-through" in decorations:
+            text = self.convert_del(el, text, parent_tags)
+
+        def underline(node, value, tags):
+            marker = (re.match(r"(?:#{1,6}|[-+])[ \t]+", value)
+                      if _neighbor_character(node, True) == "\n" else None)
+            prefix = marker[0] if marker else ""
+            return prefix + f"<u>{value[len(prefix):]}</u>"
+
+        return self._spaced_inline(underline, el, text, parent_tags)
+
     def _emphasis(self, el: Tag, text: str, parent_tags: set[str], marker: str, tag: str) -> str:
         if "_noformat" in parent_tags or not text.strip():
+            return text
+        if tag == "del" and ({"del", "s"} & parent_tags or
+                             any(parent.name in {"span", "u"} and
+                                 "line-through" in _text_decorations(parent) for parent in el.parents)):
             return text
         # Emphasis cannot span Markdown paragraphs. Preserve each paragraph's
         # boundary whitespace, including hard breaks, outside its delimiters.
@@ -401,10 +462,22 @@ class _MirrorMarkdownConverter(MarkdownConverter):
 
     def process_text(self, el, parent_tags=None):
         text = super().process_text(el, parent_tags)
-        if "_noformat" not in (parent_tags or set()) and _neighbor_character(el, True) == "\n":
-            # Escape source numbers before generated list markers exist. This
+        after_centered_image = False
+        if not {"_noformat", "_inline"} & (parent_tags or set()):
+            if _is_centered_image(el.previous_sibling):
+                after_centered_image = True
+                text = text.lstrip(" \t\r\n")
+                # Image separation creates a block start; source markers stay literal.
+                text = re.sub(r"^([ \t]{0,3})(#{1,6}(?=[ \t]|$)|>|[-+](?=[ \t]|$)|[-~](?=[-~]{2})|=(?=={2}))",
+                              r"\1\\\2", text)
+            if _is_centered_image(el.next_sibling):
+                text = text.rstrip(" \t\r\n")
+        if "_noformat" not in (parent_tags or set()) and (
+                after_centered_image or _neighbor_character(el, True) == "\n"):
+            # Escape source list markers before generated list markers exist. This
             # also covers divs and transparent inline wrappers at block starts.
             text = re.sub(r"^([ \t]*\d{1,9})([.)])(?=[ \t])", r"\1\\\2", text)
+            text = re.sub(r"(?m)^([ \t]{0,3})([-+])(?=[ \t])", r"\1\\\2", text)
         return text
 
     def convert_p(self, el: Tag, text: str, parent_tags: set[str]) -> str:
@@ -430,6 +503,18 @@ class _MirrorMarkdownConverter(MarkdownConverter):
                     for cell in el.find_all(["td", "th"]))):
             return f"\n\n{str(el)}\n\n"
         return super().convert_table(el, text, parent_tags)
+
+    def convert_blockquote(self, el: Tag, text: str, parent_tags: set[str]) -> str:
+        quoted = super().convert_blockquote(el, text, parent_tags)
+        cite = str(el.get("cite", ""))
+        if "_noformat" in parent_tags or "tiktok-embed" not in el.get("class", []):
+            return quoted
+        target = _absolute_http_reference(cite, cite) if cite else None
+        if not target or any(link.get("href") == target and
+                             (link.get_text(strip=True) or link.find("img"))
+                             for link in el.find_all("a", href=True)):
+            return quoted
+        return self._media_links(el, quoted, [target], "TikTok-videó")
 
     def convert_iframe(self, el: Tag, text: str, parent_tags: set[str]) -> str:
         src = str(el.get("src", ""))
@@ -511,7 +596,11 @@ class _MirrorMarkdownConverter(MarkdownConverter):
         return _positioned_text(text, "^")
 
     def convert_sub(self, el: Tag, text: str, parent_tags: set[str]) -> str:
-        return text if "_noformat" in parent_tags else _positioned_text(text, r"\_")
+        if "_noformat" in parent_tags:
+            return text
+        if not el.find(True) and re.fullmatch(r"\s*[0-9]+\s*", text):
+            return text.translate(_SUBSCRIPT_DIGITS)
+        return _positioned_text(text, r"\_")
 
     def convert_dt(self, el: Tag, text: str, parent_tags: set[str]) -> str:
         return f"\n\n{text.strip()}\n\n" if el.find("table") else super().convert_dt(el, text, parent_tags)
@@ -524,7 +613,32 @@ class _MirrorMarkdownConverter(MarkdownConverter):
         image.parent = el.parent
         if image.has_attr("src"):
             image["src"] = _markdown_destination(str(image["src"]))
-        return super().convert_img(image, text, parent_tags)
+        converted = super().convert_img(image, text, parent_tags)
+        if not {"_noformat", "_inline"} & parent_tags and _is_centered_image(el):
+            return self._separate_image_text(el, converted)
+        return converted
+
+    def _separate_image_text(self, el: Tag, text: str) -> str:
+        def separator(before: bool) -> str:
+            node = el
+            while node is not None:
+                sibling = node.previous_sibling if before else node.next_sibling
+                if sibling is not None:
+                    if isinstance(sibling, Tag):
+                        if sibling.name == "br" or should_remove_whitespace_outside(sibling):
+                            return ""
+                        if sibling.get_text(strip=True) or sibling.name == "img" or sibling.find("img"):
+                            return "\n\n"
+                    elif not isinstance(sibling, Comment) and str(sibling).strip():
+                        return "\n\n"
+                    node = sibling
+                else:
+                    node = node.parent
+                    if node is None or should_remove_whitespace_outside(node):
+                        return ""
+            return ""
+
+        return separator(True) + text.strip(" \t\r\n") + separator(False)
 
     def convert_a(self, el: Tag, text: str, parent_tags: set[str]) -> str:
         if el.has_attr("id") and not text.strip() and not el.has_attr("href"):
@@ -532,7 +646,10 @@ class _MirrorMarkdownConverter(MarkdownConverter):
         link = copy.copy(el)
         if link.has_attr("href"):
             link["href"] = _markdown_destination(str(link["href"]))
-        return self._spaced_inline(super().convert_a, link, text, parent_tags)
+        converted = self._spaced_inline(super().convert_a, link, text, parent_tags)
+        if not {"_noformat", "_inline"} & parent_tags and _is_centered_image(el):
+            return self._separate_image_text(el, converted)
+        return converted
 
 
 def _markdown_destination(value: str) -> str:

@@ -283,7 +283,30 @@ class RenderTests(unittest.TestCase):
 
     def test_subscripts_remain_distinct_from_baseline_text(self):
         markdown = make_markdown({"title": "Test"}, '<p>CO<sub>2</sub> és x<sub>n+1</sub></p>')
-        self.assertIn(r"CO\_(2) és x\_(n+1)", markdown)
+        self.assertIn(r"CO₂ és x\_(n+1)", markdown)
+
+    def test_numeric_subscripts_preserve_digits_and_boundary_whitespace(self):
+        source = ('<p>O<sub>3</sub>, x<sub>0123456789</sub>, '
+                  'a<sub> 12\u00a0</sub>b, x<sub>-2</sub></p>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn('O₃, x₀₁₂₃₄₅₆₇₈₉, a ₁₂\u00a0b, x\\_(-2)', markdown)
+
+    def test_numeric_subscripts_in_titles_stay_attached_to_their_base(self):
+        title = 'Napi ábra: CO<sub>2</sub> és O<sub>12</sub>'
+        self.assertEqual(plain_title(title), 'Napi ábra: CO₂ és O₁₂')
+        markdown = make_markdown({"title": {"rendered": title}}, '<p>Body</p>')
+        self.assertIn('title: "Napi ábra: CO₂ és O₁₂"', markdown)
+        self.assertIn('# Napi ábra: CO₂ és O₁₂', markdown)
+
+    def test_numeric_subscripts_leave_code_links_and_retained_html_unchanged(self):
+        source = ('<pre>CO<sub>2</sub></pre>'
+                  '<p>x<sub><a href="https://example.test/2">2</a></sub></p>'
+                  '<table><tr><td><ul><li>CO<sub>2</sub></li></ul></td></tr></table>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn('```\nCO2\n```', markdown)
+        self.assertIn(r'x\_([2](https://example.test/2))', markdown)
+        self.assertEqual(str(BeautifulSoup(markdown, "html.parser").table),
+                         str(BeautifulSoup(source, "html.parser").table))
 
     def test_markdown_encodes_destinations_without_double_encoding(self):
         source = ('<a href="mailto:person@example.test?subject=Jelentkezés tanácsadásra">Levél</a>'
@@ -315,6 +338,94 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn('\ufeff', markdown)
         for noise in ('<iframe', 'mce_SELRES', 'bookmark', 'width='):
             self.assertNotIn(noise, markdown)
+
+    def test_centered_images_separate_surrounding_text_without_splitting_links(self):
+        for image in ('<img class="aligncenter" src="image.jpg" alt="Chart">',
+                      '<a href="full.jpg"><img class="aligncenter" src="image.jpg" alt="Chart"></a>'):
+            for whitespace in ("", " ", "\n"):
+                with self.subTest(image=image, whitespace=whitespace):
+                    source = f'<p>Before{whitespace}{image}{whitespace}After <strong>image</strong>.</p>'
+                    rendered = rendered_body(source)
+                    paragraphs = rendered.find_all("p")
+                    self.assertEqual(len(paragraphs), 3)
+                    self.assertEqual(paragraphs[0].get_text().strip(), "Before")
+                    self.assertIsNotNone(paragraphs[1].img)
+                    self.assertEqual(paragraphs[2].get_text().strip(), "After image.")
+                    if '<a ' in image:
+                        self.assertEqual(paragraphs[1].a["href"], "full.jpg")
+                        self.assertIsNotNone(paragraphs[1].a.img)
+                    markdown = make_markdown({"title": "Test"}, source)
+                    self.assertFalse(any(line.endswith((" ", "\t")) for line in markdown.splitlines()))
+
+    def test_centered_images_do_not_add_empty_paragraphs_or_change_inline_images(self):
+        source = ('<p>Before</p><p><a href="full.jpg"><img class="aligncenter" '
+                  'src="image.jpg" alt="Chart"></a></p><p>After</p>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertTrue(markdown.endswith("Before\n\n[![Chart](image.jpg)](full.jpg)\n\nAfter\n"))
+        bare = ('<p>Before</p><a href="full.jpg"><img class="aligncenter" '
+                'src="image.jpg" alt="Chart"></a><p>After</p>')
+        self.assertEqual(make_markdown({"title": "Test"}, bare), markdown)
+        spaced = '<p>\n<img class="aligncenter" src="image.jpg">\n</p>'
+        self.assertTrue(make_markdown({"title": "Test"}, spaced).endswith("![](image.jpg)\n"))
+        broken = '<p><img class="aligncenter" src="image.jpg"><br>After</p>'
+        self.assertTrue(make_markdown({"title": "Test"}, broken).endswith("![](image.jpg)  \nAfter\n"))
+        inline = make_markdown({"title": "Test"}, '<p>Before<img src="inline.jpg">After</p>')
+        self.assertTrue(inline.endswith("Before![](inline.jpg)After\n"))
+        link_text = '<p><a href="page">label <img class="aligncenter" src="image.jpg"> tail</a></p>'
+        self.assertTrue(make_markdown({"title": "Test"}, link_text).endswith(
+            "[label ![](image.jpg) tail](page)\n"))
+
+    def test_centered_images_preserve_code_and_retained_html(self):
+        source = ('<pre>before<img class="aligncenter" src="image.jpg">after</pre>'
+                  '<table><tr><td><ul><li>before<img class="aligncenter" src="image.jpg">'
+                  'after</li></ul></td></tr></table>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn("```\nbefore![](image.jpg)after\n```", markdown)
+        self.assertEqual(str(BeautifulSoup(markdown, "html.parser").table),
+                         str(BeautifulSoup(source, "html.parser").table))
+        malformed = '<p><pre>a  \n\nb</pre><img class="aligncenter" src="image.jpg"></p>'
+        self.assertIn("```\na  \n\nb\n```", make_markdown({"title": "Test"}, malformed))
+
+    def test_centered_image_boundaries_do_not_activate_literal_markdown(self):
+        for image in ('<img class="aligncenter" src="image.jpg">',
+                      '<a href="full.jpg"><img class="aligncenter" src="image.jpg"></a>'):
+            for literal in ("# After", "- After", "+ After", "> After", "1. After", "~~~", "---", "==="):
+                with self.subTest(image=image, literal=literal):
+                    rendered = rendered_body(f"<p>Before{image}{literal}</p>")
+                    self.assertEqual(rendered.find_all("p")[-1].get_text(), literal)
+                    self.assertIsNone(rendered.find(["h1", "ul", "ol", "blockquote", "pre", "hr"]))
+
+    def test_tiktok_embed_preserves_video_url_and_quoted_caption(self):
+        url = "https://www.tiktok.com/@creator/video/123?lang=hu&source=embed"
+        source = (f'<blockquote class="other tiktok-embed" cite="{url}"><section>'
+                  '<a href="https://www.tiktok.com/@creator">@creator</a> Caption '
+                  '<strong>text</strong></section></blockquote>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn(f"[TikTok-videó]({url})\n\n> ", markdown)
+        self.assertIn('[@creator](https://www.tiktok.com/@creator) Caption **text**', markdown)
+        self.assertEqual(markdown.count(url), 1)
+
+    def test_tiktok_embed_does_not_duplicate_an_existing_video_link(self):
+        url = "https://www.tiktok.com/@creator/video/123"
+        source = (f'<blockquote class="tiktok-embed" cite="{url}">'
+                  f'<a href="{url}" title="Video">Watch</a></blockquote>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertEqual(markdown.count(url), 1)
+        self.assertIn(f'> [Watch]({url} "Video")', markdown)
+
+    def test_tiktok_embed_requires_a_safe_citation_and_stays_literal_in_code(self):
+        for cite in ("", "javascript:alert(1)", "https://[broken/path", "/video/123"):
+            with self.subTest(cite=cite):
+                source = f'<blockquote class="tiktok-embed" cite="{cite}">Caption</blockquote>'
+                markdown = make_markdown({"title": "Test"}, source)
+                self.assertNotIn("TikTok-videó", markdown)
+                self.assertIn("> Caption", markdown)
+        source = ('<pre><blockquote class="tiktok-embed" '
+                  'cite="https://www.tiktok.com/@creator/video/123">code</blockquote></pre>'
+                  '<blockquote cite="https://example.test/source">Ordinary quote</blockquote>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertNotIn("TikTok-videó", markdown)
+        self.assertNotIn("example.test", markdown)
 
     def test_iframe_preserves_title_fallback_and_facebook_destination(self):
         source = ('<iframe src="https://example.test/calculator" title="Hitel [2024]">'
@@ -443,6 +554,126 @@ class RenderTests(unittest.TestCase):
                     markdown = make_markdown({"title": "Test"}, source)
                     self.assertIn(f"a{space}b; a{space}{marker}b{marker}{space}c", markdown)
 
+    def test_inline_css_strikethrough_preserves_whitespace_and_emphasis(self):
+        for style in ("text-decoration: line-through;",
+                      "color: red; TEXT-DECORATION: underline line-through !important;",
+                      "text-decoration-line: line-through;"):
+            with self.subTest(style=style):
+                source = (f'<p>Before\u00a0<span style="{style}">old\u00a0</span>new; '
+                          f'<span style="{style}"><strong>bold</strong></span>; '
+                          f'<span style="{style}"> </span>end</p>')
+                markdown = make_markdown({"title": "Test"}, source)
+                if "underline" in style:
+                    self.assertIn("Before\u00a0<u>~~old~~</u>\u00a0new; <u>~~**bold**~~</u>;  end", markdown)
+                else:
+                    self.assertIn("Before\u00a0~~old~~\u00a0new; ~~**bold**~~;  end", markdown)
+
+    def test_underlining_preserves_inline_formatting_links_and_whitespace(self):
+        for tag in ('u', 'span style="text-decoration: underline;"',
+                    'span name="note" style="text-decoration-line: underline;"'):
+            with self.subTest(tag=tag):
+                source = (f'<p>Before\u00a0<{tag}> <strong>bold</strong> '
+                          '<a href="https://example.test/page">link</a> <code>x_y</code>\u00a0'
+                          f'</{tag.split()[0]}>after</p>')
+                markdown = make_markdown({"title": "Test"}, source)
+                self.assertIn('<u>**bold** [link](https://example.test/page) `x_y`</u>', markdown)
+                rendered = rendered_body(source)
+                self.assertEqual(rendered.p.get_text(), BeautifulSoup(source, "html.parser").p.get_text())
+                self.assertIsNotNone(rendered.u.strong)
+                self.assertEqual(rendered.u.a["href"], "https://example.test/page")
+                self.assertEqual(rendered.u.code.get_text(), 'x_y')
+
+    def test_underlining_honors_overrides_and_combines_with_strikethrough(self):
+        for style, underlined in (
+                ('text-decoration: underline; text-decoration: none', False),
+                ('text-decoration: underline !important; text-decoration: none', True),
+                ('text-decoration: var(--underline)', False)):
+            with self.subTest(style=style):
+                rendered = rendered_body(f'<p><span style="{style}">text</span></p>')
+                self.assertEqual(rendered.u is not None, underlined)
+        source = ('<p><span style="text-decoration: underline line-through;">'
+                  '<span style="text-decoration: underline line-through;">old</span></span></p>')
+        rendered = rendered_body(source)
+        self.assertEqual(rendered.get_text().strip(), 'old')
+        self.assertIsNotNone(rendered.u)
+        self.assertEqual(rendered.find('s').get_text(), 'old')
+
+    def test_underlining_keeps_list_markers_literal_and_heading_markers_outside_markup(self):
+        for tag in ('u', 'span style="text-decoration: underline;"'):
+            with self.subTest(tag=tag):
+                source = f'<p><{tag}>- item</{tag.split()[0]}></p>'
+                rendered = rendered_body(source)
+                self.assertIsNone(rendered.ul)
+                self.assertEqual(rendered.p.u.get_text(), '- item')
+                source = f'<p><{tag}>## Heading</{tag.split()[0]}></p>'
+                rendered = rendered_body(source)
+                self.assertEqual(rendered.h2.u.get_text(), 'Heading')
+
+    def test_underlining_preserves_code_and_unsupported_html(self):
+        source = ('<pre><u>literal</u> <span style="text-decoration: underline;">code</span></pre>'
+                  '<table><tr><td><ul><li><u>original</u></li></ul></td></tr></table>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn('```\nliteral code\n```', markdown)
+        self.assertEqual(str(BeautifulSoup(markdown, "html.parser").table),
+                         str(BeautifulSoup(source, "html.parser").table))
+        for retained in ('<u><ul><li>item</li></ul></u>',
+                         '<u style="text-decoration: none;">plain</u>'):
+            self.assertIn(retained, make_markdown({"title": "Test"}, retained))
+
+    def test_empty_underline_spans_do_not_add_blank_paragraphs(self):
+        source = ('<p>Before</p><p><span style="text-decoration: underline;">'
+                  '<span><span style="text-decoration: none;">\u00a0</span></span>'
+                  '</span></p><p>After</p>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertTrue(markdown.endswith('Before\n\nAfter\n'))
+
+    def test_unconverted_container_styles_do_not_suppress_existing_strikethrough(self):
+        for container in ('p', 'div'):
+            with self.subTest(container=container):
+                source = f'<{container} style="text-decoration: line-through;"><del>old</del></{container}>'
+                markdown = make_markdown({"title": "Test"}, source)
+                self.assertIn('~~old~~', markdown)
+
+    def test_css_strikethrough_merges_with_adjacent_equivalent_tags(self):
+        source = ('<p><del>A</del><span style="text-decoration: line-through;">B</span>'
+                  '<span><span style="text-decoration: line-through;">C</span></span>'
+                  '<s>D</s></p>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn("~~ABCD~~", markdown)
+
+    def test_css_strikethrough_respects_overrides_and_exact_value_tokens(self):
+        for style, struck in (
+                ("text-decoration: line-through; text-decoration: none", False),
+                ("text-decoration: line-through; text-decoration-line: underline", False),
+                ("text-decoration: var(--line-through)", False),
+                ("text-decoration: none; text-decoration-line: line-through", True),
+                ("text-decoration: line-through !important; text-decoration: none", True)):
+            with self.subTest(style=style):
+                markdown = make_markdown({"title": "Test"}, f'<span style="{style}">text</span>')
+                self.assertEqual(markdown.endswith("~~text~~\n"), struck)
+
+    def test_nested_css_strikethrough_does_not_create_a_code_fence(self):
+        for outer in ('span style="text-decoration: line-through"',
+                      'span name="note" style="text-decoration: line-through"', "del", "s"):
+            with self.subTest(outer=outer):
+                source = (f'<p><{outer}><span style="text-decoration: line-through">old</span>'
+                          f'</{outer.split()[0]}></p>')
+                markdown = make_markdown({"title": "Test"}, source)
+                self.assertTrue(markdown.endswith("~~old~~\n"))
+
+    def test_css_strikethrough_keeps_named_spans_and_retained_html(self):
+        source = ('<p><span name="note" style="text-decoration: line-through;">old</span></p>'
+                  '<table><tr><td><ul><li><span style="text-decoration: line-through;">'
+                  'original</span></li></ul></td></tr></table>'
+                  '<pre><span style="text-decoration: line-through;">code</span></pre>'
+                  '<p><span style="color: red;">plain</span></p>')
+        markdown = make_markdown({"title": "Test"}, source)
+        self.assertIn("~~old~~", markdown)
+        self.assertEqual(str(BeautifulSoup(markdown, "html.parser").table),
+                         str(BeautifulSoup(source, "html.parser").table))
+        self.assertIn("```\ncode\n```", markdown)
+        self.assertTrue(markdown.endswith("plain\n"))
+
     def test_link_boundaries_preserve_spaces_and_line_breaks(self):
         source = ('<p>az<a href="a">&nbsp;<strong>Akadémiára</strong></a>; '
                   'a<a href="b">&nbsp;</a>b; '
@@ -461,6 +692,33 @@ class RenderTests(unittest.TestCase):
             self.assertIn(literal, markdown)
         self.assertIn("4. Valódi lista\n5. Folytatás", markdown)
         self.assertIn("```\n20. Kód\n```", markdown)
+
+    def test_source_bullet_markers_stay_literal_across_breaks_and_inline_wrappers(self):
+        source = ('<p>-<strong>First</strong><br>\n- <strong>Hotel</strong><br>'
+                  '<span>+ <u>Other</u></span></p>'
+                  '<div><span>- Wrapped</span><br><u>+ Underlined</u></div>')
+        rendered = rendered_body(source)
+        self.assertIsNone(rendered.find(['ul', 'ol']))
+        self.assertEqual(rendered.p.get_text(), '-First\n- Hotel\n+ Other')
+        self.assertEqual([tag.get_text() for tag in rendered.find_all('strong')],
+                         ['First', 'Hotel'])
+        self.assertEqual([tag.get_text() for tag in rendered.find_all('u')],
+                         ['Other', '+ Underlined'])
+
+    def test_literal_bullet_markers_preserve_real_lists_code_and_centered_images(self):
+        source = ('<ul><li>First<br>- literal continuation</li>'
+                  '<li><u>Second</u><ol><li>Nested</li></ol></li></ul>'
+                  '<pre>- code\n+ code</pre><p><code>- inline</code></p>'
+                  '<p>Before<img class="aligncenter" src="image.jpg">- after</p>')
+        rendered = rendered_body(source)
+        self.assertEqual(len(rendered.find_all('ul')), 1)
+        self.assertEqual(len(rendered.find_all('ol')), 1)
+        self.assertEqual(rendered.ul.li.get_text(), 'First\n- literal continuation')
+        self.assertEqual(rendered.ol.li.get_text(), 'Nested')
+        self.assertEqual(rendered.u.get_text(), 'Second')
+        self.assertEqual([code.get_text() for code in rendered.find_all('code')],
+                         ['- code\n+ code\n', '- inline'])
+        self.assertEqual(rendered.find_all('p')[-1].get_text(), '- after')
 
     def test_adjacent_equivalent_emphasis_shares_delimiters(self):
         for first, second, marker in (("em", "em", "*"), ("i", "em", "*"),
