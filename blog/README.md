@@ -43,7 +43,7 @@ A frissítő a `content-mirror/articles/wordpress-modified.json` alapján dönti
 
 ## Telepítés és frissítés
 
-Python 3.10 vagy újabb verzió szükséges. Az alábbi PowerShell-parancsokat a projekt gyökérmappájából futtasd.
+Python 3.11 vagy újabb verzió szükséges. Az alábbi PowerShell-parancsokat a projekt gyökérmappájából futtasd.
 
 Első alkalommal hozz létre egy külön Python-környezetet, és telepítsd a szükséges csomagokat:
 
