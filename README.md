@@ -1,8 +1,14 @@
 # Kiszámoló tudásbázis
 
-Nyílt forrású, közösségi tudásbázist építünk a [Kiszámoló blog](https://kiszamolo.hu/) kiegészítéseként.
+Közösségi tudásbázist építünk a [Kiszámoló blog](https://kiszamolo.hu/) kiegészítéseként.
 
 A blog cikkgyűjteménye és feldolgozó eszközei a [blog/](blog/README.md) alatt találhatók. A közösségi tudásanyag külön rész lesz; még nem létezik.
+
+## Licenc
+
+A projekt saját anyagai az [MIT-licenc](LICENSE) alatt használhatók, ha nincs másként jelezve.
+
+Az MIT-licenc nem vonatkozik a kiszamolo.hu blogról származó és másoktól átvett tartalmakra. Ezek jogai az eredeti jogosultaknál maradnak.
 
 ## Fejlesztés és dokumentáció
 
