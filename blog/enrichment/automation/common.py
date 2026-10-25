@@ -1,4 +1,4 @@
-"""Classify one locally downloaded article and update its canonical assignment."""
+"""Shared article preparation, JSON loading, locking, and Codex runner helpers."""
 from contextlib import contextmanager
 import json
 import os
@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from urllib.parse import unquote, urlsplit
+from urllib.parse import urlsplit
 from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parents[3]
 MIRROR_AUTOMATION = ROOT / "blog/content-mirror/automation"
@@ -39,14 +39,6 @@ def load_json(path):
             result[key] = value
         return result
     return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
-def local_path(directory, target, boundary=None):
-    parts = urlsplit(target.strip("<>"))
-    if parts.scheme or parts.netloc:
-        raise ReviewRequired(f"A hivatkozott tartalom nincs helyben: {target}")
-    path = (directory / unquote(parts.path)).resolve()
-    if not path.is_relative_to((boundary or directory).resolve()):
-        raise ClassificationError(f"A helyi útvonal kilép a cikkgyűjteményből: {target}")
-    return path
 def article_row(root, article_id):
     try:
         path = catalog.find_article(root, article_id)

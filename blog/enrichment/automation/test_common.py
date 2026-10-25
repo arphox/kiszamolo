@@ -15,12 +15,6 @@ from blog.enrichment.automation import common
 
 
 class CommonHelpersTests(unittest.TestCase):
-    def test_local_path_rejects_paths_outside_article_collection(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            with self.assertRaisesRegex(common.ClassificationError, "kilép"):
-                common.local_path(root / "blog/content-mirror/articles", "../../outside.md", root / "blog/content-mirror/articles")
-
     def test_load_json_rejects_duplicate_object_keys(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "data.json"

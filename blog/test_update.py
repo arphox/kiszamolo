@@ -394,7 +394,7 @@ class UpdateTests(unittest.TestCase):
         with mock.patch.object(update.classify, "classify_article", self.real_classify_article), \
                 mock.patch.object(update.classify, "prepare_article", self.real_prepare_article), \
                 mock.patch.object(update.classify, "codex_exec", model), \
-                mock.patch.object(update.classify.topic_classifier, "codex_exec", model), \
+                mock.patch.object(update.classify.common, "codex_exec", model), \
                 mock.patch.object(update.classify.media, "compact_model_images", return_value=[]):
             report = update.run_update(self.root, progress=self.output.append, confirm=self.confirm)
 

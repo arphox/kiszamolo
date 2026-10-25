@@ -31,7 +31,7 @@ class UnifiedClassifierTests(unittest.TestCase):
         self.write_article("# Cím\n\nA cikk érdemi szövege.")
 
     def write_article(self, body):
-        classify.topic_classifier.catalog.write_article(self.article, self.row, body)
+        classify.common.catalog.write_article(self.article, self.row, body)
 
     def test_schema_accepts_partial_records(self):
         result = classify.validate_assignments({"articles": {
@@ -70,8 +70,8 @@ class UnifiedClassifierTests(unittest.TestCase):
         self.write_article("# Cím\n\nA cikk szövege.\n\n![ábra](https://example.com/chart.png)")
         with mock.patch.object(classify.media, "fetch_remote_image", side_effect=classify.media.MediaError("offline")) as fetch:
             with classify.prepare_article(10, self.root) as prepared:
-                topics_request = classify._dimension_request(prepared, "topics", self.root)
-                nature_request = classify._dimension_request(prepared, "content_nature", self.root)
+                topics_request = classify._dimension_request(prepared, "topics")
+                nature_request = classify._dimension_request(prepared, "content_nature")
                 self.assertIn("A cikk szövege", topics_request["prompt"])
                 self.assertIn("A cikk szövege", nature_request["prompt"])
                 self.assertIn("https://example.com/chart.png", topics_request["prompt"])
@@ -83,7 +83,7 @@ class UnifiedClassifierTests(unittest.TestCase):
         self.write_article(
             "# Cím\n\nA cikk szövege.\n\n[![ábra](https://media.example/thumb.png)]"
             "(https://media.example/original.png)")
-        _metadata, markdown = classify.topic_classifier.catalog.read_article(self.article)
+        _metadata, markdown = classify.common.catalog.read_article(self.article)
         remote, _notes = classify.discover_media(markdown)
         self.assertEqual(remote, ["https://media.example/original.png"])
         self.assertEqual(_notes, [])

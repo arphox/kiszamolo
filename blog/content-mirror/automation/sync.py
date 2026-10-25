@@ -20,7 +20,7 @@ from catalog import (ARTICLES_PATH, article_path, atomic_write,
                      write_article)
 from paths import plan_article_paths
 from remote import HttpClient, MissingMediaError, fetch_census, fetch_metadata, fetch_records
-from render import extract_public_content, make_markdown, plain_title, rewrite_html
+from render import extract_public_content, make_markdown, rewrite_html
 
 
 ROOT = Path(__file__).resolve().parents[3]

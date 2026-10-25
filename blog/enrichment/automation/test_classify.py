@@ -40,7 +40,7 @@ class ClassificationTests(unittest.TestCase):
         self.transport = mock.Mock(return_value=self.response)
 
     def write_body(self, row, body):
-        classify.topic_classifier.catalog.write_article(
+        classify.common.catalog.write_article(
             self.root / "blog/content-mirror/articles" / row["path"], row, body)
 
 
