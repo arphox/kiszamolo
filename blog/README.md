@@ -75,6 +75,8 @@ A csak letöltéshez és az index újraépítéséhez szükséges parancsokat a 
 
 A tesztekre a [projekt fejlesztési szabályai](../README.md#fejlesztés-és-dokumentáció) vonatkoznak.
 
+A [GitHub Actions workflow](../.github/workflows/tests.yml) minden pull requestnél és a `main` ágra történő pushkor automatikusan futtatja a teljes tesztkészletet.
+
 A teljes tesztkészlet futtatása:
 
 ```powershell
