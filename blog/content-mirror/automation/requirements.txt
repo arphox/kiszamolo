@@ -2,4 +2,4 @@ beautifulsoup4==4.15.0
 markdownify==1.2.3
 Pillow==13.0.0
 requests==2.33.1
-urllib3==2.6.3
+urllib3==2.8.0
