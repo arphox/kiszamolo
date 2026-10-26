@@ -1,4 +1,4 @@
-name: Hibajelzés
+name: 🚩 Hibajelzés
 description: Hibás szöveg, hivatkozás, besorolás vagy eszközműködés jelzése.
 body:
   - type: textarea
