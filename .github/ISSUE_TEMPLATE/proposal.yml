@@ -1,0 +1,15 @@
+name: Javaslat
+description: Ötlet új témához, hasznos forráshoz vagy a projekt fejlesztéséhez.
+body:
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Mit javasolsz, és miért?
+      description: Írd le az ötletedet és azt, kinek, miben segítene. Nem kell részletes megoldást kidolgoznod.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: Kapcsolódó anyagok
+      description: Ha van kapcsolódó cikk, forrás, példa vagy korábbi issue, add meg a hivatkozását. Ez a mező üresen is maradhat.

@@ -9,8 +9,8 @@ A GitHub az az oldal, ahol a projekt fájljait és a javaslatokat gyűjtjük. A 
 Az _issue_ egy bejegyzés, amelyben hibát jelezhetsz vagy javaslatot tehetsz. Ehhez nem kell fájlt szerkesztened vagy saját másolatot készítened a projektről.
 
 1. Jelentkezz be, és az [Issues lapon](https://github.com/arphox/kiszamolo/issues) nézd meg a korábbi issue-kat. Ha már szóba került az ötleted, ott is hozzászólhatsz.
-2. Ha nincs ilyen, [nyiss új issue-t](https://github.com/arphox/kiszamolo/issues/new).
-3. Adj neki rövid magyar címet. Írd le, mit javasolsz és miért. Ha konkrét anyagról van szó, másold be a hivatkozását és az érintett szövegrészt. Ha van forrásod, azt is linkeld.
+2. Ha nincs ilyen, [nyiss új issue-t](https://github.com/arphox/kiszamolo/issues/new/choose), és válaszd a **Hibajelzés** vagy a **Javaslat** űrlapot.
+3. Adj neki rövid magyar címet, és töltsd ki az űrlapot. Ha konkrét anyagról van szó, másold be a hivatkozását és az érintett szövegrészt. Ha van forrásod, azt is linkeld.
 4. Olvasd át, majd a **Submit new issue** gombbal küldd el.
 
 Például: „Ez a cikk a lakáshitelekről szól, de nem találom ebben a témakörben. A cikk hivatkozása: …” Nem baj, ha nem tudod a megoldást; egy pontos hibajelzés is segítség.
@@ -45,9 +45,9 @@ Kisebb javítást a böngészőből is küldhetsz, például egy elírás vagy h
 2. Ha a GitHub felajánlja, kattints a **Fork this repository** gombra. Ez egy _forkot_, vagyis saját másolatot készít a GitHub-fiókodban; az eredeti projektet nem változtatja meg.
 3. Javítsd a szöveget, és a **Preview** nézetben ellenőrizd az eredményt.
 4. Kattints a **Commit changes…** gombra, és a **Commit message** mezőben adj rövid angol leírást a javításnak. Ezután válaszd a **Propose changes** lehetőséget.
-5. A következő oldalon írd le angolul, mit és miért javítottál, majd kattints a **Create pull request** gombra. A _pull request_ (PR) a javításod elfogadására tett kérés; a saját másolat mentése önmagában még nem küldi be a javítást.
+5. A következő oldalon adj magyar címet a PR-nek, és írd le magyarul, mit és miért javítottál, majd kattints a **Create pull request** gombra. A _pull request_ (PR) a javításod elfogadására tett kérés; a saját másolat mentése önmagában még nem küldi be a javítást.
 
-Az angol szöveghez is kérhetsz AI-segítséget. Beküldés előtt ellenőrizd, hogy azt mondja-e, amit szerettél volna.
+A megfogalmazáshoz is kérhetsz AI-segítséget. Beküldés előtt ellenőrizd, hogy a szöveg azt mondja-e, amit szerettél volna.
 
 Képes útmutatók angolul: [szerkesztés böngészőből](https://docs.github.com/en/repositories/working-with-files/managing-files/editing-files#editing-files-in-another-users-repository), [fork készítése](https://docs.github.com/en/pull-requests/how-tos/work-with-forks/fork-a-repo?tool=webui#forking-a-repository).
 
@@ -99,4 +99,4 @@ A szerkesztőd [Prettier-integrációjában](https://prettier.io/docs/editors) b
 
 ## Ki dönt a változtatásokról?
 
-A projektet jelenleg Ozsvárt Károly ([arphox](https://github.com/arphox)) gondozza. Ő dönt a projekt irányáról és a változtatások elfogadásáról. A PR-eket átnézés és sikeres automata ellenőrzés után fogadja el.
+A projektet jelenleg Ozsvárt Károly ([arphox](https://github.com/arphox)) gondozza. Ő dönt a projekt irányáról és a változtatások elfogadásáról. A PR-eket a maintainer merge-eli átnézés és sikeres automata ellenőrzés után, angol commitüzenettel.

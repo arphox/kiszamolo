@@ -1,0 +1,20 @@
+name: Hibajelzés
+description: Hibás szöveg, hivatkozás, besorolás vagy eszközműködés jelzése.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Mi a probléma?
+      description: Írd le, milyen hibát találtál, és mi lenne helyette helyes. Nem kell tudnod a megoldást. Ha valamelyik eszköz hibázik, írd le azt is, hogyan jutottál el a hibáig.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Hol található a hiba?
+      description: Ha tudod, add meg az érintett cikk vagy fájl hivatkozását és a hibás szövegrészt. Eszközhibánál a futtatott parancs és a hibaüzenet is segít.
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Javítási javaslat vagy forrás
+      description: Ha van ötleted a javításra vagy azt alátámasztó forrásod, írd ide. Ez a mező üresen is maradhat.
