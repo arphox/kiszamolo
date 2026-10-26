@@ -1,0 +1,6 @@
+# Generated source mirrors retain the blog's formatting.
+/blog/content-mirror/articles/
+
+# Local environments and processing cache are not project documentation.
+/.venv/
+/.local-cache/

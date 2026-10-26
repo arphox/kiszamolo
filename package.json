@@ -1,0 +1,11 @@
+{
+  "name": "kiszamolo",
+  "private": true,
+  "scripts": {
+    "format": "prettier --write \"**/*.md\"",
+    "format:check": "prettier --check \"**/*.md\""
+  },
+  "devDependencies": {
+    "prettier": "3.9.10"
+  }
+}

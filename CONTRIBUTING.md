@@ -6,7 +6,7 @@ A GitHub az az oldal, ahol a projekt fájljait és a javaslatokat gyűjtjük. A 
 
 ## A legegyszerűbb: írj egy issue-t
 
-Az *issue* egy bejegyzés, amelyben hibát jelezhetsz vagy javaslatot tehetsz. Ehhez nem kell fájlt szerkesztened vagy saját másolatot készítened a projektről.
+Az _issue_ egy bejegyzés, amelyben hibát jelezhetsz vagy javaslatot tehetsz. Ehhez nem kell fájlt szerkesztened vagy saját másolatot készítened a projektről.
 
 1. Jelentkezz be, és az [Issues lapon](https://github.com/arphox/kiszamolo/issues) nézd meg a korábbi issue-kat. Ha már szóba került az ötleted, ott is hozzászólhatsz.
 2. Ha nincs ilyen, [nyiss új issue-t](https://github.com/arphox/kiszamolo/issues/new).
@@ -39,14 +39,13 @@ Az észrevételem:
 
 ## Ha te magad javítanál egy szöveget
 
-Kisebb javítást a böngészőből is küldhetsz, például egy elírás vagy hibás hivatkozás javítását a dokumentációban.
-A blogcikkek a kiszamolo.hu tartalmának másolatai, ezeket nem szerkesztjük.
+Kisebb javítást a böngészőből is küldhetsz, például egy elírás vagy hibás hivatkozás javítását a dokumentációban. A blogcikkek a kiszamolo.hu tartalmának másolatai, ezeket nem szerkesztjük.
 
 1. Nyisd meg a javítandó fájlt a [projekt oldalán](https://github.com/arphox/kiszamolo), és kattints a ceruzaikonra.
-2. Ha a GitHub felajánlja, kattints a **Fork this repository** gombra. Ez egy *forkot*, vagyis saját másolatot készít a GitHub-fiókodban; az eredeti projektet nem változtatja meg.
+2. Ha a GitHub felajánlja, kattints a **Fork this repository** gombra. Ez egy _forkot_, vagyis saját másolatot készít a GitHub-fiókodban; az eredeti projektet nem változtatja meg.
 3. Javítsd a szöveget, és a **Preview** nézetben ellenőrizd az eredményt.
 4. Kattints a **Commit changes…** gombra, és a **Commit message** mezőben adj rövid angol leírást a javításnak. Ezután válaszd a **Propose changes** lehetőséget.
-5. A következő oldalon írd le angolul, mit és miért javítottál, majd kattints a **Create pull request** gombra. A *pull request* (PR) a javításod elfogadására tett kérés; a saját másolat mentése önmagában még nem küldi be a javítást.
+5. A következő oldalon írd le angolul, mit és miért javítottál, majd kattints a **Create pull request** gombra. A _pull request_ (PR) a javításod elfogadására tett kérés; a saját másolat mentése önmagában még nem küldi be a javítást.
 
 Az angol szöveghez is kérhetsz AI-segítséget. Beküldés előtt ellenőrizd, hogy azt mondja-e, amit szerettél volna.
 
@@ -79,8 +78,24 @@ Beküldés előtt segíts átnézni a változtatást. Én küldöm el.
 - Nagyobb fejlesztés vagy átalakítás előtt egyeztess issue-ban.
 - A saját forkodban dolgozz, és a projekt `main` ágára nyiss PR-t. Egy PR egy összetartozó változtatásról szóljon. Írd le, mit változtattál, miért, és hogyan ellenőrizted. Ha tartozik hozzá issue, hivatkozz rá.
 - A helyi környezet beállítását és a tesztparancsokat a [blog/README.md](blog/README.md#telepítés-és-frissítés) tartalmazza. A tesztekhez nincs szükség Codex-bejelentkezésre vagy a cikkgyűjtemény frissítésére.
-- Kódmódosításnál futtasd a [teszteket](blog/README.md#tesztek), és szükség szerint egészítsd ki őket. A megváltozott működés leírását is frissítsd. Pusztán szöveges javításnál elég a szöveget és a hivatkozásokat ellenőrizni.
+- Kódmódosításnál futtasd a [teszteket](blog/README.md#tesztek), és szükség szerint egészítsd ki őket. A megváltozott működés leírását is frissítsd. Markdown-módosításnál a szöveg és a hivatkozások ellenőrzése mellett futtasd a [formázást és annak ellenőrzését](#markdown-formázása). Böngészős javításnál a CI jelzi a formázási eltéréseket; ha elakadsz, kérj segítséget a PR-ben.
 - A feldolgozás szabályait a [blog/content-mirror/README.md](blog/content-mirror/README.md), a besorolásokét a [blog/enrichment/README.md](blog/enrichment/README.md) tartalmazza. A közös fejlesztési és nyelvi szabályok, valamint a licencek a [README.md](README.md) fájlban vannak.
+
+### Markdown formázása
+
+A saját Markdown-fájljainkat Prettierrel formázzuk. A `proseWrap: "never"` beállítás bekezdésenként egy forrássort készít; az olvasáshoz kapcsold be az editor vizuális sortördelését (soft wrap). Minden másban az alapértelmezett stílust követjük. A generált blogcikkeket kihagyjuk. A verziót a `package.json` és a `package-lock.json` rögzíti; a közös beállítás a `.prettierrc.json`, a kizárások a `.prettierignore` fájlban vannak.
+
+Node.js 24 LTS és npm szükséges. A projekt gyökeréből:
+
+```powershell
+npm ci
+npm run format
+npm run format:check
+```
+
+Az `npm ci` telepíti a rögzített függőségeket; a `format` automatikusan javítja a formázást, a `format:check` módosítás nélkül ellenőrzi. Markdown-módosítás után futtasd mindkettőt. A [formázási CI](.github/workflows/format.yml) minden PR-nél és a `main` ágra történő pushkor ugyanezt az ellenőrzést végzi.
+
+A szerkesztőd [Prettier-integrációjában](https://prettier.io/docs/editors) bekapcsolhatod a Markdown mentéskori formázását. A projekt helyi Prettier-verzióját és konfigurációját használd, a `.prettierignore` kizárásait is figyelembe véve. Az editor beállítását minden közreműködő maga végzi; az AI közvetlen fájlmódosításai után is futtatni kell a helyi javítást és ellenőrzést.
 
 ## Ki dönt a változtatásokról?
 

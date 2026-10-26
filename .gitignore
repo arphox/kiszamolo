@@ -1,2 +1,5 @@
 # Local downloads and processing cache.
 /.local-cache/
+
+# Local JavaScript tooling.
+/node_modules/
