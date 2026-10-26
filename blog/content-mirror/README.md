@@ -12,24 +12,30 @@ A [telepítés](../README.md#telepítés-és-frissítés) után, a projekt gyök
 
 A [teljes frissítés](../README.md#telepítés-és-frissítés) a cikkek besorolását is elvégzi.
 
+## Automatikus frissítés
+
+A [GitHub Actions workflow](../../.github/workflows/sync-articles.yml) havonta frissíti a cikkgyűjteményt, és változás esetén PR-t nyit. Ha már van nyitott frissítő PR, azt frissíti. Hiányos vagy sikertelen letöltést nem küld be. Kézzel az **Actions → Sync articles → Run workflow** menüből indítható; forkokban nem fut.
+
+Az automatikus PR ágán a kézi módosításokat felülírja a következő futás, ezért a kizárásokat külön PR-ben vidd a `main` ágra. Az elfogadás nélkül lezárt PR változásait később újra felajánlja, ha még eltérnek a `main` tartalmától.
+
+Ha a GitHub [aktivitáshiány miatt](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule) letiltja az ütemezést, az Actions felületen engedélyezd újra.
+
+Elfogadás előtt nézd át a cikkváltozásokat és az új cikkek beválogatását a [kizárási szabályok](#kizárási-szabályok) szerint. Ha a GitHub kéri, az **Approve workflows to run** gombbal engedélyezd a PR ellenőrzéseit.
+
+A workflow csak a cikkeket és a frissítési indexet módosítja. Az AI-besorolások a PR elfogadása után a [helyi frissítővel](../README.md#besorolás-a-cikkfrissítő-pr-elfogadása-után) folytathatók.
+
 ## Tárolás
 
-- `articles/YYYY/MM/YYYY-MM-DD HH.MM Cím [ID].md`: a cikkek, saját JSON-értékeket használó front matter fejléccel. Az ID alapján a fájl a fejléc beolvasása nélkül megtalálható.
-- `articles/wordpress-modified.json`: frissítési index, WordPress-ID → `modified_gmt` párokkal, azonosító szerinti sorrendben, kétszóközös behúzással.
+- `articles/YYYY/MM/YYYY-MM-DD HH.MM Cím [ID].md`: a cikkek, saját JSON-értékeket használó front matter fejléccel.
+- `articles/wordpress-modified.json`: frissítési index, WordPress-ID → `modified_gmt` párokkal.
 
-```json
-{
-  "66976": "2021-12-14T14:36:31"
-}
-```
-
-Az index értéke pontosan a cikk `modified_at_gmt` mezőjében is elmentett WordPress-időbélyeg. A frissítő ezt az UTC-ben megadott forrásidőt hasonlítja az API válaszához. Előbb a cikket menti, és csak sikeres mentés után frissíti az indexbejegyzést. Sikertelen frissítéskor a következő futás újrapróbálja a letöltést.
+Az index a cikkek `modified_at_gmt` mezőjében tárolt UTC-időt tartalmazza. Sikertelen frissítéskor a következő futás újrapróbálja a letöltést.
 
 A blog eredeti WordPress-kategóriáit és -címkéit nem vesszük át a cikkekbe és az indexbe: ezek nem illeszkednek a tudásbázis tematikus keresési és rendszerezési igényeihez. Erre a célra az [enrichment saját témaköreit](../enrichment/README.md) használjuk.
 
 ## Frissítés
 
-A frissítő beolvassa az indexet, és lekéri a blog könnyű leltárát. Csak az új, módosult vagy helyben hiányzó cikkeket tölti le és alakítja át. Ez a régi cikkek utólagos módosításait is követi; a változatlan cikkfájlokat nem olvassa végig.
+A frissítő az index és a blog leltára alapján csak az új, módosult vagy helyben hiányzó cikkeket tölti le és alakítja át. A régi cikkek utólagos módosításait is követi.
 
 A cikkadatok közvetlenül az API-válaszból készülnek. Ha az API nem tartalmaz szöveget, a letöltő megpróbálja a nyilvános cikkoldalból kinyerni. A nyers API-válaszokat és HTML-forrásokat nem őrizzük meg külön archívumban. A blogról eltűnt cikk helyi példánya megmarad.
 
@@ -60,7 +66,7 @@ Hiányzó index esetén az első futás automatikusan újraépíti azt a cikkek 
 .\.venv\Scripts\python.exe -B blog/content-mirror/automation/sync.py --rebuild-index
 ```
 
-Ez hálózati kérés és cikkszöveg-újragenerálás nélkül működik. Normál frissítéskor nincs szükség a cikkek fejlécének újbóli beolvasására.
+Ez hálózati kérés és cikkszöveg-újragenerálás nélkül működik.
 
 ## Markdown, hivatkozások és média
 
@@ -70,11 +76,9 @@ Az aláhúzást `<u>…</u>` HTML-elemmel őrizzük meg, mert a Markdownnak ninc
 
 A képek, dokumentumok, hang- és videófájlok az eredeti, abszolút webes URL-jükön szerepelnek. A letöltő nem tölti le és nem ellenőrzi ezeket; elérésük internetet és a forrás elérhetőségét igényli. Feldolgozáskor az ismert helyi cikkekre mutató hivatkozásokat helyi Markdown-hivatkozássá alakítjuk. Egy új cikk megjelenése miatt a korábbi cikkeket nem olvassuk újra; azok meglévő webes hivatkozásai megmaradhatnak. Kizáráskor az érintett helyi hivatkozásokat a forrás webes címére javítjuk; ez a ritkább művelet a meglévő cikkek átnézését igényli.
 
-## Besorolási teendők
+## Hibák és kilépési kódok
 
-A besorolás eredményeit és feldolgozási nyilvántartását az [enrichment](../enrichment/README.md#tárolás-és-működés) kezeli.
-
-A hibák és az összesítés a terminálra kerülnek; külön riportfájlok, cikkjegyzékek és médiastatisztikák nem készülnek. A kilépési kód `0` siker, `2` befejezett futás megmaradt teendővel, `1` végzetes hiba, `130` megszakítás. Egy közös folyamatközi zár védi a frissítést és a besorolást; a zárolási fájlok a repó `.local-cache/locks/` mappájában vannak.
+A hibák és az összesítés a terminálra kerülnek. Kilépési kód: `0` siker, `2` hiányos letöltés, `1` végzetes hiba, `130` megszakítás. Hiba után a frissítés újraindítható. Egyszerre csak egy letöltés vagy besorolás futhat.
 
 ## Ellenőrzés
 

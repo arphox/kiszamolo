@@ -53,7 +53,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r blog\content-mirror\automation\requirements.txt
 ```
 
-A teljes frissítéshez a Codex CLI és ChatGPT-előfizetéssel történő bejelentkezés is szükséges a besorolások miatt. A letöltés és a későbbi frissítések indítása:
+A teljes frissítéshez a [Codex CLI](https://developers.openai.com/codex/cli/) is szükséges a `PATH`-on, ChatGPT-előfizetéssel történő bejelentkezéssel. A CLI telepítése után futtasd a `codex login` parancsot, és jelentkezz be a böngészőben; a `codex login status` paranccsal ellenőrizheted a belépést. A besoroló ezt a bejelentkezést használja, API-kulcs helyett. A letöltés és a későbbi frissítések indítása:
 
 ```powershell
 .\.venv\Scripts\python.exe -u -B blog/update.py
@@ -61,9 +61,15 @@ A teljes frissítéshez a Codex CLI és ChatGPT-előfizetéssel történő bejel
 
 A program letölti a változásokat, majd besorolja a cikkeket témakör és tartalmi jelleg szerint. Legfeljebb öt módosult, már besorolt cikket automatikusan újra besorol. Többnél a hiányzó besorolások elkészítése után egyszer kér jóváhagyást az érintett cikkek együttes darabszámára. Ehhez interaktív terminálban kifejezetten `igen` választ kell adni; átirányított bemenetről nem fogad el jóváhagyást.
 
-A végén összesítés és teendőlista jelenik meg a terminálon. Ha maradt teendő, a következő futtatáskor folytatható a feldolgozás. Kilépési kód: `0` siker, `2` maradt teendő vagy hiányos letöltés, `1` végzetes hiba, `130` megszakítás. A frissítést kézzel indítjuk.
+A végén összesítés és teendőlista jelenik meg a terminálon. Ha maradt teendő, a következő futtatáskor folytatható a feldolgozás. Kilépési kód: `0` siker, `2` maradt teendő vagy hiányos letöltés, `1` végzetes hiba, `130` megszakítás. A teljes frissítést kézzel indítjuk; a csak letöltést végző [havi frissítés](content-mirror/README.md#automatikus-frissítés) külön PR-t készít.
 
 A csak letöltéshez és az index újraépítéséhez szükséges parancsokat a [letöltő leírása](content-mirror/README.md), a besorolások működését és az emberi döntést igénylő eseteket a [besorolás leírása](enrichment/README.md) tartalmazza.
+
+### Besorolás a cikkfrissítő PR elfogadása után
+
+1. Frissítsd a helyi checkoutodat a frissítő PR-t már tartalmazó `main` állapotára.
+2. Futtasd a [közös frissítőt](#telepítés-és-frissítés). Automatikusan feldolgozza a hiányzó és elavult besorolásokat. A blogot is újra ellenőrzi, így a merge óta megjelent cikkváltozásokat is letöltheti.
+3. Nézd át a jelzett teendőket és a változásokat. Az `enrichment/assignments.json` és az `enrichment/processing.json` módosításait együtt küldd be PR-ben, az esetleges cikkváltozásokkal együtt. A PR beküldését a [közreműködési útmutató](../CONTRIBUTING.md#fejlesztőknek) írja le.
 
 ## Mit érdemes tudni a mentett tartalomról?
 

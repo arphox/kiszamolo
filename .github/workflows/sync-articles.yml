@@ -1,0 +1,53 @@
+name: Sync articles
+
+on:
+  schedule:
+    - cron: '17 6 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-articles
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.event.repository.fork == false && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.11'
+
+      - name: Install sync dependencies
+        run: python -m pip install -r blog/content-mirror/automation/requirements.txt
+
+      - name: Sync articles without AI classification
+        run: python -u -B blog/content-mirror/automation/sync.py
+
+      - name: Create or update article pull request
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: codex/sync-articles
+          base: main
+          add-paths: |
+            blog/content-mirror/articles/**/*.md
+            blog/content-mirror/articles/wordpress-modified.json
+          commit-message: Update mirrored blog articles
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          title: Blogcikkek frissítése
+          body: |
+            A kiszamolo.hu új és módosult cikkei, a frissítési indexszel együtt.
+
+            Az átnézéshez és az AI-besorolások frissítéséhez kövesd a [frissítési útmutatót](${{ github.server_url }}/${{ github.repository }}/blob/main/blog/content-mirror/README.md#automatikus-frissítés).
