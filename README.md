@@ -23,3 +23,5 @@ A Kiszámoló blog cikkeinek Markdown-változatát Csernok Miklós engedélyéve
   - Angol: forráskód, kódkommentek, commitüzenetek, branchnevek, `AGENTS.md`.
   - Magyar: issue-k és PR-ek címe, leírása, beszélgetései és review-k; dokumentáció, cikkek és egyéb szöveges tartalom.
   - A bevett technikai kifejezéseket megtartjuk, ha a magyarra fordításuk erőltetett lenne.
+
+Ideiglenes ellenőrzés a GitHub-védelmek kipróbálásához.

@@ -518,3 +518,5 @@ class ApprovalTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+raise AssertionError("Intentional temporary failure for branch protection verification")
