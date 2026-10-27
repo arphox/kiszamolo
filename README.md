@@ -1,10 +1,10 @@
 # Kiszámoló tudásbázis
 
-Közösségi tudásbázist építünk a [Kiszámoló blog](https://kiszamolo.hu/) kiegészítéseként.
+Tudástárat építünk a [Kiszámoló blog](https://kiszamolo.hu/) tartalmaiból. A cél, hogy a blogon összegyűlt tudás témák szerint rendezve, könnyebben megtalálható és használható formában legyen elérhető.
 
-A blog cikkgyűjteménye és feldolgozó eszközei a [blog/](blog/README.md) alatt találhatók. A közösségi tudásanyag külön rész lesz; még nem létezik.
+Jelenleg a blog cikkgyűjteménye és a hozzá készült besorolások adják az alapot; ezekre épül majd a közösségi tudásanyag. A gyűjteményt és a feldolgozó eszközöket a [blog/](blog/README.md) mappában találod.
 
-A [CONTRIBUTING.md](CONTRIBUTING.md) leírja, hogyan segíthetsz a projektben.
+Segíthetsz hibák jelzésével, a besorolások pontosításával vagy ötletekkel a tudástár felépítéséhez. A [CONTRIBUTING.md](CONTRIBUTING.md) megmutatja, hogyan kapcsolódhatsz be.
 
 ## Licenc
 
