@@ -12,6 +12,8 @@ A projekt saját anyagai az [MIT-licenc](LICENSE) alatt használhatók, ha nincs
 
 Az MIT-licenc nem vonatkozik a kiszamolo.hu blogról származó és másoktól átvett tartalmakra. Ezek jogai az eredeti jogosultaknál maradnak.
 
+A Kiszámoló blog cikkeinek Markdown-változatát Csernok Miklós engedélyével tesszük közzé.
+
 ## Fejlesztés és dokumentáció
 
 - Az automata tesztek nem érhetnek el külső hálózatot és nem hívhatnak valódi AI-szolgáltatást. A külső szolgáltatásokat mockok helyettesítik; helyi HTTP-tesztkiszolgáló használható.
